@@ -191,6 +191,14 @@ function MediumWidget({ data }: { data: UsageData }) {
         <StatRow icon="creditcard" label={fee.label} value={fee.value} unit="HK$" />
         <StatRow icon="phone" label="通话剩余" value={voiceText(data)} unit={data.voiceUnlimited ? "" : "分钟"} />
         {roam && <StatRow icon="airplane" label="漫游数据" value={roam} unit="" />}
+        {(data.membershipTier || data.points != null) && (
+          <StatRow
+            icon="crown"
+            label={data.membershipTier ?? "會籍"}
+            value={data.points != null ? `${data.points} 分` : ""}
+            unit=""
+          />
+        )}
         <Spacer />
         <UpdatedFooter data={data} compact={false} />
       </VStack>

@@ -11,7 +11,7 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
-import { parseUsageText, ParsedUsage } from "./usage-parser"
+import { parseUsageText, parseUsageQueryJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
   planName: string | null        // 套餐名（如 5G一咭三地計劃60GB）
@@ -30,6 +30,8 @@ export type UsageData = {
   smsRemaining: number | null    // 短訊剩余（條）
   billDay: number | null         // 每月账单/结算日（1-31）
   cycleEndDate: string | null    // 本周期结束日 ISO（若能取到）
+  membershipTier: string | null  // 我的會籍（白金/金…）
+  points: number | null          // 我的積分
   fetchedAt: number              // 抓取时间戳 ms
   stale?: boolean                // 是否为失败后的缓存数据
 }
@@ -295,6 +297,8 @@ export function demoData(): UsageData {
     smsRemaining: 500,
     billDay: 6,
     cycleEndDate: null,
+    membershipTier: "白金",
+    points: 4006,
     fetchedAt: Date.now(),
   }
 }
@@ -416,8 +420,25 @@ export async function refreshUsage(): Promise<UsageData> {
 
     const fm = CMHK.fieldMap
     const auto = autoMap(summary)
+    // 精确结构：usageQuery 接口 JSON（本次刷新或捕获环里的均可）
+    let jq: ParsedUsage = {}
+    const tryJson = (v: any): ParsedUsage => {
+      if (typeof v !== "object" || v === null) return {}
+      const r = parseUsageQueryJson(v)
+      return Object.keys(r).length ? r : {}
+    }
+    jq = tryJson(summary)
+    if (!Object.keys(jq).length) {
+      for (const c of readCaptures()) {
+        try {
+          const r = tryJson(JSON.parse(c.body))
+          if (Object.keys(r).length) { jq = r; break }
+        } catch { /* 非 JSON 跳过 */ }
+      }
+    }
     // 终极兜底：把响应（JSON 或 HTML）拍平成文本，按中文界面真实字段形态提取
-    const parsed: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
+    const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
+    const parsed: ParsedUsage = { ...parsed0, ...jq }
     const data: UsageData = {
       planName: getPath(summary, fm.planName) ?? auto.planName ?? parsed.planName ?? null,
       phoneNumber: maskPhone(getPhone()),
@@ -433,6 +454,8 @@ export async function refreshUsage(): Promise<UsageData> {
       voiceRemainingMin: toNum(getPath(summary, fm.voiceRemainingMin)) ?? auto.voiceRemainingMin ?? parsed.voiceRemainingMin ?? null,
       voiceUnlimited: parsed.voiceUnlimited ?? false,
       smsRemaining: parsed.smsRemaining ?? null,
+      membershipTier: parsed.membershipTier ?? null,
+      points: parsed.points ?? null,
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? null,
       fetchedAt: Date.now(),

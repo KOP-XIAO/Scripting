@@ -263,6 +263,12 @@ function Page() {
                 </Text>
               </VStack>
             </HStack>
+            {(data.membershipTier || data.points != null) && (
+              <Text font="caption" foregroundStyle={theme.textSecondary}>
+                {data.membershipTier ? `${data.membershipTier}會籍` : ""}
+                {data.points != null ? ` · 積分 ${data.points}` : ""}
+              </Text>
+            )}
             {data.roamDataRemainingGB != null && (
               <Text font="caption" foregroundStyle={theme.textSecondary}>
                 漫游数据：剩余 {fmtGB(data.roamDataRemainingGB)} / {fmtGB(data.roamDataTotalGB)} GB

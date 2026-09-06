@@ -18,6 +18,8 @@ export type ParsedUsage = {
   smsRemaining?: number
   balanceHKD?: number
   billAmountHKD?: number
+  membershipTier?: string   // 我的會籍（白金/金/银…）
+  points?: number           // 我的積分
 }
 
 function num(s: string | undefined): number | undefined {
@@ -135,5 +137,69 @@ export function parseUsageText(raw: string): ParsedUsage {
   const sms = text.match(/([\d,]+)\s*條\s*餘量/)
   if (sms) out.smsRemaining = num(sms[1].replace(/,/g, ""))
 
+  // 會籍：我的會籍 白金
+  const tier = text.match(/我的會籍[^A-Za-z0-9一-龥]{0,12}(白金|鑽石|钻石|金|銀|银|銅|铜)/)
+  if (tier) out.membershipTier = tier[1]
+
+  // 積分：我的積分 4006
+  const pts = text.match(/我的積分[^0-9]{0,12}([\d,]{2,})/)
+  if (pts) out.points = num(pts[1].replace(/,/g, ""))
+
+  return out
+}
+
+// 精确解析 usageQuery 接口的真实结构（真机捕获实证）：
+// data.result[] = 分类（服務計劃數據/漫遊數據/話音/短訊）
+//   details[] = { msisdn, name, total, usage, margin(=剩余), unit, infinite, expired, effectiveDate }
+export function parseUsageQueryJson(json: any): ParsedUsage {
+  const result = json?.data?.result
+  if (!Array.isArray(result)) return {}
+  const out: ParsedUsage = {}
+
+  const buckets: any[] = []
+  for (const cat of result) {
+    const catName = String(cat?.name ?? "")
+    for (const d of cat?.details ?? []) buckets.push({ ...d, __cat: catName })
+  }
+  if (!buckets.length) return {}
+
+  const toGBn = (b: any): number | undefined => {
+    const v = num(b?.margin != null ? String(b.margin) : undefined)
+    if (v == null) return undefined
+    return /mb/i.test(String(b?.unit ?? "")) ? +(v / 1024).toFixed(3) : v
+  }
+  const totalGBn = (b: any): number | undefined => {
+    const v = num(b?.total != null ? String(b.total) : undefined)
+    if (v == null) return undefined
+    return /mb/i.test(String(b?.unit ?? "")) ? +(v / 1024).toFixed(3) : v
+  }
+
+  const dataB = buckets.find((b) => /數據|数据/.test(b.__cat) && !/漫遊|漫游/.test(b.__cat) && /^(GB|MB)$/i.test(String(b.unit ?? "")))
+  const roamB = buckets.find((b) => /漫遊|漫游/.test(b.__cat))
+  const voiceB = buckets.find((b) => /話音|话音/.test(b.__cat) || /分鐘|分钟/.test(String(b.unit ?? "")))
+  const smsB = buckets.find((b) => /短訊|短信/.test(b.__cat) || /條|条/.test(String(b.unit ?? "")))
+
+  const anyB = dataB ?? roamB ?? buckets[0]
+  if (anyB?.name) out.planName = String(anyB.name)
+  if (anyB?.msisdn) out.accountNumber = String(anyB.msisdn)
+
+  if (dataB) {
+    out.dataTotalGB = totalGBn(dataB)
+    out.dataRemainingGB = toGBn(dataB)
+  }
+  if (roamB) {
+    out.roamDataTotalGB = totalGBn(roamB)
+    out.roamDataRemainingGB = toGBn(roamB)
+    const exp = roamB.expiryDate ?? roamB.expireDate ?? roamB.expiredDate ?? roamB.effectiveDate
+    if (exp) out.roamExpiry = String(exp).replace(/[./]/g, "-").slice(0, 10)
+  }
+  if (voiceB) {
+    out.voiceRemainingMin = num(voiceB.margin != null ? String(voiceB.margin) : undefined)
+    out.voiceTotalMin = num(voiceB.total != null ? String(voiceB.total) : undefined)
+    if (voiceB.infinite === true) out.voiceUnlimited = true
+  }
+  if (smsB) {
+    out.smsRemaining = num(smsB.margin != null ? String(smsB.margin) : undefined)
+  }
   return out
 }
