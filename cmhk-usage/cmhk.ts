@@ -73,6 +73,16 @@ export const CMHK = {
 }
 // ---------- 校准区结束 ----------
 
+// WebViewController 是全局对象（不从 scripting 导入）
+declare const WebViewController: {
+  new (options?: { ephemeral?: boolean }): {
+    loadURL(url: string): Promise<boolean>
+    waitForLoad(): Promise<boolean>
+    getHTML(): Promise<string | null>
+    dispose(): void
+  }
+}
+
 declare const Storage: {
   get<T>(key: string): T | null
   set<T>(key: string, value: T): boolean
@@ -290,25 +300,23 @@ async function fetchJson(url: string, init: Record<string, any>, timeoutMs = 120
   return res.json()
 }
 
-// 网页会话重放：直接请求捕获到的真实接口
+// 网页会话刷新：无头 WebView 重载捕获到的用量页（SSR 站点，数据在 HTML 里；
+// 持久 Cookie 存储与登录时的 WebView 共享，httpOnly 会话 Cookie 也生效）
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
-  const headers: Record<string, string> = {}
-  if (s.authorization) headers["Authorization"] = s.authorization
-  if (s.cookie) headers["Cookie"] = s.cookie
+  const wv = new WebViewController()
   try {
-    const req = fetch(s.url, { headers })
-    const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("请求超时")), 12000))
-    const res = (await Promise.race([req, timer])) as any
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
-    try { return JSON.parse(text) } catch { return text }
-  } catch (e: any) {
-    if (/HTTP 401|HTTP 403/.test(String(e?.message))) {
+    await wv.loadURL(s.url)
+    await wv.waitForLoad()
+    const html = await wv.getHTML()
+    if (!html) throw new Error("页面内容为空")
+    if (!/餘量|已用|用量/.test(html)) {
       throw new Error("网页会话已过期，请重新「网页登录」")
     }
-    throw e
+    return html
+  } finally {
+    wv.dispose()
   }
 }
 

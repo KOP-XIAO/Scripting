@@ -22,13 +22,10 @@ import {
   fmtMoney,
   fmtUpdatedAt,
   readCache,
-  refreshUsage,
   UsageData,
 } from "./cmhk"
 import { ringStops, theme } from "./theme"
 import { RefreshIntent } from "./app_intents"
-
-const STALE_AFTER_MS = 30 * 60 * 1000
 
 // ---------- 部件 ----------
 
@@ -217,15 +214,9 @@ function EmptyState({ message }: { message: string }) {
 // ---------- 入口 ----------
 
 async function run() {
-  let data = readCache()
-  // 缓存过期则尝试轻量刷新；失败则沿用缓存渲染（stale 标记会显示在页脚）
-  if (data && Date.now() - data.fetchedAt > STALE_AFTER_MS) {
-    try {
-      data = await refreshUsage()
-    } catch {
-      /* 网络失败不阻塞渲染，用旧缓存兜底 */
-    }
-  }
+  // 小组件只读缓存：渲染进程有 ~30MB 内存上限，网页刷新（无头 WebView）
+  // 放在 App 内打开 / 刷新按钮（AppIntent）里执行，不做在 widget 进程里。
+  const data = readCache()
 
   if (!data) {
     Widget.present(<EmptyState message={"请先打开 App 内的\n「CMHK Usage」完成登录"} />, {

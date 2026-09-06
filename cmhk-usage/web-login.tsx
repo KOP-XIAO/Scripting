@@ -1,8 +1,11 @@
-// web-login.tsx — 网页登录捕获（推荐登录方式）v2
-// 原理：打开 CMHK 官网，用户登录并进入「用量查询」页面。
-// 通过 addScriptMessageHandler + 注入的 fetch/XHR 钩子，页面里每个接口的
-// 响应内容都会回传给脚本（shouldAllowRequest 看不到 Cookie/响应体，注入才行）。
-// 捕获到用量数据后：记录真实接口 URL + 页面 Cookie，之后数据层直接重放。
+// web-login.tsx — 网页登录捕获 v3
+// CMHK 官网是 SSR（服务端渲染）站点：用量数据直接嵌在页面 HTML 里，
+// 不经过 fetch/XHR，注入钩子看不到——所以改为直接抓页面 HTML。
+//
+// 流程：打开官网 → 用户登录并进入「用量查询」页 → 轮询检测页面文本是否
+// 出现用量标记（餘量/已用/用量）→ 出现即抓取整页 HTML + 页面地址 +
+// document.cookie → 存入捕获环并设为会话。
+// 之后刷新由数据层用无头 WebView 重载该页完成（共享 Cookie 存储）。
 
 import { getWebStartUrl, saveCapture, saveWebSession } from "./cmhk"
 
@@ -17,90 +20,32 @@ declare const WebViewController: {
     loadURL(url: string): Promise<boolean>
     present(options?: { fullscreen?: boolean; navigationTitle?: string }): Promise<void>
     evaluateJavaScript<T = any>(javascript: string): Promise<T>
-    addScriptMessageHandler<P = any>(name: string, handler: (params?: P) => any): Promise<void>
+    getHTML(): Promise<string | null>
     dispose(): void
   }
 }
 
-// 注入页面的钩子：包裹 fetch 与 XHR，把接口响应回传给脚本
-const INJECT_HOOK = `
-(function () {
-  if (window.__cmhkHooked) return true
-  window.__cmhkHooked = true
-  function send(url, body) {
-    try {
-      if (!url || typeof body !== "string" || body.length < 2) return
-      window.webkit.messageHandlers.cmhkCapture.postMessage({
-        url: String(url),
-        body: body.slice(0, 60000)
-      })
-    } catch (e) {}
-  }
-  var of = window.fetch
-  if (of) {
-    window.fetch = function () {
-      var args = arguments
-      return of.apply(this, args).then(function (r) {
-        try {
-          var c = r.clone()
-          c.text().then(function (t) {
-            send((args[0] && args[0].url) || String(args[0]), t)
-          }).catch(function () {})
-        } catch (e) {}
-        return r
-      })
-    }
-  }
-  var O = XMLHttpRequest.prototype.open
-  var S = XMLHttpRequest.prototype.send
-  XMLHttpRequest.prototype.open = function (m, u) {
-    this.__cmhkUrl = u
-    return O.apply(this, arguments)
-  }
-  XMLHttpRequest.prototype.send = function () {
-    var xhr = this
-    xhr.addEventListener("load", function () {
-      try { send(xhr.__cmhkUrl, xhr.responseText) } catch (e) {}
+// 页面文本探针：返回 { url, hasUsage }
+const PROBE = `
+return (function () {
+  try {
+    var t = document.body ? document.body.innerText : ""
+    return JSON.stringify({
+      url: location.href,
+      hasUsage: /餘量|已用|用量查询|用量查詢/.test(t)
     })
-    return S.apply(this, arguments)
+  } catch (e) {
+    return JSON.stringify({ url: "", hasUsage: false })
   }
-  return true
 })()
 `
 
-// 判断一个响应是否像「用量/余额」数据
-function looksLikeUsage(url: string, body: string): boolean {
-  if (/usage|quota|remain|balance|flow|datausage|用量|流量|余额/i.test(url)) return true
-  // JSON 且含数值型用量字段
-  return /"(data|usage|quota|remain|balance|flow)[A-Za-z]*"\s*:\s*"?[0-9]/i.test(body)
-}
-
 export async function runWebLogin(): Promise<{ captured: boolean; url: string | null; body: string | null }> {
-  const webView = new WebViewController() // 持久模式：cookie 在会话期内共享
+  const webView = new WebViewController() // 持久模式：与后续无头刷新共享 Cookie 存储
 
   let capturedUrl: string | null = null
-  let capturedBody: string | null = null
-  let capturedIsJson = false
+  let capturedHtml: string | null = null
   let cookie: string | null = null
-
-  // 页面接口响应经此回传
-  await webView.addScriptMessageHandler<{ url?: string; body?: string }>("cmhkCapture", (msg) => {
-    const url = msg?.url ?? ""
-    const body = msg?.body ?? ""
-    if (!url || !body) return null
-    if (looksLikeUsage(url, body)) {
-      saveCapture(url, body) // 全部入捕获环
-      // 最佳会话：可解析为 JSON 者优先
-      let isJson = false
-      try { JSON.parse(body); isJson = true } catch {}
-      if (!capturedBody || (isJson && !capturedIsJson)) {
-        capturedUrl = url
-        capturedBody = body
-        capturedIsJson = isJson
-      }
-    }
-    return null
-  })
 
   await webView.loadURL(getWebStartUrl())
 
@@ -110,30 +55,36 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     .then(() => { closed = true })
     .catch(() => { closed = true })
 
-  // 页面每次导航后都要重新注入（钩子在页面级生命周期）
-  while (!closed && !capturedBody) {
+  // 轮询：检测当前页是否是用量页；是则抓整页 HTML
+  while (!closed && !capturedHtml) {
     await new Promise((r) => setTimeout(r, 1500))
     try {
-      await webView.evaluateJavaScript(INJECT_HOOK)
-      // 捕获到数据后顺带记下当前页面 cookie
-      if (capturedBody && !cookie) {
-        cookie = await webView.evaluateJavaScript<string>("return document.cookie").catch(() => null)
+      const raw = await webView.evaluateJavaScript<string>(PROBE)
+      const probe = JSON.parse(raw || "{}")
+      if (probe.hasUsage && probe.url) {
+        const html = await webView.getHTML()
+        if (html && /餘量|已用|用量/.test(html)) {
+          capturedUrl = probe.url
+          capturedHtml = html
+          cookie = await webView.evaluateJavaScript<string>("return document.cookie").catch(() => null)
+        }
       }
     } catch {
-      // 页面导航途中注入失败属正常，下一轮重试
+      // 页面导航途中探测失败属正常，下一轮重试
     }
   }
 
   if (!closed) await presentP
   webView.dispose()
 
-  if (capturedUrl && capturedBody) {
+  if (capturedUrl && capturedHtml) {
+    saveCapture(capturedUrl, capturedHtml)
     saveWebSession({
       url: capturedUrl,
       authorization: null,
       cookie,
     })
-    return { captured: true, url: capturedUrl, body: capturedBody }
+    return { captured: true, url: capturedUrl, body: capturedHtml }
   }
   return { captured: false, url: null, body: null }
 }
