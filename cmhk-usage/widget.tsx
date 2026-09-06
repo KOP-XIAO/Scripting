@@ -144,7 +144,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={78} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          {main ? `剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       <Spacer />
@@ -183,7 +183,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={92} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          {main ? `剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       {/* 右：标题=套餐名 + 身份 + 明细 */}
@@ -212,7 +212,7 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
           <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
-            value={`${fmtGB(b.remainingGB)} GB`} />
+            value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
         ))}
         <Spacer />
         <HStack spacing={4}>
