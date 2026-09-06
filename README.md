@@ -10,10 +10,17 @@
 
 ## 远程安装
 
-每个项目是一个自包含文件夹（含 `script.json`）。任选其一：
+每个项目是一个自包含文件夹（含 `script.json`），仓库根目录另附打包好的 **`.scripting` 安装包**：
 
-1. **整仓克隆**：`git clone <本仓库>` 后，把对应项目文件夹导入 Scripting（iCloud 同步目录或 `scripting-cli` 实时同步）。
-2. **单项目**：只取 `<项目名>/` 子文件夹的全部文件放入 Scripting 即可运行。
+| 项目 | 直接安装 / 远程导入地址 |
+|------|------|
+| cmhk-usage | `https://raw.githubusercontent.com/KOP-XIAO/Scripting/main/cmhk-usage.scripting` |
+
+在 Scripting App 中选「**导入远程脚本**」并粘贴上述地址即可。包内 `remoteResource` 已指向该地址并启用每日自动更新（86400s）。
+
+> 注意：导入用的是 `.scripting` 包文件的 raw 链接，**不是** `…/tree/main/…` 源码目录链接（后者会导入失败）。
+
+也可整仓克隆后把项目文件夹导入 Scripting（iCloud 同步目录或 `scripting-cli` 实时同步）。
 
 ## 目录约定（本机）
 
