@@ -4,8 +4,21 @@
 // 我们把第一个携带鉴权（Authorization / Cookie）的请求完整记录下来
 // （URL + 请求头），之后数据层直接重放该真实接口，绕开无文档的 REST 摸索。
 
-import { WebViewController } from "scripting"
 import { getWebStartUrl, saveWebSession } from "./cmhk"
+
+// WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
+declare const WebViewController: {
+  new (options?: { ephemeral?: boolean }): {
+    shouldAllowRequest?: (request: {
+      url: string
+      method: string
+      headers: Record<string, string>
+    }) => Promise<boolean>
+    loadURL(url: string): Promise<boolean>
+    present(options?: { fullscreen?: boolean; navigationTitle?: string }): Promise<void>
+    dispose(): void
+  }
+}
 
 // 起始页可在 App 内「网页登录起始页」设置中修改
 
