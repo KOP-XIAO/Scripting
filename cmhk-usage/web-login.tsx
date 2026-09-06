@@ -109,31 +109,34 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
   appendDebug(`起始页: ${getWebStartUrl()}`)
 
   let closed = false
+  let overviewSaved = false
   const presentP = webView
-    .present({ navigationTitle: "登录后打开「用量查询」，再关闭本窗口" })
+    .present({ navigationTitle: "登录后进入「用量查询」和「我的账户/首页」，再关闭本窗口" })
     .then(() => { closed = true })
     .catch(() => { closed = true })
 
-  // 轮询注入（每次页面导航后钩子会丢，需重注）
-  while (!closed && !best) {
+  // 轮询直到窗口关闭：用量 API 与账户概览页分别独立捕获
+  while (!closed) {
     await new Promise((r) => setTimeout(r, 1200))
     try {
       await webView.evaluateJavaScript(INJECT_HOOK)
       const url = await webView.evaluateJavaScript<string>("return location.href")
       if (!url) continue
       if (/usage|用量/i.test(url)) pageUrl = url
-      const probe2 = await webView.evaluateJavaScript<string>(
-        `return (function(){ try { var t = document.body.innerText; return JSON.stringify({ has: /應繳金額|我的積分|我的會籍|我的服務計劃/.test(t) }) } catch(e){ return JSON.stringify({has:false}) } })()`
-      ).catch(() => "{}")
-      if ((JSON.parse(probe2) || {}).has) {
-        try {
+      // 账户概览页（会员/积分/应缴/套餐）独立探测并只存一次
+      if (!overviewSaved) {
+        const probe2 = await webView.evaluateJavaScript<string>(
+          `return (function(){ try { var t = document.body.innerText; return JSON.stringify({ has: /應繳金額|我的積分|我的會籍|我的服務計劃/.test(t) }) } catch(e){ return JSON.stringify({has:false}) } })()`
+        ).catch(() => "{}")
+        if ((JSON.parse(probe2) || {}).has) {
           const html = await webView.getHTML()
           if (html && /應繳金額|我的積分|我的會籍|我的服務計劃/.test(html)) {
             saveCapture(url + " [账户概览]", html)
             saveOverviewHtml(html)
+            overviewSaved = true
             appendDebug("捕获账户概览页 HTML（已持久化）")
           }
-        } catch {}
+        }
       }
     } catch { /* 导航途中失败正常 */ }
   }
