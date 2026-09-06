@@ -30,16 +30,32 @@ function toGB(value: number, unit: string): number {
   return /mb/i.test(unit) ? +(value / 1024).toFixed(3) : value
 }
 
-export function parseUsageText(raw: string): ParsedUsage {
-  // JSON 则先拍平成文本（字段顺序即桶顺序：計劃數據 → 漫遊 → 話音 → 短訊）
-  let text = raw
+// HTML → 文本：真实捕获是 HTML 源码，可见文本被标签切碎（如
+// <span>已用：</span><span>0.00</span>/<span>60.00GB</span>），必须先去标签还原。
+function normalizeInput(raw: string): string {
   const trimmed = raw.trim()
+  // JSON 直接拍平
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     try {
-      const obj = JSON.parse(trimmed)
-      text = JSON.stringify(obj)
-    } catch { /* 保留原文 */ }
+      return JSON.stringify(JSON.parse(trimmed))
+    } catch { /* 落回文本处理 */ }
   }
+  if (!/<[a-z][\s\S]*>/i.test(trimmed)) return raw
+  return raw
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\s+/g, " ")
+}
+
+export function parseUsageText(raw: string): ParsedUsage {
+  const text = normalizeInput(raw)
 
   const out: ParsedUsage = {}
 
