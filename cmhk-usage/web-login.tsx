@@ -76,8 +76,8 @@ const INJECT_HOOK = `
 // 判断是否为用量/账户类 JSON 响应
 function looksLikeUsageJson(url: string, body: string): boolean {
   if (!body.startsWith("{") && !body.startsWith("[")) return false
-  if (/usageQuery|usage|account|balance|quota|用量|consumption/i.test(url)) return true
-  return /"(margin|total|usage|unit|balance)"\s*:/.test(body)
+  if (/usageQuery|usage|account|balance|quota|points|member|plan|bill|consumption|用量|账|賬/i.test(url)) return true
+  return /"(margin|total|usage|unit|balance|points|tier|plan)"\s*:/.test(body)
 }
 
 export async function runWebLogin(): Promise<{ captured: boolean; url: string | null; body: string | null }> {
@@ -120,7 +120,20 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     try {
       await webView.evaluateJavaScript(INJECT_HOOK)
       const url = await webView.evaluateJavaScript<string>("return location.href")
-      if (url && /usage|用量/i.test(url)) pageUrl = url
+      if (!url) continue
+      if (/usage|用量/i.test(url)) pageUrl = url
+      const probe2 = await webView.evaluateJavaScript<string>(
+        `return (function(){ try { var t = document.body.innerText; return JSON.stringify({ has: /應繳金額|我的積分|我的會籍|我的服務計劃/.test(t) }) } catch(e){ return JSON.stringify({has:false}) } })()`
+      ).catch(() => "{}")
+      if ((JSON.parse(probe2) || {}).has) {
+        try {
+          const html = await webView.getHTML()
+          if (html && /應繳金額|我的積分|我的會籍|我的服務計劃/.test(html)) {
+            saveCapture(url + " [账户概览]", html)
+            appendDebug("捕获账户概览页 HTML")
+          }
+        } catch {}
+      }
     } catch { /* 导航途中失败正常 */ }
   }
 

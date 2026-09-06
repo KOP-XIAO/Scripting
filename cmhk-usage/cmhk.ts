@@ -32,6 +32,7 @@ export type UsageData = {
   cycleEndDate: string | null    // 本周期结束日 ISO（若能取到）
   membershipTier: string | null  // 我的會籍（白金/金…）
   points: number | null          // 我的積分
+  buckets?: { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }[]
   fetchedAt: number              // 抓取时间戳 ms
   stale?: boolean                // 是否为失败后的缓存数据
 }
@@ -309,9 +310,9 @@ export function demoData(): UsageData {
     billAmountHKD: 0,
     dataTotalGB: 60,
     dataRemainingGB: 18.6,
-    roamDataTotalGB: 60,
-    roamDataRemainingGB: 60,
-    roamExpiry: "2026-10-06",
+    roamDataTotalGB: null,
+    roamDataRemainingGB: null,
+    roamExpiry: null,
     voiceTotalMin: 600,
     voiceRemainingMin: 200,
     voiceUnlimited: false,
@@ -320,6 +321,10 @@ export function demoData(): UsageData {
     cycleEndDate: null,
     membershipTier: "白金",
     points: 4006,
+    buckets: [
+      { name: "套餐內數據", totalGB: 60, remainingGB: 18.6, expiry: null },
+      { name: "額外贈送數據", totalGB: 60, remainingGB: 60, expiry: "2026-10-06" },
+    ],
     fetchedAt: Date.now(),
   }
 }
@@ -469,9 +474,20 @@ export async function refreshUsage(): Promise<UsageData> {
         } catch { /* 非 JSON 跳过 */ }
       }
     }
-    // 终极兜底：把响应（JSON 或 HTML）拍平成文本，按中文界面真实字段形态提取
+    // 文本兜底：本次响应（JSON/HTML）拍平提取
     const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
-    const parsed: ParsedUsage = { ...parsed0, ...jq }
+    let parsed: ParsedUsage = { ...parsed0, ...jq }
+    // 再用捕获环里的 HTML（账户概览页等）补会员/积分/应缴金额/套餐名
+    if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null) {
+      for (const c of readCaptures()) {
+        if (!c.body.startsWith("<")) continue
+        const extra = parseUsageText(c.body)
+        if (parsed.membershipTier == null && extra.membershipTier) parsed.membershipTier = extra.membershipTier
+        if (parsed.points == null && extra.points != null) parsed.points = extra.points
+        if (parsed.billAmountHKD == null && extra.billAmountHKD != null) parsed.billAmountHKD = extra.billAmountHKD
+        if (parsed.planName == null && extra.planName) parsed.planName = extra.planName
+      }
+    }
     const data: UsageData = {
       planName: getPath(summary, fm.planName) ?? auto.planName ?? parsed.planName ?? null,
       phoneNumber: maskPhone(getPhone()),
@@ -489,6 +505,12 @@ export async function refreshUsage(): Promise<UsageData> {
       smsRemaining: parsed.smsRemaining ?? null,
       membershipTier: parsed.membershipTier ?? null,
       points: parsed.points ?? null,
+      buckets: (parsed.buckets ?? []).map((b) => ({
+        name: b.name,
+        totalGB: b.totalGB ?? null,
+        remainingGB: b.remainingGB ?? null,
+        expiry: b.expiry ?? null,
+      })),
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? null,
       fetchedAt: Date.now(),

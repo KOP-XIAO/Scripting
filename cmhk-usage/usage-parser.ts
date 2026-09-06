@@ -4,6 +4,13 @@
 //   60.00GB 餘量 / 已用：0.00/60.00GB / 失效日期：2026.10.06 /
 //   應繳金額 HK$0 / 主賬號：56088892 / 200.00分鐘 餘量 / 500條 餘量
 
+export type UsageBucket = {
+  name: string            // 桶名（套餐内数据/额外赠送/漫遊數據…）
+  totalGB?: number
+  remainingGB?: number
+  expiry?: string
+}
+
 export type ParsedUsage = {
   planName?: string
   accountNumber?: string
@@ -20,6 +27,7 @@ export type ParsedUsage = {
   billAmountHKD?: number
   membershipTier?: string   // 我的會籍（白金/金/银…）
   points?: number           // 我的積分
+  buckets?: UsageBucket[]   // 全部 GB 桶（含套餐内/赠送/漫游）
 }
 
 function num(s: string | undefined): number | undefined {
@@ -182,6 +190,23 @@ export function parseUsageQueryJson(json: any): ParsedUsage {
   const anyB = dataB ?? roamB ?? buckets[0]
   if (anyB?.name) out.planName = String(anyB.name)
   if (anyB?.msisdn) out.accountNumber = String(anyB.msisdn)
+
+  // 全部 GB 桶：按界面出现顺序（套餐内 → 赠送/漫遊…），名字用 detail.name，退回 category
+  const gbBuckets = buckets
+    .filter((b) => /^(GB|MB)$/i.test(String(b.unit ?? "")))
+    .map((b) => {
+      const exp = b.expiryDate ?? b.expireDate ?? b.expiredDate ?? b.effectiveDate
+      return {
+        name: String(b.name ?? b.__cat ?? "套餐數據"),
+        totalGB: totalGBn(b),
+        remainingGB: toGBn(b),
+        expiry: exp ? String(exp).replace(/[./]/g, "-").slice(0, 10) : undefined,
+        __cat: String(b.__cat ?? ""),
+      }
+    })
+  if (gbBuckets.length) {
+    out.buckets = gbBuckets.map(({ __cat, ...rest }) => rest)
+  }
 
   if (dataB) {
     out.dataTotalGB = totalGBn(dataB)

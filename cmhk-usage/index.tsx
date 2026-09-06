@@ -56,6 +56,8 @@ import {
 import { runWebLogin } from "./web-login"
 import { theme } from "./theme"
 
+declare const ShareSheet: { present(items: any[]): Promise<boolean> }
+
 declare const Dialog: {
   alert(options: { message: string; title?: string; buttonLabel?: string }): Promise<void>
   confirm(options: { message: string; title?: string; cancelLabel?: string; confirmLabel?: string }): Promise<boolean>
@@ -189,6 +191,22 @@ function Page() {
     setStatus("已清除手动接口配置")
   }
 
+  async function handleExport() {
+    try {
+      const log = readDebugLog().join("\n")
+      const captures = readCaptures().map((c, i) => {
+        const kind = c.body.startsWith("{") || c.body.startsWith("[") ? "JSON" : "HTML"
+        return `\n===== 捕获 ${i + 1} (${kind}) ${new Date(c.at).toLocaleString()} =====\nURL: ${c.url}\n${c.body}`
+      }).join("")
+      const cache = data ? JSON.stringify({ ...data, fetchedAt: new Date(data.fetchedAt).toLocaleString() }, null, 2) : "(无)"
+      const text = `CMHK Usage 诊断包\n版本: ${"1.9.0"}\n生成: ${new Date().toLocaleString()}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}`
+      const ok = await ShareSheet.present([text])
+      if (!ok) setStatus("已取消导出")
+    } catch (e) {
+      await showError("导出失败", e)
+    }
+  }
+
   async function handleConnTest() {
     setBusy(true)
     try {
@@ -244,7 +262,7 @@ function Page() {
             <HStack spacing={16}>
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>
-                  {data.billAmountHKD != null ? "应缴金额" : "话费余额"}
+                  {data.billAmountHKD != null ? "代缴话费" : "话费余额"}
                 </Text>
                 <Text font="headline" foregroundStyle={theme.textPrimary}>
                   HK$ {fmtMoney(data.billAmountHKD ?? data.balanceHKD)}
@@ -263,16 +281,21 @@ function Page() {
                 </Text>
               </VStack>
             </HStack>
+            {(data.buckets ?? []).map((b, i) => (
+              <HStack key={i} spacing={6}>
+                <Image systemName={i === 0 ? "arrow.down.circle.fill" : "gift"} foregroundStyle={i === 0 ? theme.accentGreen : "#FFD66E"} frame={{ width: 13, height: 13 }} />
+                <Text font="caption" foregroundStyle={theme.textSecondary} lineLimit={1}>{b.name}</Text>
+                <Spacer />
+                <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
+                  {fmtGB(b.remainingGB)} <Text font="caption2" foregroundStyle={theme.textTertiary}>/ {fmtGB(b.totalGB)} GB</Text>
+                </Text>
+                {b.expiry && <Text font="caption2" foregroundStyle={theme.textTertiary}>{b.expiry}止</Text>}
+              </HStack>
+            ))}
             {(data.membershipTier || data.points != null) && (
               <Text font="caption" foregroundStyle={theme.textSecondary}>
                 {data.membershipTier ? `${data.membershipTier}會籍` : ""}
                 {data.points != null ? ` · 積分 ${data.points}` : ""}
-              </Text>
-            )}
-            {data.roamDataRemainingGB != null && (
-              <Text font="caption" foregroundStyle={theme.textSecondary}>
-                漫游数据：剩余 {fmtGB(data.roamDataRemainingGB)} / {fmtGB(data.roamDataTotalGB)} GB
-                {data.roamExpiry ? `（${data.roamExpiry} 失效）` : ""}
               </Text>
             )}
             <Text font="caption2" foregroundStyle={theme.textTertiary}>
@@ -313,6 +336,7 @@ function Page() {
 
         {/* 操作 */}
         <Text font="headline">操作</Text>
+        <Button title="导出诊断包（发给我分析）" action={handleExport} />
         <Button title="连接测试（诊断网络/TLS）" action={handleConnTest} />
         <Toggle title="演示模式（用示例数据展示 UI）" value={demo} onChanged={(v: boolean) => { setDemo(v); setDemoMode(v) }} />
         <Button title="立即刷新并更新小组件" action={handleRefresh} />
