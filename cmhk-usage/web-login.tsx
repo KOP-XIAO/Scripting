@@ -1,8 +1,9 @@
-// web-login.tsx — 网页登录捕获 v4（双保险）
-// 保险一：轮询期间 evaluateJavaScript 探测页面文本标记（餘量/已用/用量）→ 抓 getHTML()。
-// 保险二：shouldAllowRequest 记录所有导航 URL，命中用量页特征 → 关窗后无头 WebView
-//         重载该页抓 HTML（不依赖 present 期间的 evaluateJavaScript）。
-// 全程写调试日志（Storage cmhk.debuglog），App 诊断页可见。
+// web-login.tsx — 网页登录捕获 v5
+// 目标只有一个：抓到用量 API 的真实响应（真机实证：页面会调
+// /api/omni-channel-service-personal/rest/account-manager/cbs/usageQuery）。
+// 手段：向页面注入 fetch/XHR 钩子，把接口响应正文经 messageHandler 回传。
+// 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
+// （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
 import { appendDebug, getWebStartUrl, saveCapture, saveWebSession } from "./cmhk"
 
@@ -16,51 +17,93 @@ declare const WebViewController: {
       navigationType?: string
     }) => Promise<boolean>
     loadURL(url: string): Promise<boolean>
-    waitForLoad(): Promise<boolean>
     present(options?: { fullscreen?: boolean; navigationTitle?: string }): Promise<void>
     evaluateJavaScript<T = any>(javascript: string): Promise<T>
     getHTML(): Promise<string | null>
+    addScriptMessageHandler<P = any>(name: string, handler: (params?: P) => any): Promise<void>
     dispose(): void
   }
 }
 
-// 页面文本探针
-const PROBE = `return (function () {
-  try {
-    var t = document.body ? document.body.innerText : ""
-    return JSON.stringify({
-      url: location.href,
-      hasUsage: /餘量|已用|用量查询|用量查詢/.test(t)
-    })
-  } catch (e) {
-    return JSON.stringify({ url: "", hasUsage: false })
+// 注入钩子：包裹 fetch 与 XHR，回传 { url, method, reqBody, body }
+const INJECT_HOOK = `
+(function () {
+  if (window.__cmhkHooked) return true
+  window.__cmhkHooked = true
+  function send(info) {
+    try {
+      window.webkit.messageHandlers.cmhkCapture.postMessage(info)
+    } catch (e) {}
   }
-})()`
+  var of = window.fetch
+  if (of) {
+    window.fetch = function (input, init) {
+      var url = (input && input.url) || String(input)
+      var method = (init && init.method) || "GET"
+      var reqBody = (init && init.body) ? String(init.body).slice(0, 2000) : ""
+      return of.apply(this, arguments).then(function (r) {
+        try {
+          var c = r.clone()
+          c.text().then(function (t) {
+            if (t && t.length > 2) send({ url: url, method: method, reqBody: reqBody, body: t.slice(0, 60000) })
+          }).catch(function () {})
+        } catch (e) {}
+        return r
+      })
+    }
+  }
+  var O = XMLHttpRequest.prototype.open
+  var S = XMLHttpRequest.prototype.send
+  XMLHttpRequest.prototype.open = function (m, u) {
+    this.__cmhkUrl = u
+    this.__cmhkMethod = m
+    return O.apply(this, arguments)
+  }
+  XMLHttpRequest.prototype.send = function (b) {
+    var xhr = this
+    xhr.addEventListener("load", function () {
+      try {
+        send({ url: String(xhr.__cmhkUrl), method: xhr.__cmhkMethod || "GET",
+               reqBody: b ? String(b).slice(0, 2000) : "", body: String(xhr.responseText).slice(0, 60000) })
+      } catch (e) {}
+    })
+    return S.apply(this, arguments)
+  }
+  return true
+})()
+`
 
-const USAGE_URL_RE = /usage|用量|查詢|查询|enquiry|consumption/i
+// 判断是否为用量/账户类 JSON 响应
+function looksLikeUsageJson(url: string, body: string): boolean {
+  if (!body.startsWith("{") && !body.startsWith("[")) return false
+  if (/usageQuery|usage|account|balance|quota|用量|consumption/i.test(url)) return true
+  return /"(margin|total|usage|unit|balance)"\s*:/.test(body)
+}
 
 export async function runWebLogin(): Promise<{ captured: boolean; url: string | null; body: string | null }> {
   appendDebug("web-login: 开始")
   const webView = new WebViewController()
 
-  let capturedUrl: string | null = null
-  let capturedHtml: string | null = null
+  let best: { url: string; method: string; reqBody: string; body: string } | null = null
   let cookie: string | null = null
-  let usagePageUrl: string | null = null
-  const seenUrls: string[] = []
+  let pageUrl: string | null = null
 
-  // 保险二：盯导航 URL
-  webView.shouldAllowRequest = async (request) => {
+  await webView.addScriptMessageHandler<any>("cmhkCapture", (msg) => {
     try {
-      const url = request.url ?? ""
-      if (url && seenUrls.length < 50 && !seenUrls.includes(url)) seenUrls.push(url)
-      if (!usagePageUrl && USAGE_URL_RE.test(url)) {
-        usagePageUrl = url
-        appendDebug(`命中用量页 URL: ${url.slice(0, 120)}`)
+      const url = String(msg?.url ?? "")
+      const body = String(msg?.body ?? "")
+      if (!url || !body) return null
+      if (looksLikeUsageJson(url, body)) {
+        saveCapture(url, body)
+        // 首个命中即最佳；usageQuery 优先
+        if (!best || /usageQuery/i.test(url)) {
+          best = { url, method: String(msg?.method ?? "GET"), reqBody: String(msg?.reqBody ?? ""), body }
+          appendDebug(`捕获 API: ${best.method} ${url.slice(0, 120)}`)
+        }
       }
-    } catch { /* 观察失败不影响 */ }
-    return true
-  }
+    } catch { /* 忽略 */ }
+    return null
+  })
 
   await webView.loadURL(getWebStartUrl())
   appendDebug(`起始页: ${getWebStartUrl()}`)
@@ -71,68 +114,34 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     .then(() => { closed = true })
     .catch(() => { closed = true })
 
-  // 保险一：轮询探测（若 evaluateJavaScript 在展示期间可用则更快拿到）
-  let evalOk: boolean | null = null
-  while (!closed && !capturedHtml) {
-    await new Promise((r) => setTimeout(r, 1500))
+  // 轮询注入（每次页面导航后钩子会丢，需重注）
+  while (!closed && !best) {
+    await new Promise((r) => setTimeout(r, 1200))
     try {
-      const raw = await webView.evaluateJavaScript<string>(PROBE)
-      if (evalOk === null) {
-        evalOk = true
-        appendDebug("evaluateJavaScript 可用")
-      }
-      const probe = JSON.parse(raw || "{}")
-      if (probe.hasUsage && probe.url) {
-        const html = await webView.getHTML()
-        if (html && /餘量|已用|用量/.test(html)) {
-          capturedUrl = probe.url
-          capturedHtml = html
-          appendDebug(`轮询捕获成功: ${capturedUrl.slice(0, 120)}, HTML ${html.length} 字符`)
-          try {
-            cookie = await webView.evaluateJavaScript<string>("return document.cookie")
-          } catch { /* cookie 拿不到就算了 */ }
-        }
-      }
-    } catch (e: any) {
-      if (evalOk === null) {
-        evalOk = false
-        appendDebug(`evaluateJavaScript 在展示期间不可用: ${String(e?.message ?? e).slice(0, 100)}`)
-      }
-    }
+      await webView.evaluateJavaScript(INJECT_HOOK)
+      const url = await webView.evaluateJavaScript<string>("return location.href")
+      if (url && /usage|用量/i.test(url)) pageUrl = url
+    } catch { /* 导航途中失败正常 */ }
   }
 
   if (!closed) await presentP
+  try {
+    cookie = await webView.evaluateJavaScript<string>("return document.cookie")
+  } catch { /* 拿不到就算了 */ }
+  const finalPage = await webView.evaluateJavaScript<string>("return location.href").catch(() => null)
+  if (finalPage) pageUrl = finalPage
   webView.dispose()
-  appendDebug(`窗口关闭。命中URL=${usagePageUrl ?? "无"} 轮询捕获=${capturedHtml ? "有" : "无"}`)
+  appendDebug(`窗口关闭。API捕获=${best ? "有" : "无"} 用量页=${pageUrl ?? "未知"}`)
 
-  // 保险二落地：关窗后无头重载用量页
-  if (!capturedHtml && usagePageUrl) {
-    try {
-      const wv2 = new WebViewController()
-      await wv2.loadURL(usagePageUrl)
-      await wv2.waitForLoad()
-      const html = await wv2.getHTML()
-      wv2.dispose()
-      if (html && /餘量|已用|用量/.test(html)) {
-        capturedUrl = usagePageUrl
-        capturedHtml = html
-        appendDebug(`无头重载捕获成功: HTML ${html.length} 字符`)
-      } else {
-        appendDebug(`无头重载内容无用量标记（${html?.length ?? 0} 字符）`)
-      }
-    } catch (e: any) {
-      appendDebug(`无头重载失败: ${String(e?.message ?? e).slice(0, 120)}`)
-    }
-  }
-
-  if (!capturedUrl && !capturedHtml) {
-    appendDebug(`捕获失败。期间见过 ${seenUrls.length} 个URL: ${seenUrls.slice(0, 8).join(" | ").slice(0, 400)}`)
-  }
-
-  if (capturedUrl && capturedHtml) {
-    saveCapture(capturedUrl, capturedHtml)
-    saveWebSession({ url: capturedUrl, authorization: null, cookie })
-    return { captured: true, url: capturedUrl, body: capturedHtml }
+  if (best) {
+    saveWebSession({
+      url: best.url,
+      method: best.method,
+      reqBody: best.reqBody,
+      pageUrl: pageUrl ?? undefined,
+      cookie,
+    })
+    return { captured: true, url: best.url, body: best.body }
   }
   return { captured: false, url: null, body: null }
 }

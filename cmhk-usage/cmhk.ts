@@ -81,6 +81,7 @@ declare const WebViewController: {
     loadURL(url: string): Promise<boolean>
     waitForLoad(): Promise<boolean>
     getHTML(): Promise<string | null>
+    evaluateJavaScript<T = any>(javascript: string): Promise<T>
     dispose(): void
   }
 }
@@ -113,13 +114,27 @@ export function clearCredentials() {
 }
 
 // ---- 网页会话（web-login.tsx 捕获） ----
-export type WebSession = { url: string; authorization: string | null; cookie: string | null }
+export type WebSession = {
+  url: string                    // 捕获到的用量 API 地址
+  method?: string                // GET/POST
+  reqBody?: string               // 请求体（若有）
+  pageUrl?: string               // 当时所在页面（页内 fetch 的上下文）
+  authorization: string | null
+  cookie: string | null
+}
+
+const KC_WEB_METHOD = "cmhk.web.method"
+const KC_WEB_REQBODY = "cmhk.web.reqbody"
+const KC_WEB_PAGEURL = "cmhk.web.pageurl"
 
 export function saveWebSession(s: WebSession): boolean {
   const ok =
     Keychain.set(KC_WEB_URL, s.url) &&
     Keychain.set(KC_WEB_AUTH, s.authorization ?? "") &&
-    Keychain.set(KC_WEB_COOKIE, s.cookie ?? "")
+    Keychain.set(KC_WEB_COOKIE, s.cookie ?? "") &&
+    Keychain.set(KC_WEB_METHOD, s.method ?? "GET") &&
+    Keychain.set(KC_WEB_REQBODY, s.reqBody ?? "") &&
+    Keychain.set(KC_WEB_PAGEURL, s.pageUrl ?? "")
   return ok
 }
 export function readWebSession(): WebSession | null {
@@ -127,6 +142,9 @@ export function readWebSession(): WebSession | null {
   if (!url) return null
   return {
     url,
+    method: Keychain.get(KC_WEB_METHOD) || "GET",
+    reqBody: Keychain.get(KC_WEB_REQBODY) || "",
+    pageUrl: Keychain.get(KC_WEB_PAGEURL) || undefined,
     authorization: Keychain.get(KC_WEB_AUTH) || null,
     cookie: Keychain.get(KC_WEB_COOKIE) || null,
   }
@@ -138,6 +156,9 @@ export function clearWebSession() {
   Keychain.remove(KC_WEB_URL)
   Keychain.remove(KC_WEB_AUTH)
   Keychain.remove(KC_WEB_COOKIE)
+  Keychain.remove(KC_WEB_METHOD)
+  Keychain.remove(KC_WEB_REQBODY)
+  Keychain.remove(KC_WEB_PAGEURL)
 }
 
 // ---- 手动接口配置（抓包粘贴：终极兜底路径） ----
@@ -322,21 +343,33 @@ async function fetchJson(url: string, init: Record<string, any>, timeoutMs = 120
   return res.json()
 }
 
-// 网页会话刷新：无头 WebView 重载捕获到的用量页（SSR 站点，数据在 HTML 里；
-// 持久 Cookie 存储与登录时的 WebView 共享，httpOnly 会话 Cookie 也生效）
+// 网页会话刷新：无头 WebView 打开官网页面，在页面上下文里重放用量 API。
+// Cookie 由 WebView 自动携带（含 httpOnly 会话 Cookie），无需手动拼头。
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
+
+  // API 地址可能存的是相对路径，补 origin
+  const apiUrl = s.url.startsWith("http")
+    ? s.url
+    : `https://www.hk.chinamobile.com${s.url.startsWith("/") ? "" : "/"}${s.url}`
+  const pageUrl = s.pageUrl && s.pageUrl.startsWith("http")
+    ? s.pageUrl
+    : "https://www.hk.chinamobile.com/tc/"
+
   const wv = new WebViewController()
   try {
-    await wv.loadURL(s.url)
+    await wv.loadURL(pageUrl)
     await wv.waitForLoad()
-    const html = await wv.getHTML()
-    if (!html) throw new Error("页面内容为空")
-    if (!/餘量|已用|用量/.test(html)) {
+    const method = (s.method ?? "GET").toUpperCase()
+    const bodyJs = method !== "GET" && s.reqBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
+    const script = `return fetch(${JSON.stringify(apiUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: { "Accept": "application/json" }${bodyJs} }).then(function(r){ return r.text() })`
+    const text = await wv.evaluateJavaScript<string>(script)
+    if (!text) throw new Error("页内请求返回为空")
+    if (/^\s*<(!DOCTYPE|html)/i.test(text)) {
       throw new Error("网页会话已过期，请重新「网页登录」")
     }
-    return html
+    try { return JSON.parse(text) } catch { return text }
   } finally {
     wv.dispose()
   }
