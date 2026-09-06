@@ -31,6 +31,7 @@ const DEMO_FLAG = "cmhk.demo"
 const KEY_MANUAL_URL = "cmhk.manual.url"
 const KEY_MANUAL_HEADERS = "cmhk.manual.headers"
 const KEY_WEB_START_URL = "cmhk.web.starturl"
+const KEY_WEB_BODY = "cmhk.web.body"
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -148,6 +149,57 @@ export function getWebStartUrl(): string {
 }
 export function setWebStartUrl(url: string) {
   Storage.set(KEY_WEB_START_URL, url.trim())
+}
+
+// ---- 首次捕获的用量 body（来自 web-login 注入钩子） ----
+export function saveCapturedBody(body: string) {
+  Storage.set(KEY_WEB_BODY, body.slice(0, 60000))
+}
+export function readCapturedBody(): string | null {
+  return Storage.get<string>(KEY_WEB_BODY)
+}
+
+// 启发式字段识别：fieldMap 全部落空时，在 JSON 树里按字段名猜测用量数据
+function autoMap(json: any): Partial<UsageData> {
+  const flat: Record<string, any> = {}
+  const walk = (o: any) => {
+    if (o == null) return
+    if (Array.isArray(o)) { o.forEach(walk); return }
+    if (typeof o === "object") { Object.entries(o).forEach(([k, v]) => { flat[k.toLowerCase()] = v; walk(v) }) }
+  }
+  walk(json)
+
+  const pickNum = (re: RegExp): number | null => {
+    for (const k of Object.keys(flat)) {
+      if (re.test(k)) {
+        const n = toNum(flat[k])
+        if (n != null) return n
+      }
+    }
+    return null
+  }
+  const pickStr = (re: RegExp): string | null => {
+    for (const k of Object.keys(flat)) {
+      if (re.test(k) && typeof flat[k] === "string") return flat[k]
+    }
+    return null
+  }
+  // 流量单位猜测：>1e6 视为字节，>1e4 视为 MB，否则视为 GB
+  const toGB = (n: number | null): number | null => {
+    if (n == null) return null
+    if (n > 1e6) return +(n / 1e9).toFixed(2)
+    if (n > 1e4) return +(n / 1024).toFixed(2)
+    return n
+  }
+
+  const dataRemainingGB = toGB(pickNum(/(data|flow|gprs).*(remain|left|usable|balanc)|(remain|left).*(data|flow|gprs)/i))
+  const dataTotalGB = toGB(pickNum(/(data|flow|gprs).*(total|quota|allot|entitle)/i))
+  const balanceHKD = pickNum(/balance|余额|结余|remain.*fee/i)
+  const voiceRemainingMin = pickNum(/(voice|call|min).*(remain|left|usable)/i)
+  const billDay = pickNum(/bill.*day|cycle.*day|settle/i)
+  const planName = pickStr(/plan.*name|offering|套餐/i)
+
+  return { dataRemainingGB, dataTotalGB, balanceHKD, voiceRemainingMin, billDay, planName }
 }
 
 // ---- 友好错误映射：把 TLS/网络错误翻译成人话 ----
@@ -276,8 +328,17 @@ export async function refreshUsage(): Promise<UsageData> {
       // 手动接口：抓包粘贴的真实用量接口（最优先）
       summary = await fetchJson(manual.url, { headers: manual.headers })
     } else if (hasWebSession()) {
-      // 网页会话：重放捕获到的真实接口
-      summary = await fetchWithWebSession()
+      // 网页会话：重放捕获到的真实接口；失败则退回登录时捕获的内容
+      try {
+        summary = await fetchWithWebSession()
+      } catch (e) {
+        const body = readCapturedBody()
+        if (body) {
+          summary = JSON.parse(body)
+        } else {
+          throw e
+        }
+      }
     } else if (hasCredentials()) {
       summary = await authedGet(CMHK.paths.usageSummary)
     } else {
@@ -293,15 +354,16 @@ export async function refreshUsage(): Promise<UsageData> {
     } catch { /* 余额字段失败不阻塞主数据 */ }
 
     const fm = CMHK.fieldMap
+    const auto = autoMap(summary)
     const data: UsageData = {
-      planName: getPath(summary, fm.planName) ?? null,
+      planName: getPath(summary, fm.planName) ?? auto.planName ?? null,
       phoneNumber: maskPhone(getPhone()),
-      balanceHKD,
-      dataTotalGB: toNum(getPath(summary, fm.dataTotalGB)),
-      dataRemainingGB: toNum(getPath(summary, fm.dataRemainingGB)),
+      balanceHKD: balanceHKD ?? auto.balanceHKD ?? null,
+      dataTotalGB: toNum(getPath(summary, fm.dataTotalGB)) ?? auto.dataTotalGB ?? null,
+      dataRemainingGB: toNum(getPath(summary, fm.dataRemainingGB)) ?? auto.dataRemainingGB ?? null,
       voiceTotalMin: toNum(getPath(summary, fm.voiceTotalMin)),
-      voiceRemainingMin: toNum(getPath(summary, fm.voiceRemainingMin)),
-      billDay: toNum(getPath(summary, fm.billDay)),
+      voiceRemainingMin: toNum(getPath(summary, fm.voiceRemainingMin)) ?? auto.voiceRemainingMin ?? null,
+      billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? null,
       fetchedAt: Date.now(),
     }

@@ -24,6 +24,7 @@ import {
 import {
   clearCredentials,
   clearManualEndpoint,
+  saveCapturedBody,
   clearWebSession,
   connectionTest,
   diagnose,
@@ -103,11 +104,12 @@ function Page() {
     try {
       const r = await runWebLogin()
       if (r.captured) {
+        if (r.body) saveCapturedBody(r.body)
         setWebSession(true)
-        setStatus("网页会话已保存，点击「刷新」拉取数据")
+        setStatus("已捕获用量接口，正在拉取数据…")
         await handleRefresh()
       } else {
-        setStatus("未捕获到登录请求：请确认已在网页中登录并打开过用量页面")
+        setStatus("未捕获到用量数据：请确认登录后打开过「用量查询」页面，再关闭窗口")
       }
     } catch (e) {
       await showError("网页登录失败", e)
@@ -261,7 +263,7 @@ function Page() {
         <Text font="headline">登录</Text>
         <Button title={webSession ? "重新网页登录（已保存会话）" : "网页登录 CMHK（推荐）"} action={handleWebLogin} />
         <Text font="caption" foregroundStyle="secondary">
-          在打开的官网页面中登录并进入「用量/Usage」页面，脚本会自动记录会话。
+          在打开的官网页面中登录并进入「用量查询」页面，脚本会自动捕获数据接口。
         </Text>
 
         {/* 密码方式（备选） */}
