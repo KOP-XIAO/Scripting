@@ -30,6 +30,11 @@ function ratioOf(b?: Bucket | null): number | null {
 }
 
 // 分类→短标签
+function shortPlan(s: string): string {
+  // "5G一咭三地計劃60GB" → "5G一咭三地計劃"
+  const m = s.match(/^(.+?計劃)\d+/)
+  return (m ? m[1] : s).length > 16 ? `${(m ? m[1] : s).slice(0, 16)}…` : (m ? m[1] : s)
+}
 function shortLabel(s: string): string {
   if (/服務計劃|数据|數據/.test(s)) return "套餐内"
   if (/漫遊|漫游/.test(s)) return "漫游"
@@ -71,10 +76,10 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={6}>
-      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 13, height: 13 }} />
-      <Text font="caption" foregroundStyle={theme.textTertiary}>{label}</Text>
+      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 11, height: 11 }} />
+      <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
-      <Text font="subheadline" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
+      <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
     </HStack>
   )
 }
@@ -95,8 +100,8 @@ function SmallWidget({ data }: { data: UsageData }) {
     <VStack spacing={6} padding={12} background={theme.cardBackground as any}>
       <HStack spacing={4}>
         <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 12, height: 12 }} />
-        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary}>
-          {data.accountNumber ?? data.phoneNumber ?? "CMHK"}
+        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
+          {data.nickname || data.phoneNumber || data.accountNumber || "CMHK"}
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 10, height: 10 }} />
@@ -112,7 +117,7 @@ function SmallWidget({ data }: { data: UsageData }) {
         {main ? `${shortLabel(main.name)} 剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
       </Text>
       <HStack alignment="lastTextBaseline" spacing={3}>
-        <Text font="headline" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
+        <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
         <Text font="caption2" foregroundStyle={theme.textTertiary}>
@@ -128,7 +133,9 @@ function MediumWidget({ data }: { data: UsageData }) {
   const main = buckets[0]
   const extras = buckets.slice(1).slice(0, 1) // 精简：最多 1 个附加流量桶
   const fee = FeeText({ d: data })
-  const voice = data.voiceUnlimited ? "无限通话" : `${fmtMin(data.voiceRemainingMin)} 分钟`
+  const voice = data.voiceUnlimited
+    ? (data.voiceRemainingMin != null ? `${fmtMin(data.voiceRemainingMin)} 分钟·∞` : "无限通话")
+    : `${fmtMin(data.voiceRemainingMin)} 分钟`
   const member = data.membershipTier || data.points != null
   return (
     <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
@@ -142,11 +149,16 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
           {data.planName ?? "CMHK"}
         </Text>
-        {member && (
-          <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
-            {data.membershipTier ?? ""}{data.points != null ? ` · ${data.points}分` : ""}
+        <HStack spacing={5}>
+          <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
+            {data.planName ? shortPlan(data.planName) : ""}
           </Text>
-        )}
+          {member && (
+            <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
+              {data.membershipTier ?? ""}{data.points != null ? ` · ${data.points}分` : ""}
+            </Text>
+          )}
+        </HStack>
         <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
         <Row icon="phone" label="通话" value={voice} />
         {extras.map((b, i) => (

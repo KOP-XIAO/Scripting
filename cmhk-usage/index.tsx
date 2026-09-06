@@ -246,7 +246,7 @@ function Page() {
           <VStack spacing={6} padding={12} background={theme.cardBackground as any} cornerRadius={16}>
             <HStack>
               <Text font="caption" fontWeight="medium" foregroundStyle={theme.textSecondary}>
-                {data.planName ?? "CMHK"} {data.phoneNumber ? `· ${data.phoneNumber}` : ""}
+                {data.nickname || data.accountNumber || data.phoneNumber || "CMHK"} {data.phoneNumber ? ` · ${data.phoneNumber}` : ""} {data.planName ? `· ${data.planName}` : ""}
               </Text>
               <Spacer />
               {data.stale && (
@@ -274,7 +274,7 @@ function Page() {
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>通话剩余</Text>
                 <Text font="headline" foregroundStyle={theme.textPrimary}>
-                  {data.voiceUnlimited ? "无限" : `${fmtMin(data.voiceRemainingMin)} 分钟`}
+                  {data.voiceUnlimited ? (data.voiceRemainingMin != null ? `${fmtMin(data.voiceRemainingMin)} 分钟·∞` : "无限通话") : `${fmtMin(data.voiceRemainingMin)} 分钟`}
                 </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>

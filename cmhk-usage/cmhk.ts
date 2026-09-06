@@ -11,7 +11,7 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
-import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, ParsedUsage } from "./usage-parser"
+import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
   planName: string | null        // 套餐名（如 5G一咭三地計劃60GB）
@@ -32,7 +32,9 @@ export type UsageData = {
   cycleEndDate: string | null    // 本周期结束日 ISO（若能取到）
   membershipTier: string | null  // 我的會籍（白金/金…）
   points: number | null          // 我的積分
+  nickname: string | null        // 昵称（getNickname）
   buckets?: { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }[]
+  nickname: string | null        // 昵称
   fetchedAt: number              // 抓取时间戳 ms
   stale?: boolean                // 是否为失败后的缓存数据
 }
@@ -44,6 +46,7 @@ const KEY_MANUAL_HEADERS = "cmhk.manual.headers"
 const KEY_WEB_START_URL = "cmhk.web.starturl"
 const KEY_WEB_BODY = "cmhk.web.body"
 const KEY_CAPTURES = "cmhk.captures" // 捕获环：最近 5 个疑似用量接口
+const KEY_OVERVIEW_HTML = "cmhk.overview.html" // 账户概览页 HTML（持久，供会员/积分/应缴）
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -321,6 +324,7 @@ export function demoData(): UsageData {
     cycleEndDate: null,
     membershipTier: "白金",
     points: 4006,
+    nickname: "KOP-Shawn",
     buckets: [
       { name: "套餐內數據", totalGB: 60, remainingGB: 18.6, expiry: null },
       { name: "額外贈送數據", totalGB: 60, remainingGB: 60, expiry: "2026-10-06" },
@@ -481,6 +485,7 @@ export async function refreshUsage(): Promise<UsageData> {
     }
     // 文本兜底：本次响应（JSON/HTML）拍平提取
     const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
+    {}
     let parsed: ParsedUsage = { ...parsed0, ...jq }
     // 捕获环里所有 JSON 逐个补充（余额/套餐/会籍/积分/用量）
     for (const c of readCaptures()) {
@@ -494,6 +499,8 @@ export async function refreshUsage(): Promise<UsageData> {
         const w = parseWealthJson(o)
         if (parsed.membershipTier == null && w.membershipTier) parsed.membershipTier = w.membershipTier
         if (parsed.points == null && w.points != null) parsed.points = w.points
+        const nick = parseNicknameJson(o)
+        if (parsed.nickname == null && nick) parsed.nickname = nick
         const q = parseUsageQueryJson(o)
         if (parsed.dataRemainingGB == null && q.dataRemainingGB != null) parsed.dataRemainingGB = q.dataRemainingGB
         if (parsed.dataTotalGB == null && q.dataTotalGB != null) parsed.dataTotalGB = q.dataTotalGB
@@ -502,8 +509,16 @@ export async function refreshUsage(): Promise<UsageData> {
         if ((parsed.buckets ?? []).length === 0 && q.buckets) parsed.buckets = q.buckets
       } catch { /* 非 JSON 跳过 */ }
     }
-    // 再用捕获环里的 HTML（账户概览页等）补会员/积分/应缴金额/套餐名
+    // 再用捕获环 + 持久化概览页 HTML 补会员/积分/应缴金额/套餐名
     if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null) {
+      const ovh = readOverviewHtml()
+      if (ovh) {
+        const extra = parseUsageText(ovh)
+        if (parsed.membershipTier == null && extra.membershipTier) parsed.membershipTier = extra.membershipTier
+        if (parsed.points == null && extra.points != null) parsed.points = extra.points
+        if (parsed.billAmountHKD == null && extra.billAmountHKD != null) parsed.billAmountHKD = extra.billAmountHKD
+        if (parsed.planName == null && extra.planName) parsed.planName = extra.planName
+      }
       for (const c of readCaptures()) {
         if (!c.body.startsWith("<")) continue
         const extra = parseUsageText(c.body)
@@ -530,6 +545,7 @@ export async function refreshUsage(): Promise<UsageData> {
       smsRemaining: parsed.smsRemaining ?? null,
       membershipTier: parsed.membershipTier ?? null,
       points: parsed.points ?? null,
+      nickname: parsed.nickname ?? null,
       buckets: (parsed.buckets ?? []).map((b) => ({
         name: b.name,
         totalGB: b.totalGB ?? null,
@@ -642,3 +658,7 @@ export function daysUntilCycleEnd(d: UsageData): number | null {
   if (!Number.isFinite(t)) return null
   return Math.max(0, Math.ceil((t - Date.now()) / 86400000))
 }
+
+// 账户概览页 HTML 持久存取（会员/积分/应缴的来源之一）
+export function saveOverviewHtml(html: string) { Storage.set(KEY_OVERVIEW_HTML, html.slice(0, 600000)) }
+export function readOverviewHtml(): string | null { return Storage.get<string>(KEY_OVERVIEW_HTML) }

@@ -5,7 +5,7 @@
 // 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
 // （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
-import { appendDebug, getWebStartUrl, saveCapture, saveWebSession } from "./cmhk"
+import { appendDebug, getWebStartUrl, saveCapture, saveOverviewHtml, saveWebSession } from "./cmhk"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -130,7 +130,8 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
           const html = await webView.getHTML()
           if (html && /應繳金額|我的積分|我的會籍|我的服務計劃/.test(html)) {
             saveCapture(url + " [账户概览]", html)
-            appendDebug("捕获账户概览页 HTML")
+            saveOverviewHtml(html)
+            appendDebug("捕获账户概览页 HTML（已持久化）")
           }
         } catch {}
       }
