@@ -326,7 +326,7 @@ function Page() {
                 <Text font="caption" foregroundStyle={theme.textSecondary} lineLimit={1}>{b.name}</Text>
                 <Spacer />
                 <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
-                  {fmtGB(b.remainingGB)} <Text font="caption2" foregroundStyle={theme.textTertiary}>/ {fmtGB(b.totalGB)} GB</Text>
+                  {fmtGB(b.remainingGB)} / {fmtGB(b.totalGB)} GB
                 </Text>
                 {b.expiry && <Text font="caption2" foregroundStyle={theme.textTertiary}>{b.expiry}止</Text>}
               </HStack>

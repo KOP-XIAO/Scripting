@@ -81,7 +81,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
-    <HStack spacing={6}>
+    <HStack spacing={8} alignment="center">
       <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 8, height: 8 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
@@ -109,11 +109,11 @@ function SmallWidget({ data }: { data: UsageData }) {
   const idname = identity(data) || "CMHK"
   const tail = phoneTail(data)
   return (
-    <VStack spacing={6} padding={12} background={theme.cardBackground as any}>
+    <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
       <HStack spacing={4}>
         <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 9, height: 9 }} />
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
-          {idname}{tail ? ` · ${tail}` : ""}
+          {idname}{tail && !/^尾号/.test(idname) ? ` · ${tail}` : ""}
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 8, height: 8 }} />
@@ -149,21 +149,21 @@ function MediumWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   const member = data.membershipTier || data.points != null
   return (
-    <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
-      <VStack spacing={4} alignment="center">
+    <HStack spacing={18} padding={16} background={theme.cardBackground as any}>
+      <VStack spacing={5} alignment="center">
         <DataRing bucket={main} size={92} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
           {main ? `剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
-      <VStack spacing={6} frame={{ maxWidth: "infinity" } as any}>
+      <VStack spacing={6} frame={{ maxWidth: "infinity" } as never}>
         <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
           {shortPlan(data.planName ?? "CMHK")}
         </Text>
         <HStack spacing={6}>
           {idname && (
             <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
-              {idname}{tail ? ` · ${tail}` : ""}
+              {idname}{tail && !/^尾号/.test(idname) ? ` · ${tail}` : ""}
             </Text>
           )}
           {member && (
