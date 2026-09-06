@@ -8,6 +8,7 @@
 import {
   Button,
   HStack,
+  Image,
   List,
   Navigation,
   NavigationStack,

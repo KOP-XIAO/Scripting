@@ -364,12 +364,17 @@ async function fetchWithWebSession(): Promise<any> {
 
   const wv = new WebViewController()
   try {
-    await wv.loadURL(pageUrl)
-    await wv.waitForLoad()
+    // 每一步都加超时保护：无头 WebView 在受限上下文中可能加载卡死
+    const withTimeout = <T,>(pr: Promise<T>, ms: number, label: string): Promise<T> =>
+      Promise.race([pr, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`超时: ${label}`)), ms))])
+
+    await withTimeout(wv.loadURL(pageUrl), 20000, "打开页面")
+    await withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续尝试 */ })
+    await new Promise((r) => setTimeout(r, 1200)) // 等残余 JS 跑完
     const method = (s.method ?? "GET").toUpperCase()
     const bodyJs = method !== "GET" && s.reqBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
     const script = `return fetch(${JSON.stringify(apiUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: { "Accept": "application/json" }${bodyJs} }).then(function(r){ return r.text() })`
-    const text = await wv.evaluateJavaScript<string>(script)
+    const text = await withTimeout(wv.evaluateJavaScript<string>(script), 15000, "页内请求")
     if (!text) throw new Error("页内请求返回为空")
     if (/^\s*<(!DOCTYPE|html)/i.test(text)) {
       throw new Error("网页会话已过期，请重新「网页登录」")

@@ -79,7 +79,7 @@ function StatRow({ icon, label, value, unit }: { icon: string; label: string; va
         <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
           {value}
         </Text>
-        {unit ? <Text font="caption2" foregroundStyle={theme.textTertiary}>{unit}</Text> : <></>}
+        {unit && <Text font="caption2" foregroundStyle={theme.textTertiary}>{unit}</Text>}
       </HStack>
     </HStack>
   )
