@@ -1,0 +1,230 @@
+// widget.tsx — CMHK 用量小组件（systemSmall / systemMedium）
+// 现代化视觉：深色渐变卡片 + 渐变流量环 + 账单日倒计时。
+// 数据策略：优先读缓存；缓存超过 30 分钟且有 token 时，先做一次轻量刷新再渲染。
+// 注意：Widget.present() 之后执行上下文立即销毁，所有数据必须在此之前准备好。
+
+import {
+  Button,
+  Circle,
+  HStack,
+  Image,
+  Spacer,
+  Text,
+  VStack,
+  Widget,
+  ZStack,
+} from "scripting"
+import {
+  dataRemainingRatio,
+  daysUntilBillDay,
+  fmtGB,
+  fmtMin,
+  fmtMoney,
+  fmtUpdatedAt,
+  readCache,
+  refreshUsage,
+  UsageData,
+} from "./cmhk"
+import { ringStops, theme } from "./theme"
+import { RefreshIntent } from "./app_intents"
+
+const STALE_AFTER_MS = 30 * 60 * 1000
+
+// ---------- 小组件部件 ----------
+
+function DataRing({ data, size }: { data: UsageData; size: number }) {
+  const ratio = dataRemainingRatio(data)
+  const stops = ringStops(ratio ?? 1)
+  const lineWidth = Math.max(7, Math.round(size * 0.09))
+
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      {/* 底轨 */}
+      <Circle
+        stroke={{
+          shapeStyle: theme.ringTrack,
+          strokeStyle: { lineWidth, lineCap: "round" },
+        }}
+      />
+      {/* 渐变进度环：从 12 点方向起顺时针 */}
+      {ratio != null && (
+        <Circle
+          trim={{ from: 0, to: ratio }}
+          stroke={{
+            shapeStyle: {
+              gradient: [...stops],
+              startPoint: { x: 0.5, y: 0 },
+              endPoint: { x: 0.5, y: 1 },
+            },
+            strokeStyle: { lineWidth, lineCap: "round" },
+          }}
+          rotationEffect={-90}
+        />
+      )}
+      <VStack spacing={0}>
+        <Text font="title3" fontWeight="bold" foregroundStyle={theme.textPrimary}>
+          {ratio != null ? `${Math.round(ratio * 100)}%` : "--"}
+        </Text>
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>
+          流量剩余
+        </Text>
+      </VStack>
+    </ZStack>
+  )
+}
+
+function StatRow({ icon, label, value, unit }: {
+  icon: string
+  label: string
+  value: string
+  unit?: string
+}) {
+  return (
+    <HStack spacing={6}>
+      <Image systemName={icon} foregroundStyle={theme.accent} frame={{ width: 14, height: 14 }} />
+      <Text font="caption" foregroundStyle={theme.textTertiary}>{label}</Text>
+      <Spacer />
+      <HStack spacing={2} alignment="lastTextBaseline">
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
+          {value}
+        </Text>
+        {unit && (
+          <Text font="caption2" foregroundStyle={theme.textTertiary}>{unit}</Text>
+        )}
+      </HStack>
+    </HStack>
+  )
+}
+
+function UpdatedFooter({ data, compact }: { data: UsageData; compact: boolean }) {
+  return (
+    <HStack spacing={4}>
+      {data.stale && (
+        <Image systemName="exclamationmark.triangle" foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
+      )}
+      <Text font="caption2" foregroundStyle={theme.textTertiary}>
+        更新于 {fmtUpdatedAt(data.fetchedAt)}
+      </Text>
+      <Spacer />
+      {!compact && (
+        <Button intent={RefreshIntent(undefined)}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 12, height: 12 }} />
+        </Button>
+      )}
+    </HStack>
+  )
+}
+
+function billDayText(data: UsageData): { value: string; unit: string } {
+  const days = daysUntilBillDay(data)
+  if (days != null) return { value: String(days), unit: "天后结算" }
+  if (data.billDay != null) return { value: `每月${data.billDay}日`, unit: "" }
+  return { value: "--", unit: "" }
+}
+
+// ---------- 小组件主体 ----------
+
+function SmallWidget({ data }: { data: UsageData }) {
+  const bill = billDayText(data)
+  return (
+    <VStack spacing={8} padding={12} background={theme.cardBackground as any}>
+      <HStack spacing={4}>
+        <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 12, height: 12 }} />
+        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary}>
+          CMHK {data.phoneNumber ?? ""}
+        </Text>
+      </HStack>
+      <Spacer />
+      <HStack>
+        <Spacer />
+        <DataRing data={data} size={86} />
+        <Spacer />
+      </HStack>
+      <Spacer />
+      <HStack alignment="lastTextBaseline" spacing={3}>
+        <Text font="headline" fontWeight="bold" foregroundStyle={theme.textPrimary}>
+          {fmtMoney(data.balanceHKD)}
+        </Text>
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>HK$ 余额</Text>
+        <Spacer />
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>{bill.value}</Text>
+      </HStack>
+      <UpdatedFooter data={data} compact />
+    </VStack>
+  )
+}
+
+function MediumWidget({ data }: { data: UsageData }) {
+  const bill = billDayText(data)
+  return (
+    <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
+      {/* 左：流量环 */}
+      <VStack spacing={4} alignment="center">
+        <DataRing data={data} size={96} />
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>
+          剩余 {fmtGB(data.dataRemainingGB)} / {fmtGB(data.dataTotalGB)} GB
+        </Text>
+      </VStack>
+      {/* 右：关键数据 */}
+      <VStack spacing={6} frame={{ maxWidth: "infinity" } as any}>
+        <HStack spacing={4}>
+          <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
+            CMHK 中国移动香港
+          </Text>
+          <Spacer />
+        </HStack>
+        <StatRow icon="creditcard" label="话费余额" value={fmtMoney(data.balanceHKD)} unit="HK$" />
+        <StatRow icon="phone" label="通话剩余" value={fmtMin(data.voiceRemainingMin)} unit="分钟" />
+        <StatRow icon="calendar" label="账单日" value={bill.value} unit={bill.unit} />
+        <Spacer />
+        <UpdatedFooter data={data} compact={false} />
+      </VStack>
+    </HStack>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <VStack spacing={8} padding={16} background={theme.cardBackground as any} alignment="center">
+      <Spacer />
+      <Image systemName="antenna.radiowaves.left.and.right.slash" foregroundStyle={theme.textTertiary} frame={{ width: 28, height: 28 }} />
+      <Text font="caption" foregroundStyle={theme.textSecondary} multilineTextAlignment="center">
+        {message}
+      </Text>
+      <Spacer />
+    </VStack>
+  )
+}
+
+// ---------- 入口 ----------
+
+async function run() {
+  let data = readCache()
+  // 缓存过期则尝试轻量刷新；失败则沿用缓存渲染（stale 标记会显示在页脚）
+  if (data && Date.now() - data.fetchedAt > STALE_AFTER_MS) {
+    try {
+      data = await refreshUsage()
+    } catch {
+      /* 网络失败不阻塞渲染，用旧缓存兜底 */
+    }
+  }
+
+  if (!data) {
+    Widget.present(<EmptyState message={"请先打开 App 内的\n「CMHK Usage」完成登录"} />, {
+      reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
+    })
+    return
+  }
+
+  const family = Widget.family
+  const view = family === "systemMedium" || family === "medium"
+    ? <MediumWidget data={data} />
+    : <SmallWidget data={data} />
+
+  // 30 分钟后让系统重新取时间线
+  Widget.present(view, {
+    reloadPolicy: { policy: "after", date: new Date(Date.now() + 30 * 60 * 1000) },
+  })
+}
+
+run()
