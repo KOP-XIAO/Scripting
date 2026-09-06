@@ -124,8 +124,11 @@ function SmallWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   return (
     <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
-      <BrandBar compact />
+      <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+        {shortPlan(data.planName ?? "CMHK")}
+      </Text>
       <HStack spacing={4}>
+        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.accentGreen}>CMHK</Text>
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
           {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
@@ -137,7 +140,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={78} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          {main ? `套餐內 剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       <Spacer />
@@ -169,19 +172,23 @@ function MediumWidget({ data }: { data: UsageData }) {
   const idname = identity(data)
   const tail = phoneTail(data)
   const member = data.membershipTier || data.points != null
+  const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
     <HStack spacing={18} padding={16} background={theme.cardBackground as any}>
-      {/* 左：套餐內 流量环 */}
+      {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={92} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          {main ? `套餐內 剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
-      {/* 右：品牌 + 身份 + 明细 */}
+      {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={7} frame={{ maxWidth: "infinity" } as never}>
-        <BrandBar compact={false} />
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+          {shortPlan(data.planName ?? "CMHK")}
+        </Text>
         <HStack spacing={6}>
+          <Text font="caption2" fontWeight="medium" foregroundStyle={theme.accentGreen}>CMHK</Text>
           {idname && (
             <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
               {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
@@ -197,12 +204,12 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
           <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
-            value={`${fmtGB(b.remainingGB)} GB${expiryShort(b) ? ` | ${expiryShort(b)}止` : ""}`} />
+            value={`${fmtGB(b.remainingGB)} GB`} />
         ))}
         <Spacer />
         <HStack spacing={4}>
           <Text font="caption2" foregroundStyle={theme.textTertiary}>
-            更新於 {fmtUpdatedAt(data.fetchedAt)}
+            更新於 {fmtUpdatedAt(data.fetchedAt)}{cycleExp ? ` | 到期 ${expiryShort(main!)}` : ""}
           </Text>
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>
