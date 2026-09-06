@@ -101,7 +101,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <HStack spacing={4}>
         <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 9, height: 9 }} />
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
-          {data.nickname || data.phoneNumber || data.accountNumber || "CMHK"}
+          {data.nickname || data.userName || data.phoneNumber || data.accountNumber || "CMHK"}
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />

@@ -201,7 +201,8 @@ function Page() {
         return `\n===== 捕获 ${i + 1} (${kind}) ${new Date(c.at).toLocaleString()} =====\nURL: ${c.url}\n${c.body}`
       }).join("")
       const cache = data ? JSON.stringify({ ...data, fetchedAt: new Date(data.fetchedAt).toLocaleString() }, null, 2) : "(无)"
-      const text = `CMHK Usage 诊断包\n版本: ${"1.9.0"}\n生成: ${new Date().toLocaleString()}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}`
+      const V = "1.14.0"
+    const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}`
       const ok = await ShareSheet.present([text])
       if (!ok) setStatus("已取消导出")
     } catch (e) {
@@ -246,7 +247,7 @@ function Page() {
           <VStack spacing={6} padding={12} background={theme.cardBackground as any} cornerRadius={16}>
             <HStack>
               <Text font="caption" fontWeight="medium" foregroundStyle={theme.textSecondary}>
-                {data.nickname || data.accountNumber || data.phoneNumber || "CMHK"} {data.phoneNumber ? ` · ${data.phoneNumber}` : ""} {data.planName ? `· ${data.planName}` : ""}
+                {data.nickname || data.userName || data.phoneNumber || data.accountNumber || "CMHK"} {data.phoneNumber ? ` · ${data.phoneNumber}` : ""} {data.planName ? `· ${data.planName}` : ""}
               </Text>
               <Spacer />
               {data.stale && (

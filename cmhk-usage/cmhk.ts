@@ -33,6 +33,7 @@ export type UsageData = {
   membershipTier: string | null  // 我的會籍（白金/金…）
   points: number | null          // 我的積分
   nickname: string | null        // 昵称（getNickname）
+  userName: string | null         // 账户真实姓名（queryAccountInfo.userName）
   buckets?: { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }[]
   nickname: string | null        // 昵称
   fetchedAt: number              // 抓取时间戳 ms
@@ -47,6 +48,7 @@ const KEY_WEB_START_URL = "cmhk.web.starturl"
 const KEY_WEB_BODY = "cmhk.web.body"
 const KEY_CAPTURES = "cmhk.captures" // 捕获环：最近 5 个疑似用量接口
 const KEY_OVERVIEW_HTML = "cmhk.overview.html" // 账户概览页 HTML（持久，供会员/积分/应缴）
+const KEY_PROFILE = "cmhk.profile" // 解析出的档案（nickname/会籍/积分/姓名），防捕获环被挤掉
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -325,6 +327,7 @@ export function demoData(): UsageData {
     membershipTier: "白金",
     points: 4006,
     nickname: "KOP-Shawn",
+    userName: "XIAO SONGWEN",
     buckets: [
       { name: "套餐內數據", totalGB: 60, remainingGB: 18.6, expiry: null },
       { name: "額外贈送數據", totalGB: 60, remainingGB: 60, expiry: "2026-10-06" },
@@ -485,8 +488,15 @@ export async function refreshUsage(): Promise<UsageData> {
     }
     // 文本兜底：本次响应（JSON/HTML）拍平提取
     const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
-    {}
     let parsed: ParsedUsage = { ...parsed0, ...jq }
+    // 持久化档案（上次解析出的昵称/会籍/积分/姓名）作为保底
+    const prof = Storage.get<{ nickname?: string; membershipTier?: string; points?: number; userName?: string }>(KEY_PROFILE)
+    if (prof) {
+      if (parsed.nickname == null && prof.nickname) parsed.nickname = prof.nickname
+      if (parsed.membershipTier == null && prof.membershipTier) parsed.membershipTier = prof.membershipTier
+      if (parsed.points == null && prof.points != null) parsed.points = prof.points
+      if (parsed.userName == null && prof.userName) parsed.userName = prof.userName
+    }
     // 捕获环里所有 JSON 逐个补充（余额/套餐/会籍/积分/用量）
     for (const c of readCaptures()) {
       if (!c.body.startsWith("{") && !c.body.startsWith("[")) continue
@@ -496,6 +506,7 @@ export async function refreshUsage(): Promise<UsageData> {
         if (parsed.billAmountHKD == null && acco.billAmountHKD != null) parsed.billAmountHKD = acco.billAmountHKD
         if (parsed.planName == null && acco.planName) parsed.planName = acco.planName
         if (parsed.accountNumber == null && acco.accountNumber) parsed.accountNumber = acco.accountNumber
+        if (parsed.userName == null && acco.userName) parsed.userName = acco.userName
         const w = parseWealthJson(o)
         if (parsed.membershipTier == null && w.membershipTier) parsed.membershipTier = w.membershipTier
         if (parsed.points == null && w.points != null) parsed.points = w.points
@@ -546,6 +557,7 @@ export async function refreshUsage(): Promise<UsageData> {
       membershipTier: parsed.membershipTier ?? null,
       points: parsed.points ?? null,
       nickname: parsed.nickname ?? null,
+      userName: parsed.userName ?? null,
       buckets: (parsed.buckets ?? []).map((b) => ({
         name: b.name,
         totalGB: b.totalGB ?? null,
@@ -557,6 +569,13 @@ export async function refreshUsage(): Promise<UsageData> {
       fetchedAt: Date.now(),
     }
     writeCache(data)
+    // 持久化档案，避免捕获环被挤掉后昵称/会籍/积分丢失
+    Storage.set(KEY_PROFILE, {
+      nickname: data.nickname,
+      membershipTier: data.membershipTier,
+      points: data.points,
+      userName: data.userName,
+    })
     return data
   } catch (e) {
     const cached = readCache()
