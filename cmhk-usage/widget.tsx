@@ -76,7 +76,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={6}>
-      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 9, height: 9 }} />
+      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 8, height: 8 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
@@ -99,12 +99,12 @@ function SmallWidget({ data }: { data: UsageData }) {
   return (
     <VStack spacing={6} padding={12} background={theme.cardBackground as any}>
       <HStack spacing={4}>
-        <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 9, height: 9 }} />
+        <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 8, height: 8 }} />
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
           {data.nickname || data.userName || data.phoneNumber || data.accountNumber || "CMHK"}
         </Text>
         {data.membershipTier && (
-          <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
+          <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 8, height: 8 }} />
         )}
       </HStack>
       <Spacer />
@@ -172,7 +172,7 @@ function MediumWidget({ data }: { data: UsageData }) {
           </Text>
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>
-            <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 9, height: 9 }} />
+            <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 8, height: 8 }} />
           </Button>
         </HStack>
       </VStack>

@@ -5,7 +5,7 @@
 // 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
 // （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
-import { appendDebug, getWebStartUrl, saveCapture, saveOverviewHtml, saveWebSession } from "./cmhk"
+import { appendDebug, getWebStartUrl, saveCapture, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession } from "./cmhk"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -95,6 +95,8 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
       if (!url || !body) return null
       if (looksLikeUsageJson(url, body)) {
         saveCapture(url, body)
+        if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)
+        if (/getNickname/i.test(url)) saveNicknameJson(body)
         // 首个命中即最佳；usageQuery 优先
         if (!best || /usageQuery/i.test(url)) {
           best = { url, method: String(msg?.method ?? "GET"), reqBody: String(msg?.reqBody ?? ""), body }

@@ -244,7 +244,14 @@ export function parseAccountInfoJson(json: any): ParsedUsage {
   }
   if (d.ratePlan && typeof d.ratePlan === "string") out.planName = d.ratePlan
   if (d.currentMsisdn) out.accountNumber = String(d.currentMsisdn)
+  if (d.userName && typeof d.userName === "string") out.userName = d.userName
   return out
+}
+
+// 昵称接口（getNickname）
+export function parseNicknameJson(json: any): string | null {
+  const n = json?.data?.nickname
+  return typeof n === "string" && n ? n : null
 }
 
 // 财富/會籍接口（wealth）：猜测 会员等级/积分 字段名，宽容取数
@@ -259,14 +266,51 @@ export function parseWealthJson(json: any): ParsedUsage {
     if (typeof o === "object") { Object.entries(o).forEach(([k, v]) => { flat[k.toLowerCase()] = v; walk(v) }) }
   }
   walk(d)
+  // 会员代码 → 等级名（真机实证：10002 = 白金 / 全球通 优越会 / Gotone Privilege Club）
+  const TIER_BY_CODE: Record<string, string> = {
+    "10002": "白金",
+    "10001": "金",
+    "10003": "铂金",
+    "10004": "钻石",
+  }
+  const looksTierKey = (k: string): boolean =>
+    /(membertier|memberlevel|membergrade|viplevel|grade|会籍|會員等級|levelname|memberlevelname)/i.test(k)
   for (const k of Object.keys(flat)) {
-    if (out.membershipTier == null && /(membertier|memberlevel|membergrade|viplevel|grade|会籍|會員等級)/.test(k) && typeof flat[k] === "string") {
-      out.membershipTier = flat[k]
+    if (out.membershipTier == null && looksTierKey(k) && typeof flat[k] === "string") {
+      const v = flat[k].trim()
+      if (v && !/^\d+$/.test(v)) out.membershipTier = v.length > 12 ? v.slice(0, 12) : v
     }
     if (out.points == null && /(points|point|score|integral|積分|积分)/.test(k)) {
       const n = num(String(flat[k]))
       if (n != null) out.points = n
     }
   }
+  // 只拿到代码则映射为等级名
+  if (out.membershipTier && /^\d+$/.test(out.membershipTier)) {
+    const mapped = TIER_BY_CODE[out.membershipTier]
+    if (mapped) out.membershipTier = mapped
+  }
   return out
 }
+
+// 会员权益接口（memberLevelRightBaseInfo）：宽容取可读等级名
+export function parseMembershipJson(json: any): ParsedUsage {
+  const d = json?.data
+  if (!d) return {}
+  const out: ParsedUsage = {}
+  const flat: Record<string, any> = {}
+  const walk = (o: any) => {
+    if (o == null) return
+    if (Array.isArray(o)) { o.forEach(walk); return }
+    if (typeof o === "object") { Object.entries(o).forEach(([k, v]) => { flat[k.toLowerCase()] = v; walk(v) }) }
+  }
+  walk(d)
+  for (const k of Object.keys(flat)) {
+    if (/(levelname|memberlevel|membertier|tier|level|会籍|等級|会员等级|會員等級|platinum|gold|diamond|privilege|优越)/.test(k) && typeof flat[k] === "string") {
+      const v = flat[k].trim()
+      if (v && !/^\d+$/.test(v)) { out.membershipTier = v.length > 20 ? v.slice(0, 20) : v; break }
+    }
+  }
+  return out
+}
+

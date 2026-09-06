@@ -11,7 +11,7 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
-import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, ParsedUsage } from "./usage-parser"
+import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
   planName: string | null        // 套餐名（如 5G一咭三地計劃60GB）
@@ -49,6 +49,8 @@ const KEY_WEB_BODY = "cmhk.web.body"
 const KEY_CAPTURES = "cmhk.captures" // 捕获环：最近 5 个疑似用量接口
 const KEY_OVERVIEW_HTML = "cmhk.overview.html" // 账户概览页 HTML（持久，供会员/积分/应缴）
 const KEY_PROFILE = "cmhk.profile" // 解析出的档案（nickname/会籍/积分/姓名），防捕获环被挤掉
+const KEY_MEMBER_JSON = "cmhk.member.json" // memberLevelRightBaseInfo / wealth 原始 JSON（持久）
+const KEY_NICKNAME_JSON = "cmhk.nickname.json" // getNickname 原始 JSON（持久）
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -520,6 +522,22 @@ export async function refreshUsage(): Promise<UsageData> {
         if ((parsed.buckets ?? []).length === 0 && q.buckets) parsed.buckets = q.buckets
       } catch { /* 非 JSON 跳过 */ }
     }
+    // 持久化会员/昵称 JSON（memberLevelRightBaseInfo/wealth/getNickname）
+    const mj = readMemberJson()
+    if (mj && (parsed.membershipTier == null || parsed.points == null)) {
+      try {
+        const mo = JSON.parse(mj)
+        const mm = parseMembershipJson(mo)
+        if (parsed.membershipTier == null && mm.membershipTier) parsed.membershipTier = mm.membershipTier
+        const wm = parseWealthJson(mo)
+        if (parsed.membershipTier == null && wm.membershipTier && !/^\d+$/.test(wm.membershipTier)) parsed.membershipTier = wm.membershipTier
+        if (parsed.points == null && wm.points != null) parsed.points = wm.points
+      } catch { /* 忽略 */ }
+    }
+    const nj = readNicknameJson()
+    if (parsed.nickname == null && nj) {
+      try { const n = parseNicknameJson(JSON.parse(nj)); if (n) parsed.nickname = n } catch { /* 忽略 */ }
+    }
     // 再用捕获环 + 持久化概览页 HTML 补会员/积分/应缴金额/套餐名
     if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null) {
       const ovh = readOverviewHtml()
@@ -681,3 +699,8 @@ export function daysUntilCycleEnd(d: UsageData): number | null {
 // 账户概览页 HTML 持久存取（会员/积分/应缴的来源之一）
 export function saveOverviewHtml(html: string) { Storage.set(KEY_OVERVIEW_HTML, html.slice(0, 600000)) }
 export function readOverviewHtml(): string | null { return Storage.get<string>(KEY_OVERVIEW_HTML) }
+
+export function saveMemberJson(body: string) { Storage.set(KEY_MEMBER_JSON, body) }
+export function readMemberJson(): string | null { return Storage.get<string>(KEY_MEMBER_JSON) }
+export function saveNicknameJson(body: string) { Storage.set(KEY_NICKNAME_JSON, body) }
+export function readNicknameJson(): string | null { return Storage.get<string>(KEY_NICKNAME_JSON) }
