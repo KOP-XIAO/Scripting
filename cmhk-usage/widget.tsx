@@ -1,6 +1,6 @@
 // widget.tsx — CMHK 用量小组件（systemSmall / systemMedium）
-// 流量桶展示：环=第一个流量桶（套餐内），行=其余流量桶（赠送/漫遊）+ 通话 + 代缴话费 + 会籍。
-// 数据策略：小组件进程只读缓存（约30MB上限，联网刷新放 App/AppIntent）。
+// 精简排版：环=首个流量桶（套餐内），右侧最多 3 行（代缴话费/通话/其余流量桶），
+// 标签用短名，值尽量不截断。小组件进程只读缓存，联网刷新在 App/AppIntent。
 
 import {
   Button,
@@ -13,14 +13,7 @@ import {
   Widget,
   ZStack,
 } from "scripting"
-import {
-  fmtGB,
-  fmtMin,
-  fmtMoney,
-  fmtUpdatedAt,
-  readCache,
-  UsageData,
-} from "./cmhk"
+import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, UsageData } from "./cmhk"
 import { ringStops, theme } from "./theme"
 import { RefreshIntent } from "./app_intents"
 
@@ -28,33 +21,39 @@ type Bucket = { name: string; totalGB: number | null; remainingGB: number | null
 
 function bucketsOf(d: UsageData): Bucket[] {
   if (d.buckets && d.buckets.length) return d.buckets
-  if (d.dataTotalGB != null)
-    return [{ name: "套餐數據", totalGB: d.dataTotalGB, remainingGB: d.dataRemainingGB, expiry: null }]
+  if (d.dataTotalGB != null) return [{ name: "套餐數據", totalGB: d.dataTotalGB, remainingGB: d.dataRemainingGB, expiry: null }]
   return []
 }
-
 function ratioOf(b?: Bucket | null): number | null {
   if (!b || b.totalGB == null || b.remainingGB == null || b.totalGB <= 0) return null
   return Math.max(0, Math.min(1, b.remainingGB / b.totalGB))
 }
 
+// 分类→短标签
+function shortLabel(s: string): string {
+  if (/服務計劃|数据|數據/.test(s)) return "套餐内"
+  if (/漫遊|漫游/.test(s)) return "漫游"
+  if (/贈送|赠送|extra/i.test(s)) return "赠送"
+  return s.length > 6 ? `${s.slice(0, 6)}` : s
+}
+function expiryShort(b?: Bucket): string {
+  const e = b?.expiry
+  return e ? e.slice(5).replace("-", "/") : ""
+}
+
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   const ratio = ratioOf(bucket)
   const stops = ringStops(ratio ?? 1)
-  const lineWidth = Math.max(7, Math.round(size * 0.09))
+  const lw = Math.max(7, Math.round(size * 0.09))
   return (
     <ZStack frame={{ width: size, height: size }}>
-      <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth, lineCap: "round" } }} />
+      <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth: lw, lineCap: "round" } }} />
       {ratio != null && (
         <Circle
           trim={{ from: 0, to: ratio }}
           stroke={{
-            shapeStyle: {
-              gradient: [...stops],
-              startPoint: { x: 0.5, y: 0 },
-              endPoint: { x: 0.5, y: 1 },
-            },
-            strokeStyle: { lineWidth, lineCap: "round" },
+            shapeStyle: { gradient: [...stops], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+            strokeStyle: { lineWidth: lw, lineCap: "round" },
           }}
           rotationEffect={-90}
         />
@@ -69,72 +68,32 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   )
 }
 
-function StatRow({ icon, label, value, unit }: { icon: string; label: string; value: string; unit?: string }) {
+function Row({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <HStack spacing={6}>
-      <Image systemName={icon} foregroundStyle={theme.accent} frame={{ width: 14, height: 14 }} />
-      <Text font="caption" foregroundStyle={theme.textTertiary} lineLimit={1}>{label}</Text>
+      <Image systemName={icon} foregroundStyle={theme.accent} frame={{ width: 13, height: 13 }} />
+      <Text font="caption" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
-      <HStack spacing={2} alignment="lastTextBaseline">
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
-          {value}
-        </Text>
-        {unit && <Text font="caption2" foregroundStyle={theme.textTertiary}>{unit}</Text>}
-      </HStack>
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>{value}</Text>
     </HStack>
   )
 }
 
-function UpdatedFooter({ data, compact }: { data: UsageData; compact: boolean }) {
-  return (
-    <HStack spacing={4}>
-      {data.stale && (
-        <Image systemName="exclamationmark.triangle" foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
-      )}
-      <Text font="caption2" foregroundStyle={theme.textTertiary}>更新于 {fmtUpdatedAt(data.fetchedAt)}</Text>
-      <Spacer />
-      {!compact && (
-        <Button intent={RefreshIntent(undefined)}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 12, height: 12 }} />
-        </Button>
-      )}
-    </HStack>
-  )
+function FeeText({ d }: { d: UsageData }): { label: string; value: string } {
+  if (d.billAmountHKD != null) return { label: "代缴话费", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}` }
+  if (d.balanceHKD != null) return { label: "话费余额", value: `HK$ ${fmtMoney(d.balanceHKD)}` }
+  return { label: "代缴话费", value: "--" }
 }
-
-// 后付款账户 → 代缴话费；储值卡 → 话费余额
-function feeOf(d: UsageData): { label: string; value: string; show: boolean } {
-  if (d.billAmountHKD != null) return { label: "代缴话费", value: fmtMoney(d.billAmountHKD), show: true }
-  if (d.balanceHKD != null) return { label: "话费余额", value: fmtMoney(d.balanceHKD), show: true }
-  return { label: "代缴话费", value: "--", show: false }
-}
-
-function voiceText(d: UsageData): string {
-  if (d.voiceUnlimited) return "无限"
-  return fmtMin(d.voiceRemainingMin)
-}
-function expiryShort(b?: Bucket): string {
-  const e = b?.expiry
-  return e ? e.slice(5).replace("-", "/") : ""
-}
-function shortName(n: string): string {
-  if (n.length <= 14) return n
-  return `${n.slice(0, 14)}…`
-}
-
-// ---------- 主体 ----------
 
 function SmallWidget({ data }: { data: UsageData }) {
-  const buckets = bucketsOf(data)
-  const main = buckets[0]
-  const fee = feeOf(data)
-  const extra = buckets[1]
+  const main = bucketsOf(data)[0]
+  const fee = FeeText({ d: data })
   return (
     <VStack spacing={6} padding={12} background={theme.cardBackground as any}>
       <HStack spacing={4}>
         <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 12, height: 12 }} />
-        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
-          {data.planName ? shortName(data.planName) : data.accountNumber ?? ""}
+        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary}>
+          {data.accountNumber ?? data.phoneNumber ?? "CMHK"}
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 10, height: 10 }} />
@@ -146,20 +105,17 @@ function SmallWidget({ data }: { data: UsageData }) {
         <DataRing bucket={main} size={82} />
         <Spacer />
       </HStack>
-      <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1}>
-        {main ? `${main.name} · 剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+      <Text font="caption2" foregroundStyle={theme.textSecondary}>
+        {main ? `${shortLabel(main.name)} 剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
       </Text>
       <HStack alignment="lastTextBaseline" spacing={3}>
         <Text font="headline" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>HK$ {fee.label}</Text>
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
-        {extra && (
-          <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1}>
-            {shortName(extra.name)} {fmtGB(extra.remainingGB)}
-          </Text>
-        )}
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>
+          更新 {new Date(data.fetchedAt).getHours()}:{String(new Date(data.fetchedAt).getMinutes()).padStart(2, "0")}
+        </Text>
       </HStack>
-      <UpdatedFooter data={data} compact />
     </VStack>
   )
 }
@@ -167,45 +123,43 @@ function SmallWidget({ data }: { data: UsageData }) {
 function MediumWidget({ data }: { data: UsageData }) {
   const buckets = bucketsOf(data)
   const main = buckets[0]
-  const extras = buckets.slice(1).slice(0, 2)
-  const fee = feeOf(data)
-  const membership = data.membershipTier || data.points != null
+  const extras = buckets.slice(1).slice(0, 1) // 精简：最多 1 个附加流量桶
+  const fee = FeeText({ d: data })
+  const voice = data.voiceUnlimited ? "无限通话" : `${fmtMin(data.voiceRemainingMin)} 分钟`
+  const member = data.membershipTier || data.points != null
   return (
     <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
-      {/* 左：主流量环 */}
       <VStack spacing={4} alignment="center">
         <DataRing bucket={main} size={92} />
-        <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1}>
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>
           {main ? `剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
-      {/* 右：明细 */}
-      <VStack spacing={5} frame={{ maxWidth: "infinity" } as any}>
-        <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
-          {shortName(data.planName ?? "CMHK")}
+      <VStack spacing={7} frame={{ maxWidth: "infinity" } as any}>
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+          {data.planName ?? "CMHK"}
         </Text>
-        <HStack spacing={6}>
-          <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
-            {data.accountNumber ? `賬號 ${data.accountNumber}` : data.phoneNumber ?? ""}
+        {member && (
+          <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
+            {data.membershipTier ?? ""}{data.points != null ? ` · ${data.points}分` : ""}
           </Text>
-          {membership && (
-            <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
-              {data.membershipTier ?? ""}{data.points != null ? ` · ${data.points}分` : ""}
-            </Text>
-          )}
-        </HStack>
-        <StatRow icon="creditcard" label={fee.label} value={fee.value} unit="HK$" />
-        <StatRow icon="phone" label="通话剩余" value={voiceText(data)} unit={data.voiceUnlimited ? "" : "分钟"} />
+        )}
+        <Row icon="creditcard" label={fee.label} value={fee.value} />
+        <Row icon="phone" label="通话" value={voice} />
         {extras.map((b, i) => (
-          <StatRow
-            key={i}
-            icon="arrow.down.circle"
-            label={shortName(b.name)}
-            value={`${fmtGB(b.remainingGB)} GB${expiryShort(b) ? ` · ${expiryShort(b)}止` : ""}`}
-          />
+          <Row key={i} icon="arrow.down.circle" label={shortLabel(b.name)}
+            value={`${fmtGB(b.remainingGB)} GB${expiryShort(b) ? ` · ${expiryShort(b)}止` : ""}`} />
         ))}
         <Spacer />
-        <UpdatedFooter data={data} compact={false} />
+        <HStack spacing={4}>
+          <Text font="caption2" foregroundStyle={theme.textTertiary}>
+            更新于 {fmtUpdatedAt(data.fetchedAt)}
+          </Text>
+          <Spacer />
+          <Button intent={RefreshIntent(undefined)}>
+            <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 12, height: 12 }} />
+          </Button>
+        </HStack>
       </VStack>
     </HStack>
   )

@@ -184,11 +184,10 @@ export function parseUsageQueryJson(json: any): ParsedUsage {
 
   const dataB = buckets.find((b) => /數據|数据/.test(b.__cat) && !/漫遊|漫游/.test(b.__cat) && /^(GB|MB)$/i.test(String(b.unit ?? "")))
   const roamB = buckets.find((b) => /漫遊|漫游/.test(b.__cat))
-  const voiceB = buckets.find((b) => /話音|话音/.test(b.__cat) || /分鐘|分钟/.test(String(b.unit ?? "")))
+  const voiceBS = buckets.filter((b) => /話音|话音/.test(b.__cat))
   const smsB = buckets.find((b) => /短訊|短信/.test(b.__cat) || /條|条/.test(String(b.unit ?? "")))
 
   const anyB = dataB ?? roamB ?? buckets[0]
-  if (anyB?.name) out.planName = String(anyB.name)
   if (anyB?.msisdn) out.accountNumber = String(anyB.msisdn)
 
   // 全部 GB 桶：按界面出现顺序（套餐内 → 赠送/漫遊…），名字用 detail.name，退回 category
@@ -197,7 +196,7 @@ export function parseUsageQueryJson(json: any): ParsedUsage {
     .map((b) => {
       const exp = b.expiryDate ?? b.expireDate ?? b.expiredDate ?? b.effectiveDate
       return {
-        name: String(b.name ?? b.__cat ?? "套餐數據"),
+        name: String(b.__cat || b.name || "套餐數據"), // 优先分类名，显示更短更清晰
         totalGB: totalGBn(b),
         remainingGB: toGBn(b),
         expiry: exp ? String(exp).replace(/[./]/g, "-").slice(0, 10) : undefined,
@@ -218,13 +217,56 @@ export function parseUsageQueryJson(json: any): ParsedUsage {
     const exp = roamB.expiryDate ?? roamB.expireDate ?? roamB.expiredDate ?? roamB.effectiveDate
     if (exp) out.roamExpiry = String(exp).replace(/[./]/g, "-").slice(0, 10)
   }
-  if (voiceB) {
-    out.voiceRemainingMin = num(voiceB.margin != null ? String(voiceB.margin) : undefined)
-    out.voiceTotalMin = num(voiceB.total != null ? String(voiceB.total) : undefined)
-    if (voiceB.infinite === true) out.voiceUnlimited = true
+  if (voiceBS.length) {
+    const finite = voiceBS.filter((b) => b.infinite !== true)
+    const sum = (arr: any[], f: (x: any) => number | undefined): number | undefined => {
+      const vals = arr.map(f).filter((x): x is number => typeof x === "number" && isFinite(x))
+      return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined
+    }
+    out.voiceRemainingMin = sum(finite, (b) => num(String(b.margin)))
+    out.voiceTotalMin = sum(finite, (b) => num(String(b.total)))
+    if (voiceBS.some((b) => b.infinite === true)) out.voiceUnlimited = true
   }
   if (smsB) {
     out.smsRemaining = num(smsB.margin != null ? String(smsB.margin) : undefined)
+  }
+  return out
+}
+
+// 账户信息接口（queryAccountInfo）：accountBalance = 代缴话费（负=欠费）
+export function parseAccountInfoJson(json: any): ParsedUsage {
+  const d = json?.data
+  if (!d) return {}
+  const out: ParsedUsage = {}
+  if (d.accountBalance != null) {
+    const v = num(String(d.accountBalance))
+    if (v != null) out.billAmountHKD = v
+  }
+  if (d.ratePlan && typeof d.ratePlan === "string") out.planName = d.ratePlan
+  if (d.currentMsisdn) out.accountNumber = String(d.currentMsisdn)
+  return out
+}
+
+// 财富/會籍接口（wealth）：猜测 会员等级/积分 字段名，宽容取数
+export function parseWealthJson(json: any): ParsedUsage {
+  const d = json?.data
+  if (!d) return {}
+  const out: ParsedUsage = {}
+  const flat: Record<string, any> = {}
+  const walk = (o: any) => {
+    if (o == null) return
+    if (Array.isArray(o)) { o.forEach(walk); return }
+    if (typeof o === "object") { Object.entries(o).forEach(([k, v]) => { flat[k.toLowerCase()] = v; walk(v) }) }
+  }
+  walk(d)
+  for (const k of Object.keys(flat)) {
+    if (out.membershipTier == null && /(membertier|memberlevel|membergrade|viplevel|grade|会籍|會員等級)/.test(k) && typeof flat[k] === "string") {
+      out.membershipTier = flat[k]
+    }
+    if (out.points == null && /(points|point|score|integral|積分|积分)/.test(k)) {
+      const n = num(String(flat[k]))
+      if (n != null) out.points = n
+    }
   }
   return out
 }

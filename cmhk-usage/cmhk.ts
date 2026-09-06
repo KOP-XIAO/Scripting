@@ -11,7 +11,7 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
-import { parseUsageText, parseUsageQueryJson, ParsedUsage } from "./usage-parser"
+import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
   planName: string | null        // 套餐名（如 5G一咭三地計劃60GB）
@@ -482,6 +482,26 @@ export async function refreshUsage(): Promise<UsageData> {
     // 文本兜底：本次响应（JSON/HTML）拍平提取
     const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
     let parsed: ParsedUsage = { ...parsed0, ...jq }
+    // 捕获环里所有 JSON 逐个补充（余额/套餐/会籍/积分/用量）
+    for (const c of readCaptures()) {
+      if (!c.body.startsWith("{") && !c.body.startsWith("[")) continue
+      try {
+        const o = JSON.parse(c.body)
+        const acco = parseAccountInfoJson(o)
+        if (parsed.billAmountHKD == null && acco.billAmountHKD != null) parsed.billAmountHKD = acco.billAmountHKD
+        if (parsed.planName == null && acco.planName) parsed.planName = acco.planName
+        if (parsed.accountNumber == null && acco.accountNumber) parsed.accountNumber = acco.accountNumber
+        const w = parseWealthJson(o)
+        if (parsed.membershipTier == null && w.membershipTier) parsed.membershipTier = w.membershipTier
+        if (parsed.points == null && w.points != null) parsed.points = w.points
+        const q = parseUsageQueryJson(o)
+        if (parsed.dataRemainingGB == null && q.dataRemainingGB != null) parsed.dataRemainingGB = q.dataRemainingGB
+        if (parsed.dataTotalGB == null && q.dataTotalGB != null) parsed.dataTotalGB = q.dataTotalGB
+        if (parsed.voiceRemainingMin == null && q.voiceRemainingMin != null) parsed.voiceRemainingMin = q.voiceRemainingMin
+        if (parsed.voiceUnlimited == null && q.voiceUnlimited != null) parsed.voiceUnlimited = q.voiceUnlimited
+        if ((parsed.buckets ?? []).length === 0 && q.buckets) parsed.buckets = q.buckets
+      } catch { /* 非 JSON 跳过 */ }
+    }
     // 再用捕获环里的 HTML（账户概览页等）补会员/积分/应缴金额/套餐名
     if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null) {
       for (const c of readCaptures()) {
