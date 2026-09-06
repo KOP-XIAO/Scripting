@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.17.6"  // 与 script.json 同步
+export const VERSION = "1.17.7"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {

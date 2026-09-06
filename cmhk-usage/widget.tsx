@@ -14,7 +14,6 @@ import {
 } from "scripting"
 import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, UsageData } from "./cmhk"
 import { ringStops, theme } from "./theme"
-import { RefreshIntent } from "./app_intents"
 
 type Bucket = { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }
 
@@ -151,9 +150,6 @@ function SmallWidget({ data }: { data: UsageData }) {
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
-        <Button intent={RefreshIntent(undefined)}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
-        </Button>
       </HStack>
     </VStack>
   )
@@ -217,12 +213,6 @@ function MediumWidget({ data }: { data: UsageData }) {
           <Row icon="calendar" label="到期" value={`${expiryShort(main!)}`} color={theme.textSecondary} />
         )}
         <Spacer />
-        <HStack spacing={4} alignment="center">
-          <Spacer />
-          <Button intent={RefreshIntent(undefined)}>
-            <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 9, height: 9 }} />
-          </Button>
-        </HStack>
       </VStack>
     </HStack>
   )
