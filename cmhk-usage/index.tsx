@@ -23,8 +23,10 @@ import {
 } from "scripting"
 import {
   clearCredentials,
+  clearDebugLog,
   clearManualEndpoint,
   readCaptures,
+  readDebugLog,
   saveCapturedBody,
   clearWebSession,
   connectionTest,
@@ -314,6 +316,17 @@ function Page() {
         {/* 诊断 */}
         <Text font="headline">诊断</Text>
         <Button title={showCaptures ? "收起捕获数据" : `查看捕获数据（${readCaptures().length} 条）`} action={() => setShowCaptures(!showCaptures)} />
+        <HStack spacing={12}>
+          <Button title="清空日志" action={() => { clearDebugLog(); setShowCaptures(false) }} />
+        </HStack>
+        {readDebugLog().length > 0 && (
+          <VStack alignment="leading" spacing={2} padding={8} background="rgba(0,0,0,0.04)" cornerRadius={8}>
+            <Text font="caption2" fontWeight="medium">调试日志</Text>
+            <Text font="caption2" foregroundStyle="secondary" monospaced lineLimit={40}>
+              {readDebugLog().join("\n")}
+            </Text>
+          </VStack>
+        )}
         {showCaptures && (
           <VStack spacing={8} alignment="leading">
             {readCaptures().length === 0 && (

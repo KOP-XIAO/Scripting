@@ -69,9 +69,12 @@ export function parseUsageText(raw: string): ParsedUsage {
   while ((m = usedRe.exec(text))) {
     dataBuckets.push({ usedGB: toGB(+m[1], m[2]), totalGB: toGB(+m[2], m[2]), index: m.index })
   }
+  const roamSplit0 = text.search(/漫遊數據/)
   const remainRe = /([\d.]+)\s*(GB|MB)\s*餘量/gi
   while ((m = remainRe.exec(text))) {
-    const existing = dataBuckets.find((b) => Math.abs(b.index - (m!.index)) < 400)
+    const sameSide = (b: { index: number }) =>
+      roamSplit0 < 0 || (b.index > roamSplit0) === (m!.index > roamSplit0)
+    const existing = dataBuckets.find((b) => sameSide(b) && Math.abs(b.index - (m!.index)) < 400)
     if (existing) {
       existing.remainingGB = toGB(+m[1], m[2])
     } else {

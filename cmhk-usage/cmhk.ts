@@ -170,6 +170,24 @@ export function setWebStartUrl(url: string) {
   Storage.set(KEY_WEB_START_URL, url.trim())
 }
 
+// ---- 调试日志（诊断页可见） ----
+const KEY_DEBUG = "cmhk.debuglog"
+export function appendDebug(line: string) {
+  const log = Storage.get<string[]>(KEY_DEBUG) ?? []
+  const t = new Date()
+  const hh = String(t.getHours()).padStart(2, "0")
+  const mm = String(t.getMinutes()).padStart(2, "0")
+  const ss = String(t.getSeconds()).padStart(2, "0")
+  log.push(`${hh}:${mm}:${ss} ${line}`)
+  Storage.set(KEY_DEBUG, log.slice(-60))
+}
+export function readDebugLog(): string[] {
+  return Storage.get<string[]>(KEY_DEBUG) ?? []
+}
+export function clearDebugLog() {
+  Storage.remove(KEY_DEBUG)
+}
+
 // ---- 捕获环：web-login 期间所有疑似用量接口（供诊断与解析） ----
 export type Capture = { url: string; body: string; at: number }
 export function saveCapture(url: string, body: string) {
