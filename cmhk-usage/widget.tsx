@@ -1,6 +1,5 @@
 // widget.tsx — CMHK 用量小组件（systemSmall / systemMedium）
-// 标题=套餐名(仅一次)；副行=身份(nickname/尾号)+会员；3行=欠费/通话/漫游。
-// 小组件进程只读缓存，联网刷新在 App/AppIntent。
+// CMHK 品牌栏 + 流量环 + 每桶明细(含漫遊59.7) + 欠費/通話；全繁体；分隔用 " | "。
 
 import {
   Button,
@@ -28,16 +27,15 @@ function ratioOf(b?: Bucket | null): number | null {
   if (!b || b.totalGB == null || b.remainingGB == null || b.totalGB <= 0) return null
   return Math.max(0, Math.min(1, b.remainingGB / b.totalGB))
 }
-// 身份名：nickname > 手机尾号 > 账号
+// 身份：nickname > 尾號
 function identity(d: UsageData): string {
   if (d.nickname) return d.nickname
   const s = (d.phoneNumber || d.accountNumber || "")
   const m = s.match(/(\d{4})$/)
-  return m ? `尾号 ${m[1]}` : ""
+  return m ? `尾號 ${m[1]}` : ""
 }
 function phoneTail(d: UsageData): string {
-  const s = (d.phoneNumber || d.accountNumber || "")
-  const m = s.match(/(\d{4})$/)
+  const m = (d.phoneNumber || d.accountNumber || "").match(/(\d{4})$/)
   return m ? m[1] : ""
 }
 function shortPlan(p: string): string {
@@ -45,11 +43,17 @@ function shortPlan(p: string): string {
   return m ? m[1] : p
 }
 function tierLabel(t: string): string {
-  return /白金|鑽石|钻石|铂金|铂|金|銀|银|铜|优越|privilege/i.test(t) ? `${t}會員` : t
+  return /白金|鑽石|钻石|铂金|铂|金|銀|银|铜|優越|privilege/i.test(t) ? `${t}會籍` : t
 }
 function expiryShort(b?: Bucket): string {
   const e = b?.expiry
   return e ? e.slice(5).replace("-", "/") : ""
+}
+function bucketLabel(name: string): string {
+  if (/服務計劃|數據|数据/.test(name)) return "套餐內"
+  if (/漫遊|漫游/.test(name)) return "漫遊"
+  if (/贈送|赠送|extra/i.test(name)) return "贈送"
+  return name.length > 6 ? name.slice(0, 6) : name
 }
 
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
@@ -73,7 +77,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
         <Text font="title3" fontWeight="bold" foregroundStyle={theme.textPrimary}>
           {ratio != null ? `${Math.round(ratio * 100)}%` : "--"}
         </Text>
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>流量剩余</Text>
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>流量剩餘</Text>
       </VStack>
     </ZStack>
   )
@@ -93,14 +97,24 @@ function Row({ icon, label, value, color }: { icon: string; label: string; value
 function FeeRow(d: UsageData): { label: string; value: string; color: string } {
   if (d.billAmountHKD != null) {
     const owed = d.billAmountHKD < 0
-    return { label: "欠费", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}`, color: owed ? "#FF6B5E" : theme.textPrimary }
+    return { label: "欠費", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}`, color: owed ? "#FF6B5E" : theme.textPrimary }
   }
-  if (d.balanceHKD != null) return { label: "余额", value: `HK$ ${fmtMoney(d.balanceHKD)}`, color: theme.textPrimary }
-  return { label: "欠费", value: "--", color: theme.textTertiary }
+  if (d.balanceHKD != null) return { label: "餘額", value: `HK$ ${fmtMoney(d.balanceHKD)}`, color: theme.textPrimary }
+  return { label: "欠費", value: "--", color: theme.textTertiary }
 }
 function voiceValue(d: UsageData): string {
-  if (d.voiceUnlimited) return `${fmtMin(d.voiceRemainingMin)} 分钟·∞`
-  return `${fmtMin(d.voiceRemainingMin)} 分钟`
+  if (d.voiceUnlimited) return `${fmtMin(d.voiceRemainingMin)} 分鐘 | ∞`
+  return `${fmtMin(d.voiceRemainingMin)} 分鐘`
+}
+
+// CMHK 品牌栏
+function BrandBar({ compact }: { compact: boolean }) {
+  return (
+    <HStack spacing={5} alignment="center">
+      <Text font={compact ? "caption2" : "caption"} fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
+      <Text font="caption2" foregroundStyle={theme.textTertiary}>中國移動香港</Text>
+    </HStack>
+  )
 }
 
 function SmallWidget({ data }: { data: UsageData }) {
@@ -110,24 +124,23 @@ function SmallWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   return (
     <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
+      <BrandBar compact />
       <HStack spacing={4}>
-        <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 9, height: 9 }} />
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
-          {idname}{tail && !/^尾号/.test(idname) ? ` · ${tail}` : ""}
+          {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 8, height: 8 }} />
         )}
       </HStack>
       <Spacer />
-      <HStack>
-        <Spacer />
-        <DataRing bucket={main} size={82} />
-        <Spacer />
-      </HStack>
-      <Text font="caption2" foregroundStyle={theme.textSecondary}>
-        {main ? `套餐内 剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
-      </Text>
+      <VStack spacing={8} alignment="center">
+        <DataRing bucket={main} size={78} />
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>
+          {main ? `套餐內 剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+        </Text>
+      </VStack>
+      <Spacer />
       <HStack alignment="lastTextBaseline" spacing={3}>
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
@@ -143,45 +156,53 @@ function SmallWidget({ data }: { data: UsageData }) {
 function MediumWidget({ data }: { data: UsageData }) {
   const buckets = bucketsOf(data)
   const main = buckets[0]
-  const extras = buckets.slice(1).slice(0, 2)
+  // 其余流量桶：优先桶数组，若缺漫遊则用 roam 标量补齐（确保 59.7 一定显示）
+  const bucketExtras = buckets.slice(1)
+  const roamScalar = data.roamDataRemainingGB != null
+    ? { name: "漫遊數據", totalGB: data.roamDataTotalGB, remainingGB: data.roamDataRemainingGB, expiry: data.roamExpiry }
+    : null
+  const extras = [
+    ...bucketExtras,
+    ...(roamScalar && !bucketExtras.some((b) => /漫遊|漫游/.test(b.name)) ? [roamScalar] : []),
+  ].slice(0, 2)
   const fee = FeeRow(data)
   const idname = identity(data)
   const tail = phoneTail(data)
   const member = data.membershipTier || data.points != null
   return (
     <HStack spacing={18} padding={16} background={theme.cardBackground as any}>
-      <VStack spacing={5} alignment="center">
+      {/* 左：套餐內 流量环 */}
+      <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={92} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          {main ? `剩 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `套餐內 剩餘 ${fmtGB(main.remainingGB)}/${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
-      <VStack spacing={6} frame={{ maxWidth: "infinity" } as never}>
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
-          {shortPlan(data.planName ?? "CMHK")}
-        </Text>
+      {/* 右：品牌 + 身份 + 明细 */}
+      <VStack spacing={7} frame={{ maxWidth: "infinity" } as never}>
+        <BrandBar compact={false} />
         <HStack spacing={6}>
           {idname && (
             <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
-              {idname}{tail && !/^尾号/.test(idname) ? ` · ${tail}` : ""}
+              {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
             </Text>
           )}
           {member && (
             <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
-              {data.membershipTier ? `${tierLabel(data.membershipTier)} ·` : ""}{data.points != null ? ` ${data.points}分` : ""}
+              {data.membershipTier ? `${tierLabel(data.membershipTier)} |` : ""}{data.points != null ? ` ${data.points}分` : ""}
             </Text>
           )}
         </HStack>
         <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
-        <Row icon="phone" label="通话" value={voiceValue(data)} />
+        <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
-          <Row key={i} icon="arrow.down.circle" label={/漫遊|漫游/.test(b.name) ? "漫游" : shortPlan(b.name)}
-            value={`${fmtGB(b.remainingGB)} GB${expiryShort(b) ? ` · ${expiryShort(b)}止` : ""}`} />
+          <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
+            value={`${fmtGB(b.remainingGB)} GB${expiryShort(b) ? ` | ${expiryShort(b)}止` : ""}`} />
         ))}
         <Spacer />
         <HStack spacing={4}>
           <Text font="caption2" foregroundStyle={theme.textTertiary}>
-            更新于 {fmtUpdatedAt(data.fetchedAt)}
+            更新於 {fmtUpdatedAt(data.fetchedAt)}
           </Text>
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>
@@ -207,7 +228,7 @@ function EmptyState({ message }: { message: string }) {
 async function run() {
   const data = readCache()
   if (!data) {
-    Widget.present(<EmptyState message={"请先打开 App 内的\n「CMHK Usage」完成登录"} />, {
+    Widget.present(<EmptyState message={"請先開啟 App 內的「CMHK Usage」完成登入"} />, {
       reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
     })
     return

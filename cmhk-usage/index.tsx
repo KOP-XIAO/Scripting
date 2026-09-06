@@ -92,7 +92,7 @@ function Page() {
         return
       }
       const ok = await Dialog.confirm({
-        title: "保存凭据",
+        title: "保存憑據",
         message: "手机号与密码将仅保存在本机系统钥匙串（Keychain）中，仅用于登录 CMHK 接口，不会上传或写入任何日志。是否继续？",
         confirmLabel: "保存",
       })
@@ -160,7 +160,7 @@ function Page() {
 
   async function handleClear() {
     const ok = await Dialog.confirm({
-      title: "清除账户",
+      title: "清除帳戶",
       message: "将删除 Keychain 中的手机号、密码、登录令牌与网页会话。确定吗？",
       confirmLabel: "清除",
     })
@@ -300,7 +300,7 @@ function Page() {
             <HStack spacing={16}>
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>
-                  {data.billAmountHKD != null ? "代缴话费" : "话费余额"}
+                  {data.billAmountHKD != null ? "代繳話費" : "話費餘額"}
                 </Text>
                 <Text font="headline" foregroundStyle={data.billAmountHKD != null && data.billAmountHKD < 0 ? "#FF6B5E" : theme.textPrimary}>
                   HK$ {fmtMoney(Math.abs(data.billAmountHKD ?? data.balanceHKD ?? 0))}
@@ -308,13 +308,13 @@ function Page() {
                 </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>
-                <Text font="caption2" foregroundStyle={theme.textTertiary}>通话剩余</Text>
+                <Text font="caption2" foregroundStyle={theme.textTertiary}>通話剩餘</Text>
                 <Text font="headline" foregroundStyle={theme.textPrimary}>
                   {data.voiceUnlimited ? (data.voiceRemainingMin != null ? `${fmtMin(data.voiceRemainingMin)} 分钟·∞` : "无限通话") : `${fmtMin(data.voiceRemainingMin)} 分钟`}
                 </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>
-                <Text font="caption2" foregroundStyle={theme.textTertiary}>账单日</Text>
+                <Text font="caption2" foregroundStyle={theme.textTertiary}>帳單日</Text>
                 <Text font="headline" foregroundStyle={theme.textPrimary}>
                   {(() => { const n = daysUntilCycleEnd(data); return n != null ? `剩 ${n} 天` : (data.billDay != null ? `每月 ${data.billDay} 日` : "--") })()}
                 </Text>
@@ -345,7 +345,7 @@ function Page() {
 
         {/* 登录 */}
         <Text font="headline">登录</Text>
-        <Button title={webSession ? "重新网页登录（已保存会话）" : "网页登录 CMHK（推荐）"} action={handleWebLogin} />
+        <Button title={webSession ? "重新网页登录（已保存会话）" : "網頁登入 CMHK（推薦）"} action={handleWebLogin} />
         <Text font="caption" foregroundStyle="secondary">
           在打开的官网页面中登录并进入「用量查询」页面，脚本会自动捕获数据接口。
         </Text>
@@ -355,8 +355,8 @@ function Page() {
         <TextField title="手机号" value={phone} onChanged={setPhone} prompt="CMHK 手机号" />
         <SecureField title="MyLink 密码" value={password} onChanged={setPassword} prompt={hasCredentials() ? "已保存（输入可覆盖）" : "MyLink 登录密码"} />
         <HStack spacing={12}>
-          <Button title="保存凭据" action={handleSave} />
-          <Button title="清除账户" action={handleClear} />
+          <Button title="保存憑據" action={handleSave} />
+          <Button title="清除帳戶" action={handleClear} />
         <Button title="清除本地数据并重新开始（重置登录）" action={handleReset} />
         </HStack>
 
@@ -379,7 +379,7 @@ function Page() {
         <Button title="导出诊断包（发给我分析）" action={handleExport} />
         <Button title="连接测试（诊断网络/TLS）" action={handleConnTest} />
         <Toggle title="演示模式（用示例数据展示 UI）" value={demo} onChanged={(v: boolean) => { setDemo(v); setDemoMode(v) }} />
-        <Button title="立即刷新并更新小组件" action={handleRefresh} />
+        <Button title="立即刷新並更新小組件" action={handleRefresh} />
         <Button title="预览小组件（systemMedium）" action={handlePreview} />
         <Button title="连接诊断（查看接口返回字段）" action={handleDiagnose} />
 
