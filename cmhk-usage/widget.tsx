@@ -214,10 +214,13 @@ function MediumWidget({ data }: { data: UsageData }) {
           <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
             value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
         ))}
+        {cycleExp && (
+          <Row icon="calendar" label="到期" value={`${expiryShort(main!)}`} color={theme.textSecondary} />
+        )}
         <Spacer />
         <HStack spacing={4}>
           <Text font="caption2" foregroundStyle={theme.textTertiary}>
-            更新於 {fmtUpdatedAt(data.fetchedAt)}{cycleExp ? ` | 到期 ${expiryShort(main!)}` : ""}
+            更新於 {fmtUpdatedAt(data.fetchedAt)}
           </Text>
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>
