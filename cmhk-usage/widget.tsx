@@ -1,6 +1,6 @@
 // widget.tsx — CMHK 用量小组件（systemSmall / systemMedium）
-// 现代化视觉：深色渐变卡片 + 渐变流量环 + 账单日倒计时。
-// 数据策略：优先读缓存；缓存超过 30 分钟且有 token 时，先做一次轻量刷新再渲染。
+// 现代化视觉：深色渐变卡片 + 渐变流量环。
+// 数据策略：优先读缓存；缓存超过 30 分钟且有会话时，先做一次轻量刷新再渲染。
 // 注意：Widget.present() 之后执行上下文立即销毁，所有数据必须在此之前准备好。
 
 import {
@@ -30,7 +30,7 @@ import { RefreshIntent } from "./app_intents"
 
 const STALE_AFTER_MS = 30 * 60 * 1000
 
-// ---------- 小组件部件 ----------
+// ---------- 部件 ----------
 
 function DataRing({ data, size }: { data: UsageData; size: number }) {
   const ratio = dataRemainingRatio(data)
@@ -39,14 +39,12 @@ function DataRing({ data, size }: { data: UsageData; size: number }) {
 
   return (
     <ZStack frame={{ width: size, height: size }}>
-      {/* 底轨 */}
       <Circle
         stroke={{
           shapeStyle: theme.ringTrack,
           strokeStyle: { lineWidth, lineCap: "round" },
         }}
       />
-      {/* 渐变进度环：从 12 点方向起顺时针 */}
       {ratio != null && (
         <Circle
           trim={{ from: 0, to: ratio }}
@@ -115,6 +113,24 @@ function UpdatedFooter({ data, compact }: { data: UsageData; compact: boolean })
   )
 }
 
+// 费用文案：上台账户显示应缴金额；储值卡显示余额
+function feeText(data: UsageData): { label: string; value: string } {
+  if (data.billAmountHKD != null) return { label: "应缴金额", value: fmtMoney(data.billAmountHKD) }
+  if (data.balanceHKD != null) return { label: "话费余额", value: fmtMoney(data.balanceHKD) }
+  return { label: "话费", value: "--" }
+}
+
+function voiceText(data: UsageData): string {
+  if (data.voiceUnlimited) return "无限"
+  return fmtMin(data.voiceRemainingMin)
+}
+
+function roamText(data: UsageData): string | null {
+  if (data.roamDataRemainingGB == null) return null
+  const exp = data.roamExpiry ? ` · ${data.roamExpiry.slice(5).replace("-", "/")}止` : ""
+  return `${fmtGB(data.roamDataRemainingGB)} GB${exp}`
+}
+
 function billDayText(data: UsageData): { value: string; unit: string } {
   const days = daysUntilBillDay(data)
   if (days != null) return { value: String(days), unit: "天后结算" }
@@ -125,13 +141,14 @@ function billDayText(data: UsageData): { value: string; unit: string } {
 // ---------- 小组件主体 ----------
 
 function SmallWidget({ data }: { data: UsageData }) {
+  const fee = feeText(data)
   const bill = billDayText(data)
   return (
     <VStack spacing={8} padding={12} background={theme.cardBackground as any}>
       <HStack spacing={4}>
         <Image systemName="antenna.radiowaves.left.and.right" foregroundStyle={theme.accentGreen} frame={{ width: 12, height: 12 }} />
         <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary}>
-          CMHK {data.phoneNumber ?? ""}
+          CMHK {data.accountNumber ?? data.phoneNumber ?? ""}
         </Text>
       </HStack>
       <Spacer />
@@ -143,9 +160,9 @@ function SmallWidget({ data }: { data: UsageData }) {
       <Spacer />
       <HStack alignment="lastTextBaseline" spacing={3}>
         <Text font="headline" fontWeight="bold" foregroundStyle={theme.textPrimary}>
-          {fmtMoney(data.balanceHKD)}
+          {fee.value}
         </Text>
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>HK$ 余额</Text>
+        <Text font="caption2" foregroundStyle={theme.textTertiary}>HK$ {fee.label}</Text>
         <Spacer />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>{bill.value}</Text>
       </HStack>
@@ -155,7 +172,8 @@ function SmallWidget({ data }: { data: UsageData }) {
 }
 
 function MediumWidget({ data }: { data: UsageData }) {
-  const bill = billDayText(data)
+  const fee = feeText(data)
+  const roam = roamText(data)
   return (
     <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
       {/* 左：流量环 */}
@@ -169,13 +187,13 @@ function MediumWidget({ data }: { data: UsageData }) {
       <VStack spacing={6} frame={{ maxWidth: "infinity" } as any}>
         <HStack spacing={4}>
           <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
-            CMHK 中国移动香港
+            {data.planName ?? "CMHK 中国移动香港"}
           </Text>
           <Spacer />
         </HStack>
-        <StatRow icon="creditcard" label="话费余额" value={fmtMoney(data.balanceHKD)} unit="HK$" />
-        <StatRow icon="phone" label="通话剩余" value={fmtMin(data.voiceRemainingMin)} unit="分钟" />
-        <StatRow icon="calendar" label="账单日" value={bill.value} unit={bill.unit} />
+        <StatRow icon="creditcard" label={fee.label} value={fee.value} unit="HK$" />
+        <StatRow icon="phone" label="通话剩余" value={voiceText(data)} unit={data.voiceUnlimited ? "" : "分钟"} />
+        {roam && <StatRow icon="airplane" label="漫游数据" value={roam} unit="" />}
         <Spacer />
         <UpdatedFooter data={data} compact={false} />
       </VStack>

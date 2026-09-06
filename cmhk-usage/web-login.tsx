@@ -4,7 +4,7 @@
 // 响应内容都会回传给脚本（shouldAllowRequest 看不到 Cookie/响应体，注入才行）。
 // 捕获到用量数据后：记录真实接口 URL + 页面 Cookie，之后数据层直接重放。
 
-import { getWebStartUrl, saveWebSession } from "./cmhk"
+import { getWebStartUrl, saveCapture, saveWebSession } from "./cmhk"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -80,15 +80,24 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
 
   let capturedUrl: string | null = null
   let capturedBody: string | null = null
+  let capturedIsJson = false
   let cookie: string | null = null
 
   // 页面接口响应经此回传
   await webView.addScriptMessageHandler<{ url?: string; body?: string }>("cmhkCapture", (msg) => {
     const url = msg?.url ?? ""
     const body = msg?.body ?? ""
-    if (!capturedBody && looksLikeUsage(url, body)) {
-      capturedUrl = url
-      capturedBody = body
+    if (!url || !body) return null
+    if (looksLikeUsage(url, body)) {
+      saveCapture(url, body) // 全部入捕获环
+      // 最佳会话：可解析为 JSON 者优先
+      let isJson = false
+      try { JSON.parse(body); isJson = true } catch {}
+      if (!capturedBody || (isJson && !capturedIsJson)) {
+        capturedUrl = url
+        capturedBody = body
+        capturedIsJson = isJson
+      }
     }
     return null
   })

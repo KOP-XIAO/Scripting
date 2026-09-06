@@ -11,15 +11,23 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
+import { parseUsageText, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
-  planName: string | null        // 套餐名
+  planName: string | null        // 套餐名（如 5G一咭三地計劃60GB）
   phoneNumber: string | null     // 手机号
-  balanceHKD: number | null      // 话费余额（港元）
-  dataTotalGB: number | null     // 流量总量 GB
-  dataRemainingGB: number | null // 剩余流量 GB
+  accountNumber: string | null   // 主賬號
+  balanceHKD: number | null      // 话费余额（储值卡形态，港元）
+  billAmountHKD: number | null   // 應繳金額（上台账户形态，港元）
+  dataTotalGB: number | null     // 服務計劃數據总量 GB
+  dataRemainingGB: number | null // 服務計劃數據剩余 GB
+  roamDataTotalGB: number | null // 漫遊數據总量 GB
+  roamDataRemainingGB: number | null
+  roamExpiry: string | null      // 漫遊失效日期
   voiceTotalMin: number | null   // 通话总量（分钟）
   voiceRemainingMin: number | null
+  voiceUnlimited: boolean        // 無限通話
+  smsRemaining: number | null    // 短訊剩余（條）
   billDay: number | null         // 每月账单/结算日（1-31）
   cycleEndDate: string | null    // 本周期结束日 ISO（若能取到）
   fetchedAt: number              // 抓取时间戳 ms
@@ -32,6 +40,7 @@ const KEY_MANUAL_URL = "cmhk.manual.url"
 const KEY_MANUAL_HEADERS = "cmhk.manual.headers"
 const KEY_WEB_START_URL = "cmhk.web.starturl"
 const KEY_WEB_BODY = "cmhk.web.body"
+const KEY_CAPTURES = "cmhk.captures" // 捕获环：最近 5 个疑似用量接口
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -151,6 +160,17 @@ export function setWebStartUrl(url: string) {
   Storage.set(KEY_WEB_START_URL, url.trim())
 }
 
+// ---- 捕获环：web-login 期间所有疑似用量接口（供诊断与解析） ----
+export type Capture = { url: string; body: string; at: number }
+export function saveCapture(url: string, body: string) {
+  const list = Storage.get<Capture[]>(KEY_CAPTURES) ?? []
+  list.unshift({ url, body: body.slice(0, 60000), at: Date.now() })
+  Storage.set(KEY_CAPTURES, list.slice(0, 5))
+}
+export function readCaptures(): Capture[] {
+  return Storage.get<Capture[]>(KEY_CAPTURES) ?? []
+}
+
 // ---- 首次捕获的用量 body（来自 web-login 注入钩子） ----
 export function saveCapturedBody(body: string) {
   Storage.set(KEY_WEB_BODY, body.slice(0, 60000))
@@ -231,14 +251,21 @@ export function setDemoMode(on: boolean) {
 }
 export function demoData(): UsageData {
   return {
-    planName: "5G 大湾区服务计划",
-    phoneNumber: "****1234",
-    balanceHKD: 86.5,
-    dataTotalGB: 30,
+    planName: "5G一咭三地計劃60GB",
+    phoneNumber: "****8892",
+    accountNumber: "56088892",
+    balanceHKD: null,
+    billAmountHKD: 0,
+    dataTotalGB: 60,
     dataRemainingGB: 18.6,
-    voiceTotalMin: 3000,
-    voiceRemainingMin: 2140,
-    billDay: 1,
+    roamDataTotalGB: 60,
+    roamDataRemainingGB: 60,
+    roamExpiry: "2026-10-06",
+    voiceTotalMin: 600,
+    voiceRemainingMin: 200,
+    voiceUnlimited: false,
+    smsRemaining: 500,
+    billDay: 6,
     cycleEndDate: null,
     fetchedAt: Date.now(),
   }
@@ -271,7 +298,12 @@ async function fetchWithWebSession(): Promise<any> {
   if (s.authorization) headers["Authorization"] = s.authorization
   if (s.cookie) headers["Cookie"] = s.cookie
   try {
-    return await fetchJson(s.url, { headers })
+    const req = fetch(s.url, { headers })
+    const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("请求超时")), 12000))
+    const res = (await Promise.race([req, timer])) as any
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    try { return JSON.parse(text) } catch { return text }
   } catch (e: any) {
     if (/HTTP 401|HTTP 403/.test(String(e?.message))) {
       throw new Error("网页会话已过期，请重新「网页登录」")
@@ -334,11 +366,14 @@ export async function refreshUsage(): Promise<UsageData> {
       } catch (e) {
         const body = readCapturedBody()
         if (body) {
-          summary = JSON.parse(body)
+          try { summary = JSON.parse(body) } catch { summary = body }
         } else {
           throw e
         }
       }
+    } else if (readCaptures().length) {
+      // 无会话但有历史捕获：直接用最近一次捕获内容
+      summary = readCaptures()[0].body
     } else if (hasCredentials()) {
       summary = await authedGet(CMHK.paths.usageSummary)
     } else {
@@ -355,14 +390,23 @@ export async function refreshUsage(): Promise<UsageData> {
 
     const fm = CMHK.fieldMap
     const auto = autoMap(summary)
+    // 终极兜底：把响应（JSON 或 HTML）拍平成文本，按中文界面真实字段形态提取
+    const parsed: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
     const data: UsageData = {
-      planName: getPath(summary, fm.planName) ?? auto.planName ?? null,
+      planName: getPath(summary, fm.planName) ?? auto.planName ?? parsed.planName ?? null,
       phoneNumber: maskPhone(getPhone()),
-      balanceHKD: balanceHKD ?? auto.balanceHKD ?? null,
-      dataTotalGB: toNum(getPath(summary, fm.dataTotalGB)) ?? auto.dataTotalGB ?? null,
-      dataRemainingGB: toNum(getPath(summary, fm.dataRemainingGB)) ?? auto.dataRemainingGB ?? null,
-      voiceTotalMin: toNum(getPath(summary, fm.voiceTotalMin)),
-      voiceRemainingMin: toNum(getPath(summary, fm.voiceRemainingMin)) ?? auto.voiceRemainingMin ?? null,
+      accountNumber: parsed.accountNumber ?? null,
+      balanceHKD: balanceHKD ?? auto.balanceHKD ?? parsed.balanceHKD ?? null,
+      billAmountHKD: parsed.billAmountHKD ?? null,
+      dataTotalGB: toNum(getPath(summary, fm.dataTotalGB)) ?? auto.dataTotalGB ?? parsed.dataTotalGB ?? null,
+      dataRemainingGB: toNum(getPath(summary, fm.dataRemainingGB)) ?? auto.dataRemainingGB ?? parsed.dataRemainingGB ?? null,
+      roamDataTotalGB: parsed.roamDataTotalGB ?? null,
+      roamDataRemainingGB: parsed.roamDataRemainingGB ?? null,
+      roamExpiry: parsed.roamExpiry ?? null,
+      voiceTotalMin: toNum(getPath(summary, fm.voiceTotalMin)) ?? parsed.voiceTotalMin ?? null,
+      voiceRemainingMin: toNum(getPath(summary, fm.voiceRemainingMin)) ?? auto.voiceRemainingMin ?? parsed.voiceRemainingMin ?? null,
+      voiceUnlimited: parsed.voiceUnlimited ?? false,
+      smsRemaining: parsed.smsRemaining ?? null,
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? null,
       fetchedAt: Date.now(),

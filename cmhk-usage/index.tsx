@@ -24,6 +24,7 @@ import {
 import {
   clearCredentials,
   clearManualEndpoint,
+  readCaptures,
   saveCapturedBody,
   clearWebSession,
   connectionTest,
@@ -71,6 +72,7 @@ function Page() {
   const [manualUrl, setManualUrl] = useState(readManualEndpoint()?.url ?? "")
   const [manualHeaders, setManualHeaders] = useState("")
   const [webStartUrl, setWebStartUrlState] = useState(getWebStartUrl())
+  const [showCaptures, setShowCaptures] = useState(false)
 
   async function showError(title: string, e: any) {
     await Dialog.alert({ title, message: friendlyError(e) })
@@ -239,12 +241,18 @@ function Page() {
             </HStack>
             <HStack spacing={16}>
               <VStack alignment="leading" spacing={2}>
-                <Text font="caption2" foregroundStyle={theme.textTertiary}>话费余额</Text>
-                <Text font="headline" foregroundStyle={theme.textPrimary}>HK$ {fmtMoney(data.balanceHKD)}</Text>
+                <Text font="caption2" foregroundStyle={theme.textTertiary}>
+                  {data.billAmountHKD != null ? "应缴金额" : "话费余额"}
+                </Text>
+                <Text font="headline" foregroundStyle={theme.textPrimary}>
+                  HK$ {fmtMoney(data.billAmountHKD ?? data.balanceHKD)}
+                </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>通话剩余</Text>
-                <Text font="headline" foregroundStyle={theme.textPrimary}>{fmtMin(data.voiceRemainingMin)} 分钟</Text>
+                <Text font="headline" foregroundStyle={theme.textPrimary}>
+                  {data.voiceUnlimited ? "无限" : `${fmtMin(data.voiceRemainingMin)} 分钟`}
+                </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>账单日</Text>
@@ -253,6 +261,12 @@ function Page() {
                 </Text>
               </VStack>
             </HStack>
+            {data.roamDataRemainingGB != null && (
+              <Text font="caption" foregroundStyle={theme.textSecondary}>
+                漫游数据：剩余 {fmtGB(data.roamDataRemainingGB)} / {fmtGB(data.roamDataTotalGB)} GB
+                {data.roamExpiry ? `（${data.roamExpiry} 失效）` : ""}
+              </Text>
+            )}
             <Text font="caption2" foregroundStyle={theme.textTertiary}>
               更新于 {fmtUpdatedAt(data.fetchedAt)}
             </Text>
@@ -296,6 +310,25 @@ function Page() {
         <Button title="立即刷新并更新小组件" action={handleRefresh} />
         <Button title="预览小组件（systemMedium）" action={handlePreview} />
         <Button title="连接诊断（查看接口返回字段）" action={handleDiagnose} />
+
+        {/* 诊断 */}
+        <Text font="headline">诊断</Text>
+        <Button title={showCaptures ? "收起捕获数据" : `查看捕获数据（${readCaptures().length} 条）`} action={() => setShowCaptures(!showCaptures)} />
+        {showCaptures && (
+          <VStack spacing={8} alignment="leading">
+            {readCaptures().length === 0 && (
+              <Text font="caption" foregroundStyle="secondary">暂无捕获。请先「网页登录」并进入「用量查询」页。</Text>
+            )}
+            {readCaptures().map((c, i) => (
+              <VStack key={i} alignment="leading" spacing={2} padding={8} background="rgba(0,0,0,0.04)" cornerRadius={8}>
+                <Text font="caption2" fontWeight="medium" monospaced>{c.url.slice(0, 120)}</Text>
+                <Text font="caption2" foregroundStyle="secondary" monospaced lineLimit={8}>
+                  {c.body.slice(0, 400)}
+                </Text>
+              </VStack>
+            ))}
+          </VStack>
+        )}
 
         {status && <Text font="caption" foregroundStyle="secondary">{status}</Text>}
 
