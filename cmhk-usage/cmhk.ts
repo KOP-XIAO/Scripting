@@ -557,6 +557,12 @@ export async function refreshUsage(): Promise<UsageData> {
         if (parsed.planName == null && extra.planName) parsed.planName = extra.planName
       }
     }
+    // 会员代码→等级名（对 profile/解析链任何来源的纯数字代码统一映射）
+    if (parsed.membershipTier && /^\d+$/.test(parsed.membershipTier)) {
+      const tierMap: Record<string, string> = { "10002": "白金", "10001": "金", "10003": "铂金", "10004": "钻石" }
+      const mapped = tierMap[parsed.membershipTier]
+      if (mapped) { parsed.membershipTier = mapped; appendDebug(`会员代码${parsed.membershipTier}->${mapped}`) }
+    }
     const data: UsageData = {
       planName: getPath(summary, fm.planName) ?? auto.planName ?? parsed.planName ?? null,
       phoneNumber: maskPhone(getPhone()),
