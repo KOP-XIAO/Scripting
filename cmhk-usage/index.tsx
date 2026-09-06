@@ -172,6 +172,35 @@ function Page() {
     }
   }
 
+  async function handleReset() {
+    const ok = await Dialog.confirm({
+      title: "重置",
+      message: "将清除缓存、捕获环、网页会话、凭据与调试日志，回到全新状态。确定吗？",
+      confirmLabel: "重置",
+    })
+    if (ok) {
+      try {
+        clearCredentials(); clearWebSession(); clearManualEndpoint();
+        clearDebugLog();
+        const ScriptApi = (globalThis as any)
+        // 清 Storage 私有域
+        for (const k of Object.keys(requireStorageKeys())) {
+          Storage.remove(k)
+        }
+      } catch { /* 部分清理失败不影响 */ }
+      setData(null); setPhone(""); setPassword(""); setStatus("已重置，请重新「网页登录」")
+    }
+  }
+
+  // 列出本项目用到的 Storage 键（用于清空）
+  function requireStorageKeys(): string[] {
+    return [
+      "cmhk.usage.cache", "cmhk.demo", "cmhk.manual.url", "cmhk.manual.headers",
+      "cmhk.web.starturl", "cmhk.web.body", "cmhk.captures", "cmhk.debuglog",
+      "cmhk.overview.html", "cmhk.member.json", "cmhk.nickname.json", "cmhk.profile",
+    ]
+  }
+
   async function handlePreview() {
     await Widget.preview({ family: "systemMedium" })
   }
@@ -242,6 +271,11 @@ function Page() {
             : <Button title="刷新" action={handleRefresh} />,
         }}
       >
+        {/* 运行状态横幅 */}
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>
+          脚本版本 1.15.1 · {data ? "数据已就绪" : "等待登录/刷新"} {data?.stale ? "· 缓存数据" : ""}
+        </Text>
+
         {/* 数据总览 */}
         {data && (
           <VStack spacing={6} padding={12} background={theme.cardBackground as any} cornerRadius={16}>
@@ -322,6 +356,7 @@ function Page() {
         <HStack spacing={12}>
           <Button title="保存凭据" action={handleSave} />
           <Button title="清除账户" action={handleClear} />
+        <Button title="清除本地数据并重新开始（重置登录）" action={handleReset} />
         </HStack>
 
         {/* 手动接口配置（抓包兜底） */}
