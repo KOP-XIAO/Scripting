@@ -85,7 +85,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
-    <HStack spacing={8} alignment="center">
+    <HStack spacing={6} alignment="center">
       <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 8, height: 8 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
@@ -178,16 +178,16 @@ function MediumWidget({ data }: { data: UsageData }) {
   const member = data.membershipTier || data.points != null
   const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
-    <HStack spacing={18} padding={16} background={theme.cardBackground as any}>
+    <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
       {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
-        <DataRing bucket={main} size={92} />
+        <DataRing bucket={main} size={84} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       {/* 右：标题=套餐名 + 身份 + 明细 */}
-      <VStack spacing={7} frame={{ maxWidth: "infinity" } as never}>
+      <VStack spacing={5} frame={{ maxWidth: "infinity" } as never}>
         {/* 标题栏：CMHK 品牌 + 套餐名 */}
         <HStack spacing={8} alignment="lastTextBaseline">
           <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
