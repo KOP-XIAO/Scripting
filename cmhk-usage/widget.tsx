@@ -50,9 +50,8 @@ function expiryShort(b?: Bucket): string {
   return e ? e.slice(5).replace("-", "/") : ""
 }
 function bucketLabel(name: string): string {
+  if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "赠送"
   if (/服務計劃|數據|数据/.test(name)) return "套餐內"
-  if (/漫遊|漫游/.test(name)) return "漫遊"
-  if (/贈送|赠送|extra/i.test(name)) return "贈送"
   return name.length > 6 ? name.slice(0, 6) : name
 }
 
@@ -85,8 +84,8 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
-    <HStack spacing={6} alignment="center">
-      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 8, height: 8 }} />
+    <HStack spacing={9} alignment="center">
+      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 9, height: 9 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
@@ -148,13 +147,13 @@ function SmallWidget({ data }: { data: UsageData }) {
         </Text>
       </VStack>
       <Spacer />
-      <HStack alignment="lastTextBaseline" spacing={3}>
+      <HStack alignment="lastTextBaseline" spacing={4}>
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>
-          {new Date(data.fetchedAt).getHours()}:{String(new Date(data.fetchedAt).getMinutes()).padStart(2, "0")}
-        </Text>
+        <Button intent={RefreshIntent(undefined)}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
+        </Button>
       </HStack>
     </VStack>
   )
@@ -218,13 +217,10 @@ function MediumWidget({ data }: { data: UsageData }) {
           <Row icon="calendar" label="到期" value={`${expiryShort(main!)}`} color={theme.textSecondary} />
         )}
         <Spacer />
-        <HStack spacing={4}>
-          <Text font="caption2" foregroundStyle={theme.textTertiary}>
-            更新於 {fmtUpdatedAt(data.fetchedAt)}
-          </Text>
+        <HStack spacing={4} alignment="center">
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>
-            <Image systemName="arrow.clockwise" foregroundStyle={theme.textSecondary} frame={{ width: 9, height: 9 }} />
+            <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 9, height: 9 }} />
           </Button>
         </HStack>
       </VStack>
