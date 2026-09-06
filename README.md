@@ -27,7 +27,6 @@
 ```text
 ~/Documents/Scripting/<项目>/      # iOS 同步源（主目录）
 ~/Documents/GitHub/Scripting/<项目>/  # 本仓库（发布到远端）
-~/Documents/Grok/Skills/<项目>/    # 项目备份区
 ```
 
 更新流程：改主目录 → 运行 `sync.sh`（见下）→ commit & push。
