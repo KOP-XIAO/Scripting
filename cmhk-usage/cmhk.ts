@@ -537,7 +537,7 @@ export async function refreshUsage(): Promise<UsageData> {
         expiry: b.expiry ?? null,
       })),
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
-      cycleEndDate: getPath(summary, fm.cycleEndDate) ?? null,
+      cycleEndDate: getPath(summary, fm.cycleEndDate) ?? (parsed.buckets?.[0]?.expiry ?? null),
       fetchedAt: Date.now(),
     }
     writeCache(data)
@@ -632,4 +632,13 @@ export function fmtUpdatedAt(ts: number): string {
   const hh = String(d.getHours()).padStart(2, "0")
   const mm = String(d.getMinutes()).padStart(2, "0")
   return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
+}
+
+// 周期剩余天数：主桶 expiry（如 2026-10-06）距今的天数
+export function daysUntilCycleEnd(d: UsageData): number | null {
+  const src = d.cycleEndDate ?? d.buckets?.[0]?.expiry ?? d.roamExpiry
+  if (!src) return null
+  const t = new Date(src.replace(/-/g, "/")).getTime()
+  if (!Number.isFinite(t)) return null
+  return Math.max(0, Math.ceil((t - Date.now()) / 86400000))
 }

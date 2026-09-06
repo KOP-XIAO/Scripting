@@ -13,7 +13,7 @@ import {
   Widget,
   ZStack,
 } from "scripting"
-import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, UsageData } from "./cmhk"
+import { daysUntilCycleEnd, fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, UsageData } from "./cmhk"
 import { ringStops, theme } from "./theme"
 import { RefreshIntent } from "./app_intents"
 
@@ -68,21 +68,24 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   )
 }
 
-function Row({ icon, label, value }: { icon: string; label: string; value: string }) {
+function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={6}>
-      <Image systemName={icon} foregroundStyle={theme.accent} frame={{ width: 13, height: 13 }} />
+      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 13, height: 13 }} />
       <Text font="caption" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
-      <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>{value}</Text>
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
     </HStack>
   )
 }
 
-function FeeText({ d }: { d: UsageData }): { label: string; value: string } {
-  if (d.billAmountHKD != null) return { label: "代缴话费", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}` }
-  if (d.balanceHKD != null) return { label: "话费余额", value: `HK$ ${fmtMoney(d.balanceHKD)}` }
-  return { label: "代缴话费", value: "--" }
+function FeeText({ d }: { d: UsageData }): { label: string; value: string; color: string } {
+  if (d.billAmountHKD != null) {
+    const owed = d.billAmountHKD < 0
+    return { label: owed ? "欠费" : "代缴话费", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}`, color: owed ? "#FF6B5E" : theme.textPrimary }
+  }
+  if (d.balanceHKD != null) return { label: "话费余额", value: `HK$ ${fmtMoney(d.balanceHKD)}`, color: theme.textPrimary }
+  return { label: "代缴话费", value: "--", color: theme.textTertiary }
 }
 
 function SmallWidget({ data }: { data: UsageData }) {
@@ -144,7 +147,7 @@ function MediumWidget({ data }: { data: UsageData }) {
             {data.membershipTier ?? ""}{data.points != null ? ` · ${data.points}分` : ""}
           </Text>
         )}
-        <Row icon="creditcard" label={fee.label} value={fee.value} />
+        <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
         <Row icon="phone" label="通话" value={voice} />
         {extras.map((b, i) => (
           <Row key={i} icon="arrow.down.circle" label={shortLabel(b.name)}
@@ -153,7 +156,7 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Spacer />
         <HStack spacing={4}>
           <Text font="caption2" foregroundStyle={theme.textTertiary}>
-            更新于 {fmtUpdatedAt(data.fetchedAt)}
+            更新于 {fmtUpdatedAt(data.fetchedAt)}{(() => { const n = daysUntilCycleEnd(data); return n != null ? ` · 剩${n}天` : "" })()}
           </Text>
           <Spacer />
           <Button intent={RefreshIntent(undefined)}>

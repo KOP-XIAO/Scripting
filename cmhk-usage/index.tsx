@@ -26,6 +26,7 @@ import {
   clearCredentials,
   clearDebugLog,
   clearManualEndpoint,
+  daysUntilCycleEnd,
   readCaptures,
   readDebugLog,
   saveCapturedBody,
@@ -265,8 +266,9 @@ function Page() {
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>
                   {data.billAmountHKD != null ? "代缴话费" : "话费余额"}
                 </Text>
-                <Text font="headline" foregroundStyle={theme.textPrimary}>
-                  HK$ {fmtMoney(data.billAmountHKD ?? data.balanceHKD)}
+                <Text font="headline" foregroundStyle={data.billAmountHKD != null && data.billAmountHKD < 0 ? "#FF6B5E" : theme.textPrimary}>
+                  HK$ {fmtMoney(Math.abs(data.billAmountHKD ?? data.balanceHKD ?? 0))}
+                  {data.billAmountHKD != null && data.billAmountHKD < 0 ? " 欠费" : ""}
                 </Text>
               </VStack>
               <VStack alignment="leading" spacing={2}>
@@ -278,7 +280,7 @@ function Page() {
               <VStack alignment="leading" spacing={2}>
                 <Text font="caption2" foregroundStyle={theme.textTertiary}>账单日</Text>
                 <Text font="headline" foregroundStyle={theme.textPrimary}>
-                  {billDays != null ? `${billDays} 天后` : data.billDay != null ? `每月 ${data.billDay} 日` : "--"}
+                  {(() => { const n = daysUntilCycleEnd(data); return n != null ? `剩 ${n} 天` : (data.billDay != null ? `每月 ${data.billDay} 日` : "--") })()}
                 </Text>
               </VStack>
             </HStack>
