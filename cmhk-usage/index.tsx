@@ -23,6 +23,7 @@ import {
   Widget,
 } from "scripting"
 import {
+  VERSION,
   clearCredentials,
   clearDebugLog,
   clearManualEndpoint,
@@ -230,7 +231,7 @@ function Page() {
         return `\n===== 捕获 ${i + 1} (${kind}) ${new Date(c.at).toLocaleString()} =====\nURL: ${c.url}\n${c.body}`
       }).join("")
       const cache = data ? JSON.stringify({ ...data, fetchedAt: new Date(data.fetchedAt).toLocaleString() }, null, 2) : "(无)"
-      const V = "1.14.0"
+      const V = VERSION
     const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}`
       const ok = await ShareSheet.present([text])
       if (!ok) setStatus("已取消导出")
@@ -273,7 +274,7 @@ function Page() {
       >
         {/* 运行状态横幅 */}
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
-          脚本版本 1.15.1 · {data ? "数据已就绪" : "等待登录/刷新"} {data?.stale ? "· 缓存数据" : ""}
+          脚本版本 {VERSION} · {data ? "数据已就绪" : "等待登录/刷新"} {data?.stale ? "· 缓存数据" : ""}
         </Text>
 
         {/* 数据总览 */}

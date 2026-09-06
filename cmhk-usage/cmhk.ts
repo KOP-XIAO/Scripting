@@ -11,6 +11,8 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
+
+export const VERSION = "1.16.0"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
