@@ -1,10 +1,12 @@
 // index.tsx — CMHK Usage 主程序（App 内页面）
-// 职责：账户设置（Keychain 存凭据）、手动刷新、缓存数据面板、小组件预览、连接诊断。
+// 职责：账户设置（Keychain 存凭据）、网页登录捕获、手动刷新、缓存数据面板、小组件预览、连接诊断。
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()。
+//
+// 注意：Dialog / Storage / Keychain / WebViewController 为全局对象，
+// 不要从 "scripting" 导入（生产范本验证过，导入不存在于模块导出会静默失效）。
 
 import {
   Button,
-  Dialog,
   HStack,
   List,
   Navigation,
@@ -21,6 +23,7 @@ import {
 } from "scripting"
 import {
   clearCredentials,
+  clearWebSession,
   diagnose,
   dataRemainingRatio,
   daysUntilBillDay,
@@ -30,6 +33,7 @@ import {
   fmtUpdatedAt,
   getPhone,
   hasCredentials,
+  hasWebSession,
   isDemoMode,
   readCache,
   refreshUsage,
@@ -37,7 +41,13 @@ import {
   saveCredentials,
   UsageData,
 } from "./cmhk"
+import { runWebLogin } from "./web-login"
 import { theme } from "./theme"
+
+declare const Dialog: {
+  alert(options: { message: string; title?: string; buttonLabel?: string }): Promise<void>
+  confirm(options: { message: string; title?: string; cancelLabel?: string; confirmLabel?: string }): Promise<boolean>
+}
 
 function Page() {
   const dismiss = Navigation.useDismiss()
@@ -48,21 +58,51 @@ function Page() {
   const [data, setData] = useState<UsageData | null>(readCache())
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [webSession, setWebSession] = useState(hasWebSession())
+
+  async function showError(title: string, e: any) {
+    await Dialog.alert({ title, message: String(e?.message ?? e) })
+  }
 
   async function handleSave() {
-    if (!phone.trim() || !password) {
-      await Dialog.alert({ title: "信息不完整", message: "请输入手机号和 MyLink 密码。" })
-      return
+    try {
+      if (!phone.trim() || !password) {
+        await Dialog.alert({ title: "信息不完整", message: "请输入手机号和 MyLink 密码。" })
+        return
+      }
+      const ok = await Dialog.confirm({
+        title: "保存凭据",
+        message: "手机号与密码将仅保存在本机系统钥匙串（Keychain）中，仅用于登录 CMHK 接口，不会上传或写入任何日志。是否继续？",
+        confirmLabel: "保存",
+      })
+      if (!ok) return
+      if (!saveCredentials(phone.trim(), password)) {
+        throw new Error("Keychain 写入失败")
+      }
+      setPassword("")
+      setStatus("凭据已保存到 Keychain")
+    } catch (e) {
+      await showError("保存失败", e)
     }
-    const ok = await Dialog.confirm({
-      title: "保存凭据",
-      message: "手机号与密码将仅保存在本机系统钥匙串（Keychain）中，仅用于登录 CMHK MyLink 接口，不会上传或写入任何日志。是否继续？",
-      confirmLabel: "保存",
-    })
-    if (!ok) return
-    saveCredentials(phone.trim(), password)
-    setPassword("")
-    setStatus("凭据已保存到 Keychain")
+  }
+
+  async function handleWebLogin() {
+    setBusy(true)
+    setStatus(null)
+    try {
+      const r = await runWebLogin()
+      if (r.captured) {
+        setWebSession(true)
+        setStatus("网页会话已保存，点击「刷新」拉取数据")
+        await handleRefresh()
+      } else {
+        setStatus("未捕获到登录请求：请确认已在网页中登录并打开过用量页面")
+      }
+    } catch (e) {
+      await showError("网页登录失败", e)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleRefresh() {
@@ -73,8 +113,8 @@ function Page() {
       setData(d)
       Widget.reloadUserWidgets()
       setStatus(d.stale ? "网络异常，已显示上次缓存数据" : "已刷新")
-    } catch (e: any) {
-      setStatus(`刷新失败：${e?.message ?? e}`)
+    } catch (e) {
+      await showError("刷新失败", e)
     } finally {
       setBusy(false)
     }
@@ -89,8 +129,8 @@ function Page() {
         message:
           `usage 顶层字段:\n${r.usageKeys.join(", ") || "(无)"}\n\nbalance 顶层字段:\n${r.balanceKeys.join(", ") || "(无)"}`,
       })
-    } catch (e: any) {
-      await Dialog.alert({ title: "诊断失败", message: String(e?.message ?? e) })
+    } catch (e) {
+      await showError("诊断失败", e)
     } finally {
       setBusy(false)
     }
@@ -99,11 +139,13 @@ function Page() {
   async function handleClear() {
     const ok = await Dialog.confirm({
       title: "清除账户",
-      message: "将删除 Keychain 中的手机号、密码与登录令牌。确定吗？",
+      message: "将删除 Keychain 中的手机号、密码、登录令牌与网页会话。确定吗？",
       confirmLabel: "清除",
     })
     if (ok) {
       clearCredentials()
+      clearWebSession()
+      setWebSession(false)
       setPhone("")
       setStatus("已清除账户信息")
     }
@@ -170,8 +212,15 @@ function Page() {
           </VStack>
         )}
 
-        {/* 账户设置 */}
-        <Text font="headline">账户（单账户）</Text>
+        {/* 登录 */}
+        <Text font="headline">登录</Text>
+        <Button title={webSession ? "重新网页登录（已保存会话）" : "网页登录 CMHK（推荐）"} action={handleWebLogin} />
+        <Text font="caption" foregroundStyle="secondary">
+          在打开的官网页面中登录并进入「用量/Usage」页面，脚本会自动记录会话。
+        </Text>
+
+        {/* 密码方式（备选） */}
+        <Text font="headline">或：账户密码（备选，需校准接口）</Text>
         <TextField title="手机号" value={phone} onChanged={setPhone} prompt="CMHK 手机号" />
         <SecureField title="MyLink 密码" value={password} onChanged={setPassword} prompt={hasCredentials() ? "已保存（输入可覆盖）" : "MyLink 登录密码"} />
         <HStack spacing={12}>
@@ -189,7 +238,7 @@ function Page() {
         {status && <Text font="caption" foregroundStyle="secondary">{status}</Text>}
 
         <Text font="caption" foregroundStyle="secondary">
-          数据来源：CMHK MyLink 只读接口。凭据仅存本机 Keychain。若刷新失败，请先用「连接诊断」核对字段映射（见 cmhk.ts 顶部校准区）。
+          数据来源：CMHK 官方网页会话 / MyLink 只读接口。凭据与会话仅存本机 Keychain，不写日志。
         </Text>
       </List>
     </NavigationStack>

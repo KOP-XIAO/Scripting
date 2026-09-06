@@ -2,7 +2,7 @@
   "name": "CMHK Usage",
   "icon": "antenna.radiowaves.left.and.right",
   "color": "rgba(0, 122, 255, 1)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entry": "index.tsx",
   "runInApp": true,
   "permissions": null,

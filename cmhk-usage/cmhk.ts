@@ -1,12 +1,16 @@
 // cmhk.ts — CMHK（中国移动香港 / MyLink）用量数据层
-// index.tsx / widget.tsx / app_intents.tsx 共用；所有原始 API 调用都收在这里。
+// index.tsx / widget.tsx / app_intents.tsx / web-login.tsx 共用。
 //
-// ⚠️ 重要说明（请务必阅读）：
-// CMHK MyLink 没有公开 API 文档。下面的 ENDPOINTS 与 FIELD_MAP 是按 MyLink
-// App（com.ChinaMobile）常见接口形态整理的「校准点」：首次使用请打开
-// index.tsx 里的「连接诊断」，对照返回的原始 JSON 字段名，把 FIELD_MAP 里
-// 的路径调成你账户实际返回的字段即可，UI 与缓存逻辑无需改动。
-// 全程只读接口，不写任何账户数据。
+// 认证优先级：
+//   1. 网页会话（推荐）：web-login.tsx 里用户在官方网页登录后，
+//      自动捕获带鉴权的请求（URL + Authorization/Cookie 头），之后直接重放。
+//   2. 密码登录：走下方校准区的 REST 端点（MyLink 无公开 API 文档，需校准）。
+//
+// ⚠️ 校准说明：MyLink 没有公开 API 文档。网页会话方式通常开箱即用
+// （捕获到的就是真实用量接口）；密码方式请用「连接诊断」对照实际返回字段，
+// 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
+
+import { fetch } from "scripting"
 
 export type UsageData = {
   planName: string | null        // 套餐名
@@ -23,22 +27,24 @@ export type UsageData = {
 }
 
 const CACHE_KEY = "cmhk.usage.cache"
+const DEMO_FLAG = "cmhk.demo"
+
+// Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
 const KC_PHONE = "cmhk.account.phone"
 const KC_PASSWORD = "cmhk.account.password"
-const DEMO_FLAG = "cmhk.demo"
+const KC_WEB_URL = "cmhk.web.url"
+const KC_WEB_AUTH = "cmhk.web.authorization"
+const KC_WEB_COOKIE = "cmhk.web.cookie"
 
-// ---------- 校准区（按需修改） ----------
+// ---------- 校准区（密码 REST 方式按需修改） ----------
 export const CMHK = {
   // MyLink App 接口基址（如抓包结果不同，改这一处即可）
   baseUrl: "https://app.mylink.com.hk/mylink-api",
   paths: {
-    // 登录：POST { msisdn, password } -> { token }
-    login: "/auth/login",
-    // 用量总览：GET，Header 带 Authorization: Bearer <token>
-    usageSummary: "/usage/summary",
-    // 账户余额：GET
-    balance: "/account/balance",
+    login: "/auth/login",          // POST { msisdn, password } -> { token }
+    usageSummary: "/usage/summary", // GET，Authorization: Bearer <token>
+    balance: "/account/balance",    // GET
   },
   // 响应字段映射：值为「点分路径」，用 getPath() 取值
   fieldMap: {
@@ -60,15 +66,14 @@ declare const Storage: {
   remove(key: string): void
 }
 declare const Keychain: {
-  set(key: string, value: string): void
+  set(key: string, value: string): boolean
   get(key: string): string | null
   remove(key: string): void
 }
 
 // ---- 凭据（Keychain，安全边界：永不写入 Storage / 日志） ----
-export function saveCredentials(phone: string, password: string) {
-  Keychain.set(KC_PHONE, phone)
-  Keychain.set(KC_PASSWORD, password)
+export function saveCredentials(phone: string, password: string): boolean {
+  return Keychain.set(KC_PHONE, phone) && Keychain.set(KC_PASSWORD, password)
 }
 export function getPhone(): string | null {
   return Keychain.get(KC_PHONE)
@@ -80,6 +85,34 @@ export function clearCredentials() {
   Keychain.remove(KC_TOKEN)
   Keychain.remove(KC_PHONE)
   Keychain.remove(KC_PASSWORD)
+}
+
+// ---- 网页会话（web-login.tsx 捕获） ----
+export type WebSession = { url: string; authorization: string | null; cookie: string | null }
+
+export function saveWebSession(s: WebSession): boolean {
+  const ok =
+    Keychain.set(KC_WEB_URL, s.url) &&
+    Keychain.set(KC_WEB_AUTH, s.authorization ?? "") &&
+    Keychain.set(KC_WEB_COOKIE, s.cookie ?? "")
+  return ok
+}
+export function readWebSession(): WebSession | null {
+  const url = Keychain.get(KC_WEB_URL)
+  if (!url) return null
+  return {
+    url,
+    authorization: Keychain.get(KC_WEB_AUTH) || null,
+    cookie: Keychain.get(KC_WEB_COOKIE) || null,
+  }
+}
+export function hasWebSession(): boolean {
+  return !!Keychain.get(KC_WEB_URL)
+}
+export function clearWebSession() {
+  Keychain.remove(KC_WEB_URL)
+  Keychain.remove(KC_WEB_AUTH)
+  Keychain.remove(KC_WEB_COOKIE)
 }
 
 // ---- 缓存（Storage 私有域） ----
@@ -100,7 +133,7 @@ export function setDemoMode(on: boolean) {
 export function demoData(): UsageData {
   return {
     planName: "5G 大湾区服务计划",
-    phoneNumber: "9***1234",
+    phoneNumber: "****1234",
     balanceHKD: 86.5,
     dataTotalGB: 30,
     dataRemainingGB: 18.6,
@@ -131,6 +164,24 @@ async function fetchJson(url: string, init: Record<string, any>, timeoutMs = 120
   return res.json()
 }
 
+// 网页会话重放：直接请求捕获到的真实接口
+async function fetchWithWebSession(): Promise<any> {
+  const s = readWebSession()
+  if (!s) throw new Error("无网页会话")
+  const headers: Record<string, string> = {}
+  if (s.authorization) headers["Authorization"] = s.authorization
+  if (s.cookie) headers["Cookie"] = s.cookie
+  try {
+    return await fetchJson(s.url, { headers })
+  } catch (e: any) {
+    if (/HTTP 401|HTTP 403/.test(String(e?.message))) {
+      throw new Error("网页会话已过期，请重新「网页登录」")
+    }
+    throw e
+  }
+}
+
+// 密码 REST 方式（校准区）
 async function login(): Promise<string> {
   const phone = Keychain.get(KC_PHONE)
   const password = Keychain.get(KC_PASSWORD)
@@ -155,7 +206,6 @@ async function authedGet(path: string): Promise<any> {
     })
   } catch (e: any) {
     if (/HTTP 401|HTTP 403/.test(String(e?.message))) {
-      // token 失效：重新登录后重试一次
       token = await login()
       return await fetchJson(`${CMHK.baseUrl}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -173,12 +223,23 @@ export async function refreshUsage(): Promise<UsageData> {
     return d
   }
   try {
-    const summary = await authedGet(CMHK.paths.usageSummary)
+    let summary: any
+    if (hasWebSession()) {
+      // 网页会话：重放捕获到的真实接口
+      summary = await fetchWithWebSession()
+    } else if (hasCredentials()) {
+      summary = await authedGet(CMHK.paths.usageSummary)
+    } else {
+      throw new Error("尚未登录：请先「网页登录」或保存账户密码")
+    }
+
     let balanceHKD: number | null = null
     try {
-      const bal = await authedGet(CMHK.paths.balance)
-      balanceHKD = toNum(getPath(bal, "data.balance") ?? getPath(bal, "data.remainFee"))
-    } catch { /* 余额接口失败不阻塞主数据 */ }
+      const bal = hasWebSession()
+        ? summary // 会话方式暂用同一响应取余额字段
+        : await authedGet(CMHK.paths.balance)
+      balanceHKD = toNum(getPath(bal, CMHK.fieldMap.balanceHKD) ?? getPath(bal, "data.remainFee"))
+    } catch { /* 余额字段失败不阻塞主数据 */ }
 
     const fm = CMHK.fieldMap
     const data: UsageData = {
@@ -204,8 +265,13 @@ export async function refreshUsage(): Promise<UsageData> {
 
 // 诊断用：返回原始 JSON 的顶层键，帮助校准 FIELD_MAP
 export async function diagnose(): Promise<{ usageKeys: string[]; balanceKeys: string[] }> {
-  const summary = await authedGet(CMHK.paths.usageSummary)
-  const bal = await authedGet(CMHK.paths.balance).catch(() => null)
+  const summary = hasWebSession()
+    ? await fetchWithWebSession()
+    : await authedGet(CMHK.paths.usageSummary)
+  let bal: any = null
+  if (!hasWebSession()) {
+    bal = await authedGet(CMHK.paths.balance).catch(() => null)
+  }
   const topKeys = (o: any) => (o && typeof o === "object" ? Object.keys(o).slice(0, 30) : [])
   return {
     usageKeys: topKeys(summary?.data ?? summary),
