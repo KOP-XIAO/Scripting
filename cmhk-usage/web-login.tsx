@@ -5,10 +5,9 @@
 // （URL + 请求头），之后数据层直接重放该真实接口，绕开无文档的 REST 摸索。
 
 import { WebViewController } from "scripting"
-import { saveWebSession } from "./cmhk"
+import { getWebStartUrl, saveWebSession } from "./cmhk"
 
-// CMHK 官网入口（登录后请手动打开「用量/Usage」页面再关闭窗口）
-const CMHK_HOME = "https://www.hk.chinamobile.com/tc/"
+// 起始页可在 App 内「网页登录起始页」设置中修改
 
 export async function runWebLogin(): Promise<{ captured: boolean; url: string | null }> {
   const webView = new WebViewController() // 持久模式：与后续请求共享 cookie 容器
@@ -37,7 +36,7 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     return true // 一律放行，只观察不拦截
   }
 
-  await webView.loadURL(CMHK_HOME)
+  await webView.loadURL(getWebStartUrl())
   await webView.present({ navigationTitle: "登录后打开「用量」页，再关闭本窗口" })
   webView.dispose()
 

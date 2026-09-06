@@ -28,6 +28,9 @@ export type UsageData = {
 
 const CACHE_KEY = "cmhk.usage.cache"
 const DEMO_FLAG = "cmhk.demo"
+const KEY_MANUAL_URL = "cmhk.manual.url"
+const KEY_MANUAL_HEADERS = "cmhk.manual.headers"
+const KEY_WEB_START_URL = "cmhk.web.starturl"
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -113,6 +116,50 @@ export function clearWebSession() {
   Keychain.remove(KC_WEB_URL)
   Keychain.remove(KC_WEB_AUTH)
   Keychain.remove(KC_WEB_COOKIE)
+}
+
+// ---- 手动接口配置（抓包粘贴：终极兜底路径） ----
+export type ManualEndpoint = { url: string; headers: Record<string, string> }
+
+export function saveManualEndpoint(url: string, headersJson: string): void {
+  const headers = JSON.parse(headersJson)
+  if (typeof headers !== "object" || headers === null) throw new Error("请求头不是合法 JSON")
+  Storage.set(KEY_MANUAL_URL, url.trim())
+  Storage.set(KEY_MANUAL_HEADERS, headers)
+}
+export function readManualEndpoint(): ManualEndpoint | null {
+  const url = Storage.get<string>(KEY_MANUAL_URL)
+  const headers = Storage.get<Record<string, string>>(KEY_MANUAL_HEADERS)
+  if (!url || !headers) return null
+  return { url, headers }
+}
+export function hasManualEndpoint(): boolean {
+  return !!readManualEndpoint()
+}
+export function clearManualEndpoint() {
+  Storage.remove(KEY_MANUAL_URL)
+  Storage.remove(KEY_MANUAL_HEADERS)
+}
+
+// ---- 网页登录起始页（可在 App 内修改） ----
+export const DEFAULT_WEB_START_URL = "https://www.hk.chinamobile.com/tc/"
+export function getWebStartUrl(): string {
+  return Storage.get<string>(KEY_WEB_START_URL) || DEFAULT_WEB_START_URL
+}
+export function setWebStartUrl(url: string) {
+  Storage.set(KEY_WEB_START_URL, url.trim())
+}
+
+// ---- 友好错误映射：把 TLS/网络错误翻译成人话 ----
+export function friendlyError(e: any): string {
+  const msg = String(e?.message ?? e)
+  if (/TLS|SSL|证书|certificate|secure connection|NSURLError -12|NSURLError -10/i.test(msg)) {
+    return `TLS/安全连接失败：${msg}\n\n建议排查：① 是否开了代理/VPN（QuantumultX 等）的 MITM 而未信任其证书 → 临时关闭再试；② 切换 Wi-Fi/蜂窝网络；③ 确认能正常打开 hk.chinamobile.com`
+  }
+  if (/无法连接|could not connect|timed out|超时|offline|NSURLError -1009|NSURLError -1001/i.test(msg)) {
+    return `网络不可达：${msg}\n\n建议排查：① 网络连接；② 代理/VPN 是否拦截了该域名；③ 稍后重试`
+  }
+  return msg
 }
 
 // ---- 缓存（Storage 私有域） ----
@@ -224,19 +271,23 @@ export async function refreshUsage(): Promise<UsageData> {
   }
   try {
     let summary: any
-    if (hasWebSession()) {
+    const manual = readManualEndpoint()
+    if (manual) {
+      // 手动接口：抓包粘贴的真实用量接口（最优先）
+      summary = await fetchJson(manual.url, { headers: manual.headers })
+    } else if (hasWebSession()) {
       // 网页会话：重放捕获到的真实接口
       summary = await fetchWithWebSession()
     } else if (hasCredentials()) {
       summary = await authedGet(CMHK.paths.usageSummary)
     } else {
-      throw new Error("尚未登录：请先「网页登录」或保存账户密码")
+      throw new Error("尚未登录：请先「网页登录」，或在「手动配置接口」粘贴抓包结果")
     }
 
     let balanceHKD: number | null = null
     try {
-      const bal = hasWebSession()
-        ? summary // 会话方式暂用同一响应取余额字段
+      const bal = hasWebSession() || manual
+        ? summary // 会话/手动方式暂用同一响应取余额字段
         : await authedGet(CMHK.paths.balance)
       balanceHKD = toNum(getPath(bal, CMHK.fieldMap.balanceHKD) ?? getPath(bal, "data.remainFee"))
     } catch { /* 余额字段失败不阻塞主数据 */ }
@@ -259,8 +310,26 @@ export async function refreshUsage(): Promise<UsageData> {
   } catch (e) {
     const cached = readCache()
     if (cached) return { ...cached, stale: true }
-    throw e
+    throw new Error(friendlyError(e))
   }
+}
+
+// 连接测试：逐个探测关键主机，输出干净的结果
+export async function connectionTest(): Promise<string> {
+  const targets = [
+    { name: "CMHK 官网", url: DEFAULT_WEB_START_URL },
+    { name: "GitHub 更新源", url: "https://raw.githubusercontent.com" },
+  ]
+  const lines: string[] = []
+  for (const t of targets) {
+    try {
+      const res = (await fetch(t.url, { method: "HEAD" })) as any
+      lines.push(`✓ ${t.name}：可达（HTTP ${res.status}）`)
+    } catch (e: any) {
+      lines.push(`✗ ${t.name}：${friendlyError(e).split("\n")[0]}`)
+    }
+  }
+  return lines.join("\n")
 }
 
 // 诊断用：返回原始 JSON 的顶层键，帮助校准 FIELD_MAP

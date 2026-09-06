@@ -23,7 +23,9 @@ import {
 } from "scripting"
 import {
   clearCredentials,
+  clearManualEndpoint,
   clearWebSession,
+  connectionTest,
   diagnose,
   dataRemainingRatio,
   daysUntilBillDay,
@@ -31,14 +33,20 @@ import {
   fmtMin,
   fmtMoney,
   fmtUpdatedAt,
+  friendlyError,
   getPhone,
+  getWebStartUrl,
   hasCredentials,
+  hasManualEndpoint,
   hasWebSession,
   isDemoMode,
   readCache,
+  readManualEndpoint,
   refreshUsage,
   setDemoMode,
+  setWebStartUrl,
   saveCredentials,
+  saveManualEndpoint,
   UsageData,
 } from "./cmhk"
 import { runWebLogin } from "./web-login"
@@ -59,9 +67,12 @@ function Page() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [webSession, setWebSession] = useState(hasWebSession())
+  const [manualUrl, setManualUrl] = useState(readManualEndpoint()?.url ?? "")
+  const [manualHeaders, setManualHeaders] = useState("")
+  const [webStartUrl, setWebStartUrlState] = useState(getWebStartUrl())
 
   async function showError(title: string, e: any) {
-    await Dialog.alert({ title, message: String(e?.message ?? e) })
+    await Dialog.alert({ title, message: friendlyError(e) })
   }
 
   async function handleSave() {
@@ -155,6 +166,40 @@ function Page() {
     await Widget.preview({ family: "systemMedium" })
   }
 
+  async function handleSaveManual() {
+    try {
+      if (!manualUrl.trim()) throw new Error("请粘贴接口 URL")
+      saveManualEndpoint(manualUrl, manualHeaders.trim() || "{}")
+      setStatus("手动接口已保存，点「刷新」验证")
+    } catch (e) {
+      await showError("保存失败", e)
+    }
+  }
+
+  async function handleClearManual() {
+    clearManualEndpoint()
+    setManualUrl("")
+    setManualHeaders("")
+    setStatus("已清除手动接口配置")
+  }
+
+  async function handleConnTest() {
+    setBusy(true)
+    try {
+      const r = await connectionTest()
+      await Dialog.alert({ title: "连接测试", message: r })
+    } catch (e) {
+      await showError("连接测试失败", e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSaveStartUrl() {
+    setWebStartUrl(webStartUrl)
+    setStatus("网页登录起始页已保存")
+  }
+
   const ratio = data ? dataRemainingRatio(data) : null
   const billDays = data ? daysUntilBillDay(data) : null
 
@@ -228,8 +273,23 @@ function Page() {
           <Button title="清除账户" action={handleClear} />
         </HStack>
 
+        {/* 手动接口配置（抓包兜底） */}
+        <Text font="headline">手动配置接口（抓包兜底）</Text>
+        <TextField title="接口 URL" value={manualUrl} onChanged={setManualUrl} prompt="粘贴用量接口完整 URL" />
+        <TextField title="请求头" value={manualHeaders} onChanged={setManualHeaders} prompt='{"Authorization":"Bearer ..."}（可留空）' axis="vertical" />
+        <HStack spacing={12}>
+          <Button title="保存接口" action={handleSaveManual} />
+          <Button title="清除" action={handleClearManual} />
+        </HStack>
+
+        {/* 网页登录起始页 */}
+        <Text font="headline">网页登录起始页</Text>
+        <TextField title="起始页 URL" value={webStartUrl} onChanged={setWebStartUrlState} prompt="https://www.hk.chinamobile.com/tc/" />
+        <Button title="保存起始页" action={handleSaveStartUrl} />
+
         {/* 操作 */}
         <Text font="headline">操作</Text>
+        <Button title="连接测试（诊断网络/TLS）" action={handleConnTest} />
         <Toggle title="演示模式（用示例数据展示 UI）" value={demo} onChanged={(v: boolean) => { setDemo(v); setDemoMode(v) }} />
         <Button title="立即刷新并更新小组件" action={handleRefresh} />
         <Button title="预览小组件（systemMedium）" action={handlePreview} />
