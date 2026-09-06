@@ -124,12 +124,16 @@ function SmallWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   return (
     <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
-      <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
-        {shortPlan(data.planName ?? "CMHK")}
-      </Text>
+      {/* 标题栏：CMHK + 套餐名 */}
+      <HStack spacing={6} alignment="lastTextBaseline">
+        <Text font="caption" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
+        <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+          {shortPlan(data.planName ?? "")}
+        </Text>
+      </HStack>
+      {/* 身份行：nickname | 尾號 */}
       <HStack spacing={4}>
-        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.accentGreen}>CMHK</Text>
-        <Text font="caption2" fontWeight="medium" foregroundStyle={theme.textSecondary} lineLimit={1}>
+        <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1}>
           {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
         {data.membershipTier && (
@@ -184,11 +188,15 @@ function MediumWidget({ data }: { data: UsageData }) {
       </VStack>
       {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={7} frame={{ maxWidth: "infinity" } as never}>
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
-          {shortPlan(data.planName ?? "CMHK")}
-        </Text>
+        {/* 标题栏：CMHK 品牌 + 套餐名 */}
+        <HStack spacing={8} alignment="lastTextBaseline">
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
+          <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+            {shortPlan(data.planName ?? "")}
+          </Text>
+        </HStack>
+        {/* 身份行：nickname | 尾號 | 會籍 | 積分 */}
         <HStack spacing={6}>
-          <Text font="caption2" fontWeight="medium" foregroundStyle={theme.accentGreen}>CMHK</Text>
           {idname && (
             <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
               {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
