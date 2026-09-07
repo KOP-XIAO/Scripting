@@ -161,10 +161,10 @@ function SmallWidget({ data }: { data: UsageData }) {
         <Spacer />
       </HStack>
       </VStack>
-      {/* 角落悬浮刷新按钮（右下角空白区）：plain 无底色，不占任何内容行 */}
+      {/* 角落悬浮刷新按钮（右下角）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
-        <ZStack frame={{ width: 18, height: 18 }}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
+        <ZStack frame={{ width: 24, height: 24 }}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: -3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
@@ -237,10 +237,10 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Spacer />
       </VStack>
       </HStack>
-      {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色，不占任何内容行 */}
+      {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
-        <ZStack frame={{ width: 18, height: 18 }}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
+        <ZStack frame={{ width: 24, height: 24 }}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: 3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
