@@ -6,6 +6,7 @@ import {
   Circle,
   HStack,
   Image,
+  Rectangle,
   Spacer,
   Text,
   VStack,
@@ -85,14 +86,13 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   )
 }
 
-function Row({ icon, label, value, color, trailing }: { icon: string; label: string; value: string; color?: string; trailing?: any }) {
+function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={9} alignment="center">
       <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 9, height: 9 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
-      {trailing}
     </HStack>
   )
 }
@@ -126,7 +126,8 @@ function SmallWidget({ data }: { data: UsageData }) {
   const idname = identity(data) || "CMHK"
   const tail = phoneTail(data)
   return (
-    <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
+    <ZStack alignment="bottomTrailing">
+      <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
       {/* 标题栏：CMHK + 套餐名（完整宽度，不放按钮防挤压） */}
       <HStack spacing={6} alignment="lastTextBaseline">
         <Text font="caption" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
@@ -158,11 +159,15 @@ function SmallWidget({ data }: { data: UsageData }) {
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
-        <Button intent={RefreshIntent(undefined)}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 10, height: 10 }} />
-        </Button>
       </HStack>
-    </VStack>
+      </VStack>
+      {/* 角落悬浮刷新按钮（右下角空白区）：不占任何内容行 */}
+      <Button intent={RefreshIntent(undefined)}>
+        <ZStack frame={{ width: 22, height: 22 }}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
+        </ZStack>
+      </Button>
+    </ZStack>
   )
 }
 
@@ -184,7 +189,8 @@ function MediumWidget({ data }: { data: UsageData }) {
   const member = data.membershipTier || data.points != null
   const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
-    <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
+    <ZStack alignment="bottomLeading">
+      <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
       {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={84} />
@@ -192,6 +198,8 @@ function MediumWidget({ data }: { data: UsageData }) {
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
+      {/* 中：竖向分割线（左环与右侧明细的视觉分割） */}
+      <Rectangle fill={theme.divider} frame={{ width: 1, maxHeight: "infinity" }} />
       {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={5} frame={{ maxWidth: "infinity" } as never}>
         {/* 标题栏：CMHK 品牌 + 套餐名（完整宽度，不放按钮防挤压） */}
@@ -217,12 +225,7 @@ function MediumWidget({ data }: { data: UsageData }) {
             <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
           )}
         </HStack>
-        <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color}
-          trailing={
-            <Button intent={RefreshIntent(undefined)}>
-              <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 11, height: 11 }} />
-            </Button>
-          } />
+        <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
           <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
@@ -233,7 +236,14 @@ function MediumWidget({ data }: { data: UsageData }) {
         )}
         <Spacer />
       </VStack>
-    </HStack>
+      </HStack>
+      {/* 角落悬浮刷新按钮（左下角，环下方空白区）：不占任何内容行 */}
+      <Button intent={RefreshIntent(undefined)}>
+        <ZStack frame={{ width: 22, height: 22 }}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
+        </ZStack>
+      </Button>
+    </ZStack>
   )
 }
 
