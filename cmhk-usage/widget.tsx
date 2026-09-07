@@ -161,9 +161,9 @@ function SmallWidget({ data }: { data: UsageData }) {
         <Spacer />
       </HStack>
       </VStack>
-      {/* 角落悬浮刷新按钮（右下角空白区）：不占任何内容行 */}
-      <Button intent={RefreshIntent(undefined)}>
-        <ZStack frame={{ width: 22, height: 22 }}>
+      {/* 角落悬浮刷新按钮（右下角空白区）：plain 无底色，不占任何内容行 */}
+      <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
+        <ZStack frame={{ width: 18, height: 18 }}>
           <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
         </ZStack>
       </Button>
@@ -190,7 +190,7 @@ function MediumWidget({ data }: { data: UsageData }) {
   const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
     <ZStack alignment="bottomLeading">
-      <HStack spacing={14} padding={14} background={theme.cardBackground as any}>
+      <HStack spacing={10} padding={14} background={theme.cardBackground as any}>
       {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={84} />
@@ -201,7 +201,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       {/* 中：竖向分割线（左环与右侧明细的视觉分割） */}
       <Rectangle fill={theme.divider} frame={{ width: 1, maxHeight: "infinity" }} />
       {/* 右：标题=套餐名 + 身份 + 明细 */}
-      <VStack spacing={5} frame={{ maxWidth: "infinity" } as never}>
+      <VStack spacing={5} alignment="leading" frame={{ maxWidth: "infinity" } as never}>
         {/* 标题栏：CMHK 品牌 + 套餐名（完整宽度，不放按钮防挤压） */}
         <HStack spacing={8} alignment="lastTextBaseline">
           <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
@@ -237,9 +237,9 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Spacer />
       </VStack>
       </HStack>
-      {/* 角落悬浮刷新按钮（左下角，环下方空白区）：不占任何内容行 */}
-      <Button intent={RefreshIntent(undefined)}>
-        <ZStack frame={{ width: 22, height: 22 }}>
+      {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色，不占任何内容行 */}
+      <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
+        <ZStack frame={{ width: 18, height: 18 }}>
           <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} />
         </ZStack>
       </Button>
