@@ -12,7 +12,8 @@ import {
   Widget,
   ZStack,
 } from "scripting"
-import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, UsageData } from "./cmhk"
+import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, refreshUsage, UsageData } from "./cmhk"
+import { RefreshIntent } from "./app_intents"
 import { ringStops, theme } from "./theme"
 
 type Bucket = { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }
@@ -122,12 +123,16 @@ function SmallWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   return (
     <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
-      {/* 标题栏：CMHK + 套餐名 */}
+      {/* 标题栏：CMHK + 套餐名 + 刷新按钮（内联右置，不占额外高度） */}
       <HStack spacing={6} alignment="lastTextBaseline">
         <Text font="caption" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
         <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
           {shortPlan(data.planName ?? "")}
         </Text>
+        <Spacer />
+        <Button intent={RefreshIntent(undefined)}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 10, height: 10 }} />
+        </Button>
       </HStack>
       {/* 身份行：nickname | 尾號 */}
       <HStack spacing={4}>
@@ -136,6 +141,9 @@ function SmallWidget({ data }: { data: UsageData }) {
         </Text>
         {data.membershipTier && (
           <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 8, height: 8 }} />
+        )}
+        {data.stale && (
+          <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
         )}
       </HStack>
       <Spacer />
@@ -183,12 +191,16 @@ function MediumWidget({ data }: { data: UsageData }) {
       </VStack>
       {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={5} frame={{ maxWidth: "infinity" } as never}>
-        {/* 标题栏：CMHK 品牌 + 套餐名 */}
+        {/* 标题栏：CMHK 品牌 + 套餐名 + 刷新按钮（内联右置，不占额外高度） */}
         <HStack spacing={8} alignment="lastTextBaseline">
           <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
           <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
             {shortPlan(data.planName ?? "")}
           </Text>
+          <Spacer />
+          <Button intent={RefreshIntent(undefined)}>
+            <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 11, height: 11 }} />
+          </Button>
         </HStack>
         {/* 身份行：nickname | 尾號 | 會籍 | 積分 */}
         <HStack spacing={6}>
@@ -201,6 +213,9 @@ function MediumWidget({ data }: { data: UsageData }) {
             <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
               {data.membershipTier ? `${tierLabel(data.membershipTier)} |` : ""}{data.points != null ? ` ${data.points}分` : ""}
             </Text>
+          )}
+          {data.stale && (
+            <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
           )}
         </HStack>
         <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
@@ -230,7 +245,20 @@ function EmptyState({ message }: { message: string }) {
 }
 
 async function run() {
-  const data = readCache()
+  let data = readCache()
+  // 自动更新：渲染前先试一次直连快路径（约 5 秒内完成，不创建 WebView，
+  // 适配 widget 进程的时间/内存预算）。缓存新鲜（15 分钟内且非快取）时跳过，
+  // 避免系统密集重载时频繁请求接口。
+  const cacheFresh = data && data.stale !== true && Date.now() - data.fetchedAt < 15 * 60 * 1000
+  if (!cacheFresh) {
+    try {
+      const fresh = await Promise.race([
+        refreshUsage({ directOnly: true }),
+        new Promise<null>((r) => setTimeout(() => r(null), 7000)),
+      ])
+      if (fresh) data = fresh
+    } catch { /* 直连失败：回退缓存渲染 */ }
+  }
   if (!data) {
     Widget.present(<EmptyState message={"請先開啟 App 內的「CMHK Usage」完成登入"} />, {
       reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },

@@ -18,6 +18,7 @@ import {
   Text,
   TextField,
   Toggle,
+  useEffect,
   useState,
   VStack,
   Widget,
@@ -132,6 +133,7 @@ function Page() {
     setStatus(null)
     try {
       const d = await refreshUsage()
+      if (!d) return
       setData(d)
       Widget.reloadUserWidgets()
       setStatus(d.stale ? "网络异常，已显示上次缓存数据" : "已刷新")
@@ -141,6 +143,24 @@ function Page() {
       setBusy(false)
     }
   }
+
+  // 静默自动刷新：失败不弹窗，仅更新状态行
+  async function handleRefreshSilent() {
+    try {
+      const d = await refreshUsage()
+      if (!d) return
+      setData(d)
+      Widget.reloadUserWidgets()
+      setStatus(d.stale ? "自动刷新：使用了登录时捕获的快取数据" : "已自动刷新")
+    } catch { /* 静默失败不打扰 */ }
+  }
+
+  // 打开页面即自动刷新一次；页面存活期间每 30 分钟续刷
+  useEffect(() => {
+    if (!isDemoMode()) handleRefreshSilent()
+    const t = setInterval(() => { if (!isDemoMode()) handleRefreshSilent() }, 30 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
 
   async function handleDiagnose() {
     setBusy(true)

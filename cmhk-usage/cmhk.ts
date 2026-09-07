@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.17.7"  // 与 script.json 同步
+export const VERSION = "1.18.0"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -359,19 +359,49 @@ async function fetchJson(url: string, init: Record<string, any>, timeoutMs = 120
   return res.json()
 }
 
+// 会话 URL 解析：捕获的 API 地址可能是相对路径，补官网 origin
+function resolveSessionUrl(s: WebSession): { apiUrl: string; pageUrl: string } {
+  return {
+    apiUrl: s.url.startsWith("http")
+      ? s.url
+      : `https://www.hk.chinamobile.com${s.url.startsWith("/") ? "" : "/"}${s.url}`,
+    pageUrl: s.pageUrl && s.pageUrl.startsWith("http")
+      ? s.pageUrl
+      : "https://www.hk.chinamobile.com/tc/",
+  }
+}
+
+// 直连重放快路径：手动拼 Cookie/Authorization 头直接 fetch，不创建 WebView。
+// 适用 widget / AppIntent 等受限上下文（时间与内存预算紧）。
+// 局限：document.cookie 看不到 httpOnly Cookie，若 CMHK 会话依赖它则此处
+// 失败，返回 null，由调用方回退完整链路（无头 WebView 页内重放）。
+async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
+  const { apiUrl } = resolveSessionUrl(s)
+  const headers: Record<string, string> = { "Accept": "application/json" }
+  if (s.authorization) headers["Authorization"] = s.authorization
+  if (s.cookie) headers["Cookie"] = s.cookie
+  const method = (s.method ?? "GET").toUpperCase()
+  const hasBody = method !== "GET" && !!s.reqBody
+  if (hasBody) headers["Content-Type"] = "application/json"
+  const init: Record<string, any> = { method, headers }
+  if (hasBody) init.body = s.reqBody
+  const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("直连超时")), 5000))
+  const res = (await Promise.race([fetch(apiUrl, init), timer])) as any
+  if (!res || !res.ok) return null
+  try {
+    return await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
+  } catch {
+    return null
+  }
+}
+
 // 网页会话刷新：无头 WebView 打开官网页面，在页面上下文里重放用量 API。
 // Cookie 由 WebView 自动携带（含 httpOnly 会话 Cookie），无需手动拼头。
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
 
-  // API 地址可能存的是相对路径，补 origin
-  const apiUrl = s.url.startsWith("http")
-    ? s.url
-    : `https://www.hk.chinamobile.com${s.url.startsWith("/") ? "" : "/"}${s.url}`
-  const pageUrl = s.pageUrl && s.pageUrl.startsWith("http")
-    ? s.pageUrl
-    : "https://www.hk.chinamobile.com/tc/"
+  const { apiUrl, pageUrl } = resolveSessionUrl(s)
 
   const wv = new WebViewController()
   try {
@@ -431,33 +461,56 @@ async function authedGet(path: string): Promise<any> {
 }
 
 // ---- 对外主入口：抓取并归一化（失败时回退缓存并标记 stale） ----
-export async function refreshUsage(): Promise<UsageData> {
-  if (isDemoMode()) {
-    const d = demoData()
-    writeCache(d)
-    return d
-  }
+// opts.directOnly：只走轻量路径（手动接口 / 直连重放），不创建 WebView。
+//   供 widget 进程与 AppIntent 快路径使用：命中返回新数据（已写缓存），未命中返回 null。
+export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<UsageData | null> {
+  const directOnly = opts?.directOnly === true
+  let fromCaptured = false // 本次数据是否来自登录时捕获的旧 body（诚实标记 stale）
   try {
+    if (isDemoMode()) {
+      if (directOnly) return null
+      const d = demoData()
+      writeCache(d)
+      return d
+    }
+    // 轻量模式只认手动接口与网页会话直连，其余直接让调用方回退缓存
+    if (directOnly && !readManualEndpoint() && !hasWebSession()) return null
     let summary: any
     const manual = readManualEndpoint()
     if (manual) {
       // 手动接口：抓包粘贴的真实用量接口（最优先）
-      summary = await fetchJson(manual.url, { headers: manual.headers })
+      summary = await fetchJson(manual.url, { headers: manual.headers }, directOnly ? 5000 : 12000)
+      appendDebug("刷新: 手动接口")
     } else if (hasWebSession()) {
-      // 网页会话：重放捕获到的真实接口；失败则退回登录时捕获的内容
-      try {
-        summary = await fetchWithWebSession()
-      } catch (e) {
-        const body = readCapturedBody()
-        if (body) {
-          try { summary = JSON.parse(body) } catch { summary = body }
-        } else {
-          throw e
+      // 快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
+      let direct: any = null
+      try { direct = await fetchDirectWithSession(readWebSession()!) } catch { direct = null }
+      if (direct != null) {
+        summary = direct
+        appendDebug("刷新: 直连重放成功")
+      } else if (directOnly) {
+        return null
+      } else {
+        // 网页会话：无头 WebView 页内重放（Cookie 自动携带）；失败退回登录时捕获的内容
+        try {
+          summary = await fetchWithWebSession()
+          appendDebug("刷新: WebView 重放成功")
+        } catch (e) {
+          const body = readCapturedBody()
+          if (body) {
+            try { summary = JSON.parse(body) } catch { summary = body }
+            fromCaptured = true
+            appendDebug("刷新: 回退登录时捕获 body（已标记快取）")
+          } else {
+            throw e
+          }
         }
       }
     } else if (readCaptures().length) {
       // 无会话但有历史捕获：直接用最近一次捕获内容
       summary = readCaptures()[0].body
+      fromCaptured = true
+      appendDebug("刷新: 回退捕获环（已标记快取）")
     } else if (hasCredentials()) {
       summary = await authedGet(CMHK.paths.usageSummary)
     } else {
@@ -593,6 +646,7 @@ export async function refreshUsage(): Promise<UsageData> {
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? (parsed.buckets?.[0]?.expiry ?? null),
       fetchedAt: Date.now(),
+      stale: fromCaptured ? true : undefined,
     }
     writeCache(data)
     // 持久化档案，避免捕获环被挤掉后昵称/会籍/积分丢失
@@ -604,6 +658,7 @@ export async function refreshUsage(): Promise<UsageData> {
     })
     return data
   } catch (e) {
+    if (directOnly) return null
     const cached = readCache()
     if (cached) return { ...cached, stale: true }
     throw new Error(friendlyError(e))
