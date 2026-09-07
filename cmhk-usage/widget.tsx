@@ -45,9 +45,12 @@ function shortPlan(p: string): string {
 function tierLabel(t: string): string {
   return /白金|鑽石|钻石|铂金|铂|金|銀|银|铜|優越|privilege/i.test(t) ? `${t}會籍` : t
 }
-function expiryShort(b?: Bucket): string {
-  const e = b?.expiry
-  return e ? e.slice(5).replace("-", "/") : ""
+// 完整年月日（如 2026/10/06）；兼容 2026-10-06 / 2026.10.06 / ISO 时间前缀
+function expiryFull(src?: string | null): string {
+  if (!src) return ""
+  const m = String(src).slice(0, 10).match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})$/)
+  if (!m) return String(src).slice(0, 10)
+  return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`
 }
 function bucketLabel(name: string): string {
   if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "赠送"
@@ -82,13 +85,14 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   )
 }
 
-function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
+function Row({ icon, label, value, color, trailing }: { icon: string; label: string; value: string; color?: string; trailing?: any }) {
   return (
     <HStack spacing={9} alignment="center">
       <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 9, height: 9 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
+      {trailing}
     </HStack>
   )
 }
@@ -123,16 +127,12 @@ function SmallWidget({ data }: { data: UsageData }) {
   const tail = phoneTail(data)
   return (
     <VStack spacing={7} padding={14} background={theme.cardBackground as any}>
-      {/* 标题栏：CMHK + 套餐名 + 刷新按钮（内联右置，不占额外高度） */}
+      {/* 标题栏：CMHK + 套餐名（完整宽度，不放按钮防挤压） */}
       <HStack spacing={6} alignment="lastTextBaseline">
         <Text font="caption" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
         <Text font="caption" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
           {shortPlan(data.planName ?? "")}
         </Text>
-        <Spacer />
-        <Button intent={RefreshIntent(undefined)}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 10, height: 10 }} />
-        </Button>
       </HStack>
       {/* 身份行：nickname | 尾號 */}
       <HStack spacing={4}>
@@ -158,6 +158,9 @@ function SmallWidget({ data }: { data: UsageData }) {
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
         <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
         <Spacer />
+        <Button intent={RefreshIntent(undefined)}>
+          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 10, height: 10 }} />
+        </Button>
       </HStack>
     </VStack>
   )
@@ -191,16 +194,12 @@ function MediumWidget({ data }: { data: UsageData }) {
       </VStack>
       {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={5} frame={{ maxWidth: "infinity" } as never}>
-        {/* 标题栏：CMHK 品牌 + 套餐名 + 刷新按钮（内联右置，不占额外高度） */}
+        {/* 标题栏：CMHK 品牌 + 套餐名（完整宽度，不放按钮防挤压） */}
         <HStack spacing={8} alignment="lastTextBaseline">
           <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
           <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
             {shortPlan(data.planName ?? "")}
           </Text>
-          <Spacer />
-          <Button intent={RefreshIntent(undefined)}>
-            <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 11, height: 11 }} />
-          </Button>
         </HStack>
         {/* 身份行：nickname | 尾號 | 會籍 | 積分 */}
         <HStack spacing={6}>
@@ -218,14 +217,19 @@ function MediumWidget({ data }: { data: UsageData }) {
             <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
           )}
         </HStack>
-        <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
+        <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color}
+          trailing={
+            <Button intent={RefreshIntent(undefined)}>
+              <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 11, height: 11 }} />
+            </Button>
+          } />
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
           <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
             value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
         ))}
         {cycleExp && (
-          <Row icon="calendar" label="到期" value={`${expiryShort(main!)}`} color={theme.textSecondary} />
+          <Row icon="calendar" label="到期" value={expiryFull(cycleExp)} color={theme.textSecondary} />
         )}
         <Spacer />
       </VStack>
