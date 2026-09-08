@@ -7,6 +7,7 @@ import {
   HStack,
   Image,
   Rectangle,
+  Script,
   Spacer,
   Text,
   VStack,
@@ -191,9 +192,17 @@ function MediumWidget({ data }: { data: UsageData }) {
   return (
     <ZStack alignment="bottomLeading">
       <HStack spacing={10} padding={14} background={theme.cardBackground as any}>
-      {/* 左：主数据环 */}
+      {/* 左：主数据环（CMHK 官方徽标水印垫底，白色烘焙 13% 透明度，不抢占可读性） */}
       <VStack spacing={8} alignment="center">
-        <DataRing bucket={main} size={84} />
+        <ZStack>
+          <Image
+            filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
+            resizable={true}
+            scaleToFit={true}
+            frame={{ width: 100, height: 100 }}
+          />
+          <DataRing bucket={main} size={84} />
+        </ZStack>
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
@@ -232,9 +241,8 @@ function MediumWidget({ data }: { data: UsageData }) {
             value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
         ))}
         {cycleExp && (
-          <Row icon="calendar" label="到期" value={expiryFull(cycleExp)} color={theme.textSecondary} />
+          <Row icon="arrow.triangle.2.circlepath" label="重置" value={expiryFull(cycleExp)} color={theme.textSecondary} />
         )}
-        <Spacer />
       </VStack>
       </HStack>
       {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
