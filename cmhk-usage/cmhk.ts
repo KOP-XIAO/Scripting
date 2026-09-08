@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.0"  // 与 script.json 同步
+export const VERSION = "1.19.1"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -592,12 +592,13 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
     const parsed0: ParsedUsage = parseUsageText(typeof summary === "string" ? summary : JSON.stringify(summary))
     let parsed: ParsedUsage = { ...parsed0, ...jq }
     // 持久化档案（上次解析出的昵称/会籍/积分/姓名）作为保底
-    const prof = Storage.get<{ nickname?: string; membershipTier?: string; points?: number; userName?: string }>(KEY_PROFILE)
+    const prof = Storage.get<{ nickname?: string; membershipTier?: string; points?: number; userName?: string; planName?: string }>(KEY_PROFILE)
     if (prof) {
       if (parsed.nickname == null && prof.nickname) parsed.nickname = prof.nickname
       if (parsed.membershipTier == null && prof.membershipTier) parsed.membershipTier = prof.membershipTier
       if (parsed.points == null && prof.points != null) parsed.points = prof.points
       if (parsed.userName == null && prof.userName) parsed.userName = prof.userName
+      if (parsed.planName == null && prof.planName) parsed.planName = prof.planName
     }
     // 捕获环里所有 JSON 逐个补充（余额/套餐/会籍/积分/用量）
     for (const c of readCaptures()) {
@@ -639,7 +640,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
       try { const n = parseNicknameJson(JSON.parse(nj)); if (n) parsed.nickname = n } catch { /* 忽略 */ }
     }
     // 再用捕获环 + 持久化概览页 HTML 补会员/积分/应缴金额/套餐名
-    if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null) {
+    if (parsed.membershipTier == null || parsed.points == null || parsed.billAmountHKD == null || parsed.planName == null) {
       const ovh = readOverviewHtml()
       if (ovh) {
         const extra = parseUsageText(ovh)
@@ -703,6 +704,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
       membershipTier: data.membershipTier,
       points: data.points,
       userName: data.userName,
+      planName: data.planName,
     })
     return data
   } catch (e) {
