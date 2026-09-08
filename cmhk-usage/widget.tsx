@@ -90,7 +90,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={9} alignment="center">
-      <Image systemName={icon} resizable={true} foregroundStyle={color ?? theme.accent} frame={{ width: 10, height: 10 }} />
+      <Image systemName={icon} font={10} foregroundStyle={color ?? theme.accent} frame={{ width: 10, height: 10 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
@@ -142,7 +142,7 @@ function SmallWidget({ data }: { data: UsageData }) {
           {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
         {data.membershipTier && (
-          <Image systemName="crown.fill" resizable={true} foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
+          <Image systemName="crown.fill" font={9} foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
         )}
         {data.stale && (
           <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
@@ -165,7 +165,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       {/* 角落悬浮刷新按钮（右下角）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
         <ZStack frame={{ width: 24, height: 24 }}>
-          <Image systemName="arrow.clockwise" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: -3, y: -3 }} />
+          <Image systemName="arrow.clockwise" font={8} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: -3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
@@ -199,7 +199,7 @@ function MediumWidget({ data }: { data: UsageData }) {
             filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
             resizable={true}
             scaleToFit={true}
-            frame={{ width: 100, height: 100 }}
+            frame={{ width: 116, height: 116 }}
           />
           <DataRing bucket={main} size={84} />
         </ZStack>
@@ -211,13 +211,15 @@ function MediumWidget({ data }: { data: UsageData }) {
       <Rectangle fill={theme.divider} frame={{ width: 1, maxHeight: "infinity" }} />
       {/* 右：标题=套餐名 + 身份 + 明细 */}
       <VStack spacing={5} alignment="leading" frame={{ maxWidth: "infinity" } as never}>
-        {/* 标题栏：CMHK 品牌 + 套餐名（完整宽度，不放按钮防挤压） */}
-        <HStack spacing={8} alignment="lastTextBaseline">
-          <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
-          <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
-            {shortPlan(data.planName ?? "")}
-          </Text>
-        </HStack>
+        {/* 标题栏：CMHK 品牌 + 套餐名 —— 右栏内水平居中，行内基线对齐保留 */}
+        <VStack alignment="center" frame={{ maxWidth: "infinity" } as never}>
+          <HStack spacing={8} alignment="lastTextBaseline">
+            <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accentGreen}>CMHK</Text>
+            <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary} lineLimit={1}>
+              {shortPlan(data.planName ?? "")}
+            </Text>
+          </HStack>
+        </VStack>
         {/* 身份行：nickname | 尾號 | 會籍 | 積分 */}
         <HStack spacing={6}>
           {idname && (
@@ -248,7 +250,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
         <ZStack frame={{ width: 24, height: 24 }}>
-          <Image systemName="arrow.clockwise" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: 3, y: -3 }} />
+          <Image systemName="arrow.clockwise" font={8} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: 3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
@@ -259,7 +261,7 @@ function EmptyState({ message }: { message: string }) {
   return (
     <VStack spacing={8} padding={16} background={theme.cardBackground as any} alignment="center">
       <Spacer />
-      <Image systemName="antenna.radiowaves.left.and.right.slash" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 24, height: 24 }} />
+      <Image systemName="antenna.radiowaves.left.and.right.slash" font={24} foregroundStyle={theme.textTertiary} frame={{ width: 24, height: 24 }} />
       <Text font="caption" foregroundStyle={theme.textSecondary} multilineTextAlignment="center">{message}</Text>
       <Spacer />
     </VStack>
