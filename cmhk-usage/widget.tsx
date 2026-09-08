@@ -191,8 +191,9 @@ function MediumWidget({ data }: { data: UsageData }) {
   const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
     <ZStack alignment="bottomLeading">
-      {/* CMHK 官方徽标水印：根层背景，不参与布局（分割线与右栏宽度不受影响），垂直居中垫于左块之下 */}
-      <VStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+      {/* 背景+品牌水印合为一层：渐变铺满整卡，徽标垂直居中垫于左块之下（不参与内容布局）。
+          教训（v1.19.7）：水印不能放在内容层之下——不透明渐变挂在内容上会盖住它；必须与渐变同层且在内容之下 */}
+      <VStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never} background={theme.cardBackground as any}>
         <Spacer />
         <Image
           filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
@@ -203,7 +204,7 @@ function MediumWidget({ data }: { data: UsageData }) {
         />
         <Spacer />
       </VStack>
-      <HStack spacing={10} padding={14} background={theme.cardBackground as any}>
+      <HStack spacing={10} padding={14}>
       {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={84} />
