@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.18.4"  // 与 script.json 同步
+export const VERSION = "1.19.0"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -303,6 +303,30 @@ function writeCache(data: UsageData) {
   Storage.set(CACHE_KEY, data)
 }
 
+// ---- 刷新报告：每次刷新记录路径/发起方/结果/数值是否变化（App 内展示） ----
+const KEY_REPORT = "cmhk.refresh.report"
+export type RefreshReport = {
+  at: number             // 完成时间戳 ms
+  path: string           // 手动接口 / 直连重放 / WebView 重放 / 登录时快取 / 捕获环快取 / 密码接口 / 演示数据 / 刷新失败
+  via: string            // 发起方：app / app-auto / widget / intent
+  ok: boolean            // 是否拉到了新响应（非快取回退）
+  stale: boolean         // 数据是否为快取
+  changed: boolean | null // 与上一次缓存相比数值是否变化（null = 无旧缓存可比较）
+}
+export function readRefreshReport(): RefreshReport | null {
+  return Storage.get<RefreshReport>(KEY_REPORT)
+}
+function saveReport(path: string, via: string, ok: boolean, stale: boolean, changed: boolean | null) {
+  Storage.set(KEY_REPORT, { at: Date.now(), path, via, ok, stale, changed })
+}
+function usageSignature(d: UsageData): string {
+  return JSON.stringify([
+    d.dataRemainingGB, d.dataTotalGB, d.billAmountHKD, d.balanceHKD,
+    d.voiceRemainingMin, d.points,
+    (d.buckets ?? []).map((b) => [b.name, b.remainingGB, b.totalGB]),
+  ])
+}
+
 // ---- 演示模式：先看 UI，后接真实数据 ----
 export function isDemoMode(): boolean {
   return Storage.get<boolean>(DEMO_FLAG) === true
@@ -463,14 +487,17 @@ async function authedGet(path: string): Promise<any> {
 // ---- 对外主入口：抓取并归一化（失败时回退缓存并标记 stale） ----
 // opts.directOnly：只走轻量路径（手动接口 / 直连重放），不创建 WebView。
 //   供 widget 进程与 AppIntent 快路径使用：命中返回新数据（已写缓存），未命中返回 null。
-export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<UsageData | null> {
+export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }): Promise<UsageData | null> {
   const directOnly = opts?.directOnly === true
+  const via = opts?.via ?? "app"
   let fromCaptured = false // 本次数据是否来自登录时捕获的旧 body（诚实标记 stale）
+  let pathLabel = ""      // 本次数据来源（写入刷新报告）
   try {
     if (isDemoMode()) {
       if (directOnly) return null
       const d = demoData()
       writeCache(d)
+      saveReport("演示数据", via, true, false, null)
       return d
     }
     // 轻量模式只认手动接口与网页会话直连，其余直接让调用方回退缓存
@@ -481,6 +508,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<Usa
       // 手动接口：抓包粘贴的真实用量接口（最优先）
       summary = await fetchJson(manual.url, { headers: manual.headers }, directOnly ? 5000 : 12000)
       appendDebug("刷新: 手动接口")
+      pathLabel = "手动接口"
     } else if (hasWebSession()) {
       // 快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
       let direct: any = null
@@ -488,18 +516,28 @@ export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<Usa
       if (direct != null) {
         summary = direct
         appendDebug("刷新: 直连重放成功")
+        pathLabel = "直连重放"
       } else if (directOnly) {
         return null
       } else {
         // 网页会话：无头 WebView 页内重放（Cookie 自动携带）；失败退回登录时捕获的内容
         try {
           summary = await fetchWithWebSession()
+          pathLabel = "WebView 重放"
           appendDebug("刷新: WebView 重放成功")
         } catch (e) {
           const body = readCapturedBody()
           if (body) {
+            // 保留更新的缓存：登录快照可能比现有缓存旧，不能用旧数据覆盖
+            const cur = readCache()
+            if (cur && cur.stale !== true) {
+              appendDebug("刷新: 快取回退被拒（现有缓存更新，保留）")
+              saveReport("刷新失败·保留较新缓存", via, false, false, false)
+              return cur
+            }
             try { summary = JSON.parse(body) } catch { summary = body }
             fromCaptured = true
+            pathLabel = "登录时快取"
             appendDebug("刷新: 回退登录时捕获 body（已标记快取）")
           } else {
             throw e
@@ -507,12 +545,19 @@ export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<Usa
         }
       }
     } else if (readCaptures().length) {
-      // 无会话但有历史捕获：直接用最近一次捕获内容
+      // 无会话但有历史捕获：现有缓存更新时保留，否则用最近一次捕获内容
+      const cur = readCache()
+      if (cur && cur.stale !== true) {
+        saveReport("刷新失败·保留较新缓存", via, false, false, false)
+        return cur
+      }
       summary = readCaptures()[0].body
       fromCaptured = true
+      pathLabel = "捕获环快取"
       appendDebug("刷新: 回退捕获环（已标记快取）")
     } else if (hasCredentials()) {
       summary = await authedGet(CMHK.paths.usageSummary)
+      pathLabel = "密码接口"
     } else {
       throw new Error("尚未登录：请先「网页登录」，或在「手动配置接口」粘贴抓包结果")
     }
@@ -648,7 +693,10 @@ export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<Usa
       fetchedAt: Date.now(),
       stale: fromCaptured ? true : undefined,
     }
+    const prevCache = readCache()
+    const changed = prevCache ? usageSignature(prevCache) !== usageSignature(data) : null
     writeCache(data)
+    saveReport(pathLabel || "刷新", via, !fromCaptured, fromCaptured, changed)
     // 持久化档案，避免捕获环被挤掉后昵称/会籍/积分丢失
     Storage.set(KEY_PROFILE, {
       nickname: data.nickname,
@@ -660,7 +708,10 @@ export async function refreshUsage(opts?: { directOnly?: boolean }): Promise<Usa
   } catch (e) {
     if (directOnly) return null
     const cached = readCache()
-    if (cached) return { ...cached, stale: true }
+    if (cached) {
+      saveReport("刷新失败·网络或会话异常", via, false, true, false)
+      return { ...cached, stale: true }
+    }
     throw new Error(friendlyError(e))
   }
 }

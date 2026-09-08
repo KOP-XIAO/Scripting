@@ -89,7 +89,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
 function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
   return (
     <HStack spacing={9} alignment="center">
-      <Image systemName={icon} foregroundStyle={color ?? theme.accent} frame={{ width: 9, height: 9 }} />
+      <Image systemName={icon} resizable={true} foregroundStyle={color ?? theme.accent} frame={{ width: 10, height: 10 }} />
       <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
@@ -141,7 +141,7 @@ function SmallWidget({ data }: { data: UsageData }) {
           {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
         {data.membershipTier && (
-          <Image systemName="crown.fill" foregroundStyle="#FFD66E" frame={{ width: 8, height: 8 }} />
+          <Image systemName="crown.fill" resizable={true} foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
         )}
         {data.stale && (
           <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
@@ -164,7 +164,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       {/* 角落悬浮刷新按钮（右下角）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
         <ZStack frame={{ width: 24, height: 24 }}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: -3, y: -3 }} />
+          <Image systemName="arrow.clockwise" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: -3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
@@ -240,7 +240,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       {/* 角落悬浮刷新按钮（左下角，环下方空白区）：plain 无底色；图标内缩 11pt 避开圆角裁切 */}
       <Button intent={RefreshIntent(undefined)} buttonStyle="plain">
         <ZStack frame={{ width: 24, height: 24 }}>
-          <Image systemName="arrow.clockwise" foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: 3, y: -3 }} />
+          <Image systemName="arrow.clockwise" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 8, height: 8 }} offset={{ x: 3, y: -3 }} />
         </ZStack>
       </Button>
     </ZStack>
@@ -251,7 +251,7 @@ function EmptyState({ message }: { message: string }) {
   return (
     <VStack spacing={8} padding={16} background={theme.cardBackground as any} alignment="center">
       <Spacer />
-      <Image systemName="antenna.radiowaves.left.and.right.slash" foregroundStyle={theme.textTertiary} frame={{ width: 24, height: 24 }} />
+      <Image systemName="antenna.radiowaves.left.and.right.slash" resizable={true} foregroundStyle={theme.textTertiary} frame={{ width: 24, height: 24 }} />
       <Text font="caption" foregroundStyle={theme.textSecondary} multilineTextAlignment="center">{message}</Text>
       <Spacer />
     </VStack>
@@ -267,7 +267,7 @@ async function run() {
   if (!cacheFresh) {
     try {
       const fresh = await Promise.race([
-        refreshUsage({ directOnly: true }),
+        refreshUsage({ directOnly: true, via: "widget" }),
         new Promise<null>((r) => setTimeout(() => r(null), 7000)),
       ])
       if (fresh) data = fresh

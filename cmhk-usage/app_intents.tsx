@@ -14,12 +14,12 @@ export const RefreshIntent = AppIntentManager.register({
   perform: async (_params: undefined) => {
     appendDebug("Intent: 刷新按钮触发")
     try {
-      const direct = await refreshUsage({ directOnly: true })
+      const direct = await refreshUsage({ directOnly: true, via: "intent" })
       if (direct) {
         appendDebug(`Intent: 直连刷新成功，剩餘 ${direct.dataRemainingGB ?? "?"}GB`)
       } else {
         appendDebug("Intent: 直连未命中，改走完整刷新链")
-        await refreshUsage()
+        await refreshUsage({ via: "intent" })
       }
     } catch (e: any) {
       appendDebug(`Intent: 刷新失败 ${String(e?.message ?? e).slice(0, 100)}`)
