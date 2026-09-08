@@ -49,6 +49,7 @@ import {
   readCache,
   readCaptures,
   readDebugLog,
+  readLoginRequests,
   readManualEndpoint,
   readRefreshReport,
   refreshUsage,
@@ -268,7 +269,10 @@ function Page() {
       const reportLine = report
         ? `路径: ${report.path} · 发起: ${report.via} · 拉取${report.ok ? "成功" : "失败"} · 数值${report.changed === false ? "无变化" : report.changed ? "有更新" : "首次"}`
         : "(无)"
-      const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 最近刷新 =====\n${reportLine}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}`
+      const loginReqs = readLoginRequests().map((r, i) =>
+        `\n===== 登录报文 ${i + 1} ${new Date(r.at).toLocaleString()} =====\n${r.method} ${r.url}\n请求(密码已打码): ${r.reqBody.slice(0, 400)}\n响应: ${r.body.slice(0, 300)}`
+      ).join("")
+      const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 最近刷新 =====\n${reportLine}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}\n\n===== 登录报文(密码已打码) =====${loginReqs || "\n(无)"}`
       const ok = await ShareSheet.present([text])
       if (!ok) setStatus("已取消导出")
     } catch (e) {

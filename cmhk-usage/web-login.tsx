@@ -5,7 +5,7 @@
 // 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
 // （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
-import { appendDebug, getWebStartUrl, saveCapture, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession } from "./cmhk"
+import { appendDebug, getWebStartUrl, isLoginRequest, saveCapture, saveLoginRequest, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession } from "./cmhk"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -69,6 +69,20 @@ const INJECT_HOOK = `
     })
     return S.apply(this, arguments)
   }
+  // 原生表单提交（fetch/XHR 包不到的登录路径）：提交前抓 action+字段，密码即时打码
+  document.addEventListener("submit", function (e) {
+    try {
+      var f = e.target
+      if (!f || f.tagName !== "FORM") return
+      var parts = []
+      try {
+        var fd = new FormData(f)
+        fd.forEach(function (v, k) { parts.push(k + "=" + (/pass|pwd|secret/i.test(k) ? "***" : String(v))) })
+      } catch (err) {}
+      send({ url: String(f.action || location.href), method: String(f.method || "GET").toUpperCase(),
+             reqBody: parts.join("&").slice(0, 2000), body: "" })
+    } catch (err) {}
+  }, true)
   return true
 })()
 `
@@ -92,7 +106,14 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     try {
       const url = String(msg?.url ?? "")
       const body = String(msg?.body ?? "")
-      if (!url || !body) return null
+      const method = String(msg?.method ?? "")
+      if (!url) return null
+      // 登录报文（含原生表单提交，body 可为空）：打码后入校准环
+      if (isLoginRequest(url, method)) {
+        saveLoginRequest(url, method, String(msg?.reqBody ?? ""), body)
+        appendDebug(`捕获登录报文: ${method} ${url.slice(0, 100)}（密码已打码）`)
+      }
+      if (!body) return null
       if (looksLikeUsageJson(url, body)) {
         saveCapture(url, body)
         if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)

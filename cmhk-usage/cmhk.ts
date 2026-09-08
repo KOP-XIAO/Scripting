@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.3"  // 与 script.json 同步
+export const VERSION = "1.19.4"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -53,6 +53,7 @@ const KEY_OVERVIEW_HTML = "cmhk.overview.html" // 账户概览页 HTML（持久�
 const KEY_PROFILE = "cmhk.profile" // 解析出的档案（nickname/会籍/积分/姓名），防捕获环被挤掉
 const KEY_MEMBER_JSON = "cmhk.member.json" // memberLevelRightBaseInfo / wealth 原始 JSON（持久）
 const KEY_NICKNAME_JSON = "cmhk.nickname.json" // getNickname 原始 JSON（持久）
+const KEY_LOGIN_REQUESTS = "cmhk.login.requests" // 登录报文捕获环（密码打码）：为自动登录校准积累配方
 
 // Keychain 键（全局 Keychain，脚本级隔离）
 const KC_TOKEN = "cmhk.mylink.token"
@@ -231,6 +232,25 @@ export function saveCapture(url: string, body: string) {
 }
 export function readCaptures(): Capture[] {
   return Storage.get<Capture[]>(KEY_CAPTURES) ?? []
+}
+
+// ---- 登录报文捕获环（密码打码）：下次网页登录时顺带校准"自动登录"配方 ----
+export type LoginRequest = { url: string; method: string; reqBody: string; body: string; at: number }
+export function maskSecrets(s: string): string {
+  return s
+    .replace(/"([^"]*(?:password|passwd|pwd|secret)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1":"***"')
+    .replace(/([^=&\s]*(?:password|passwd|pwd|secret)[^=&\s]*)=([^&]*)/gi, "$1=***")
+}
+export function isLoginRequest(url: string, method: string): boolean {
+  return method.toUpperCase() === "POST" && /login|signin|sign-in|auth|sso|password/i.test(url)
+}
+export function saveLoginRequest(url: string, method: string, reqBody: string, body: string) {
+  const list = Storage.get<LoginRequest[]>(KEY_LOGIN_REQUESTS) ?? []
+  list.unshift({ url, method: method.toUpperCase(), reqBody: maskSecrets(reqBody).slice(0, 2000), body: body.slice(0, 2000), at: Date.now() })
+  Storage.set(KEY_LOGIN_REQUESTS, list.slice(0, 8))
+}
+export function readLoginRequests(): LoginRequest[] {
+  return Storage.get<LoginRequest[]>(KEY_LOGIN_REQUESTS) ?? []
 }
 
 // ---- 首次捕获的用量 body（来自 web-login 注入钩子） ----
