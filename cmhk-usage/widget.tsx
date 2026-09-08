@@ -284,7 +284,7 @@ async function run() {
     ? <MediumWidget data={data} />
     : <SmallWidget data={data} />
   Widget.present(view, {
-    reloadPolicy: { policy: "after", date: new Date(Date.now() + 30 * 60 * 1000) },
+    reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
   })
 }
 
