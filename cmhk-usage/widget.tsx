@@ -191,18 +191,22 @@ function MediumWidget({ data }: { data: UsageData }) {
   const cycleExp = main?.expiry || data.cycleEndDate || null
   return (
     <ZStack alignment="bottomLeading">
+      {/* CMHK 官方徽标水印：根层背景，不参与布局（分割线与右栏宽度不受影响），垂直居中垫于左块之下 */}
+      <VStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        <Spacer />
+        <Image
+          filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
+          resizable={true}
+          scaleToFit={true}
+          frame={{ width: 104, height: 104 }}
+          offset={{ x: 6, y: 0 }}
+        />
+        <Spacer />
+      </VStack>
       <HStack spacing={10} padding={14} background={theme.cardBackground as any}>
-      {/* 左：主数据环（CMHK 官方徽标水印垫底，白色烘焙 13% 透明度，不抢占可读性） */}
+      {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
-        <ZStack>
-          <Image
-            filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
-            resizable={true}
-            scaleToFit={true}
-            frame={{ width: 116, height: 116 }}
-          />
-          <DataRing bucket={main} size={84} />
-        </ZStack>
+        <DataRing bucket={main} size={84} />
         <Text font="caption2" foregroundStyle={theme.textSecondary}>
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
