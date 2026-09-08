@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.1"  // 与 script.json 同步
+export const VERSION = "1.19.2"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -92,6 +92,7 @@ declare const WebViewController: {
     waitForLoad(): Promise<boolean>
     getHTML(): Promise<string | null>
     evaluateJavaScript<T = any>(javascript: string): Promise<T>
+    addScriptMessageHandler<P = any>(name: string, handler: (params?: P) => any): Promise<void>
     dispose(): void
   }
 }
@@ -421,6 +422,9 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
 
 // 网页会话刷新：无头 WebView 打开官网页面，在页面上下文里重放用量 API。
 // Cookie 由 WebView 自动携带（含 httpOnly 会话 Cookie），无需手动拼头。
+// v1.19.2：结果改经 messageHandler 回传（与网页登录捕获同机制，真机已验证）——
+// 不再依赖 evaluateJavaScript 对 Promise 返回值的处理（官方文档只有同步示例，从未承诺）；
+// POST 补 Content-Type（与直连路径一致）；检查 HTTP 状态；失败原因可诊断。
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
@@ -433,13 +437,48 @@ async function fetchWithWebSession(): Promise<any> {
     const withTimeout = <T,>(pr: Promise<T>, ms: number, label: string): Promise<T> =>
       Promise.race([pr, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`超时: ${label}`)), ms))])
 
+    // 结果通道：页内 fetch 完成后 postMessage 回传（登录捕获同款，已真机验证）
+    let result: { ok?: boolean; status?: number; text?: string } | null = null
+    await wv.addScriptMessageHandler<any>("cmhkReplay", (msg) => {
+      result = msg ?? null
+      return null
+    })
+
     await withTimeout(wv.loadURL(pageUrl), 20000, "打开页面")
     await withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续尝试 */ })
     await new Promise((r) => setTimeout(r, 1200)) // 等残余 JS 跑完
+
     const method = (s.method ?? "GET").toUpperCase()
-    const bodyJs = method !== "GET" && s.reqBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
-    const script = `return fetch(${JSON.stringify(apiUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: { "Accept": "application/json" }${bodyJs} }).then(function(r){ return r.text() })`
-    const text = await withTimeout(wv.evaluateJavaScript<string>(script), 15000, "页内请求")
+    const hasBody = method !== "GET" && !!s.reqBody
+    const headersJs = hasBody
+      ? `{ "Accept": "application/json", "Content-Type": "application/json" }`
+      : `{ "Accept": "application/json" }`
+    const bodyJs = hasBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
+    const script = [
+      "(function(){",
+      "  try {",
+      `    fetch(${JSON.stringify(apiUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: ${headersJs}${bodyJs} })`,
+      "      .then(function(r){ return r.text().then(function(t){ return { ok: r.ok, status: r.status, text: t } }) })",
+      "      .then(function(v){ window.webkit.messageHandlers.cmhkReplay.postMessage(v) })",
+      "      .catch(function(e){ window.webkit.messageHandlers.cmhkReplay.postMessage({ ok: false, status: 0, text: \"FETCHERR:\" + String((e && e.message) || e) }) })",
+      "  } catch (e) {",
+      "    window.webkit.messageHandlers.cmhkReplay.postMessage({ ok: false, status: 0, text: \"JSERR:\" + String((e && e.message) || e) })",
+      "  }",
+      "  return true",
+      "})()",
+    ].join("\n")
+    await withTimeout(wv.evaluateJavaScript<boolean>(script), 5000, "发起页内请求") // 只等脚本启动，不等 fetch
+    // 轮询等待页内结果（最多 12 秒）
+    const deadline = Date.now() + 12000
+    while (result == null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    if (result == null) throw new Error("页内请求超时（结果未回传）")
+    if (result.ok === false) {
+      const rt = String(result.text ?? "")
+      throw new Error(/^FETCHERR:|^JSERR:/.test(rt) ? rt : `页内请求失败 HTTP ${result.status ?? "?"}`)
+    }
+    const text = String(result.text ?? "")
     if (!text) throw new Error("页内请求返回为空")
     if (/^\s*<(!DOCTYPE|html)/i.test(text)) {
       throw new Error("网页会话已过期，请重新「网页登录」")
@@ -526,18 +565,22 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
           pathLabel = "WebView 重放"
           appendDebug("刷新: WebView 重放成功")
         } catch (e) {
+          const reason = String((e as any)?.message ?? e)
+          const hm = /HTTP (\d+)/.exec(reason)
+          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
             // 保留更新的缓存：登录快照可能比现有缓存旧，不能用旧数据覆盖
             const cur = readCache()
             if (cur && cur.stale !== true) {
               appendDebug("刷新: 快取回退被拒（现有缓存更新，保留）")
-              saveReport("刷新失败·保留较新缓存", via, false, false, false)
+              saveReport(`刷新失败·保留较新缓存${shortReason}`, via, false, false, false)
               return cur
             }
             try { summary = JSON.parse(body) } catch { summary = body }
             fromCaptured = true
-            pathLabel = "登录时快取"
+            pathLabel = `登录时快取${shortReason}`
             appendDebug("刷新: 回退登录时捕获 body（已标记快取）")
           } else {
             throw e
