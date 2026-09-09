@@ -199,8 +199,8 @@ function MediumWidget({ data }: { data: UsageData }) {
           filePath={`${Script.directory}/assets/cmhk-mark-watermark.png`}
           resizable={true}
           scaleToFit={true}
-          frame={{ width: 104, height: 104 }}
-          offset={{ x: 6, y: 0 }}
+          frame={{ width: 130, height: 130 }}
+          offset={{ x: 8, y: 0 }}
         />
         <Spacer />
       </VStack>

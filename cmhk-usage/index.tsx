@@ -141,6 +141,15 @@ function Page() {
       const r = readRefreshReport()
       if (d.stale) {
         setStatus(`刷新未成功（${r?.path ?? "会话失效"}）· 已显示缓存。建议重新「網頁登入」`)
+        // 会话已死：弹窗直达登录，不再只靠状态行提示（用户反馈一直没注意到）
+        if (/过期|過期/.test(r?.path ?? "")) {
+          const go = await Dialog.confirm({
+            title: "會話已過期",
+            message: "直連與網頁重放均已失效，需重新登入才能取得最新流量/話費數據。現在去登入？",
+            confirmLabel: "去登入",
+          })
+          if (go) await handleWebLogin()
+        }
       } else {
         const chg = r?.changed === false ? "数值无变化（运营商侧可能有延迟）" : r?.changed ? "数值有更新" : "完成"
         setStatus(`已刷新 · ${r?.path ?? "成功"} · ${chg}`)

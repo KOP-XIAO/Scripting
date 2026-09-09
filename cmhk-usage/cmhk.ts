@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.8"  // 与 script.json 同步
+export const VERSION = "1.19.9"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -420,6 +420,33 @@ function resolveSessionUrl(s: WebSession): { apiUrl: string; pageUrl: string } {
 // 适用 widget / AppIntent 等受限上下文（时间与内存预算紧）。
 // 局限：document.cookie 看不到 httpOnly Cookie，若 CMHK 会话依赖它则此处
 // 失败，返回 null，由调用方回退完整链路（无头 WebView 页内重放）。
+// ---- 响应内容校验（v1.19.9） ----
+// 背景：会话/WAF 令牌过期后，服务器以 HTTP 200 + 业务错误 JSON 响应（如
+// {"code":"999999","message":"用戶未登錄"}）。v1.19.8 及之前把它当"成功"，解析不出
+// 用量字段后又从捕获环/profile 拼回旧数据——表现为"重放成功"但数值永远是旧的，
+// 且错误 JSON 短路了本可以拿到新数据的 WebView 页内重放。
+export function isApiError(obj: any): boolean {
+  if (typeof obj !== "object" || obj === null) return false
+  const s = JSON.stringify(obj)
+  if (s.length > 4000) return false // 真实用量响应很大；错误响应都很短
+  const msg = String(obj.message ?? obj.msg ?? obj.errorMsg ?? obj.error ?? "")
+  if (/未登錄|未登录|not\s*login|please\s*login|會話|会话|過期|过期|expired|無效|无效|invalid|token|denied|unauthorized|禁止/i.test(msg)) return true
+  const code = String(obj.code ?? obj.errorCode ?? obj.respCode ?? obj.resultCode ?? obj.status ?? "")
+  if (code && !["0", "00", "000", "0000", "000000", "200", "success", "true", "ok"].includes(code.toLowerCase())) {
+    // 非成功码且响应里没有任何用量特征字段 → 业务错误
+    if (!/remainingGB|totalGB|usage|lastUpdateDate|offerInfo|remainFee|balance/i.test(s)) return true
+  }
+  return false
+}
+
+// 直连/页内重放响应必须真的含用量数据，否则视为未命中（交给下层回退链）
+export function summaryHasUsage(v: any): boolean {
+  if (typeof v !== "object" || v === null) return false
+  if (Object.keys(parseUsageQueryJson(v)).length > 0) return true
+  const s = JSON.stringify(v)
+  return /remainingGB|totalGB|lastUpdateDate|offerInfo|remainFee/i.test(s)
+}
+
 async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   const { apiUrl } = resolveSessionUrl(s)
   const headers: Record<string, string> = { "Accept": "application/json" }
@@ -434,7 +461,9 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   const res = (await Promise.race([fetch(apiUrl, init), timer])) as any
   if (!res || !res.ok) return null
   try {
-    return await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
+    const j = await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
+    if (isApiError(j)) return null // HTTP 200 + 业务错误 JSON（会话/令牌过期）→ 视为未命中
+    return j
   } catch {
     return null
   }
@@ -503,7 +532,10 @@ async function fetchWithWebSession(): Promise<any> {
     if (/^\s*<(!DOCTYPE|html)/i.test(text)) {
       throw new Error("网页会话已过期，请重新「网页登录」")
     }
-    try { return JSON.parse(text) } catch { return text }
+    let j: any
+    try { j = JSON.parse(text) } catch { return text }
+    if (isApiError(j)) throw new Error("网页会话已过期（错误响应），请重新「网页登录」")
+    return j
   } finally {
     wv.dispose()
   }
@@ -572,7 +604,9 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
       // 快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
       let direct: any = null
       try { direct = await fetchDirectWithSession(readWebSession()!) } catch { direct = null }
-      if (direct != null) {
+      const directOk = direct != null && summaryHasUsage(direct)
+      if (direct != null && !directOk) appendDebug("刷新: 直连响应无用量数据，视为未命中")
+      if (directOk) {
         summary = direct
         appendDebug("刷新: 直连重放成功")
         pathLabel = "直连重放"
@@ -582,12 +616,13 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
         // 网页会话：无头 WebView 页内重放（Cookie 自动携带）；失败退回登录时捕获的内容
         try {
           summary = await fetchWithWebSession()
+          if (!summaryHasUsage(summary)) throw new Error("页内响应无用量数据")
           pathLabel = "WebView 重放"
           appendDebug("刷新: WebView 重放成功")
         } catch (e) {
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
-          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
