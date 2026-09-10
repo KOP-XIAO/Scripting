@@ -327,7 +327,7 @@ function Page() {
         {/* ===== 数据 ===== */}
         <Section header={<Text>數據</Text>}>
           <Text font="caption2" foregroundStyle={theme.textSecondary}>
-            脚本版本 {VERSION} · {data ? (data.stale ? "缓存数据（快取）" : "数据已就绪") : "等待登录/刷新"}
+            脚本版本 {VERSION} · {data ? (data.stale ? "缓存数据" : "数据已就绪") : "等待登录/刷新"}
           </Text>
           {data && (
             <VStack spacing={6} padding={12} background={theme.cardBackground as any} cornerRadius={16}>
@@ -336,9 +336,6 @@ function Page() {
                   {data.nickname || data.userName || data.phoneNumber || data.accountNumber || "CMHK"} {data.phoneNumber ? ` · ${data.phoneNumber}` : ""} {data.planName ? `· ${data.planName}` : ""}
                 </Text>
                 <Spacer />
-                {data.stale && (
-                  <Text font="caption2" foregroundStyle="#FFD66E">缓存数据</Text>
-                )}
               </HStack>
               <HStack spacing={12} alignment="lastTextBaseline">
                 <Text font="largeTitle" fontWeight="bold" foregroundStyle={theme.textPrimary}>
@@ -593,7 +590,7 @@ function DiagnosticsPage(props: {
               : "尚无刷新记录"}
           </Text>
           <Text font="caption2" foregroundStyle="secondary">
-            刷新链路：手动接口 → 直连重放 → 无头 WebView 重放 → 登录时快取。小組件（系統每 30 分鐘重載）只能走直連/手動接口——若官網會話依賴 httpOnly Cookie，直連會失敗，組件會顯示緩存，直到 App 打開後完成一次完整刷新。
+            刷新链路：手动接口 → 直连重放 → 页内捕获（加载官网页面截获其请求）→ 登录时快取。小組件（系統每 30 分鐘重載）只能走直連/手動接口——若官網會話依賴 httpOnly Cookie，直連會失敗，組件會顯示緩存，直到 App 打開後完成一次完整刷新。
           </Text>
         </VStack>
       </Section>

@@ -144,9 +144,6 @@ function SmallWidget({ data }: { data: UsageData }) {
         {data.membershipTier && (
           <Image systemName="crown.fill" font={9} foregroundStyle="#FFD66E" frame={{ width: 9, height: 9 }} />
         )}
-        {data.stale && (
-          <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
-        )}
       </HStack>
       <Spacer />
       <VStack spacing={8} alignment="center">
@@ -236,9 +233,6 @@ function MediumWidget({ data }: { data: UsageData }) {
             <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
               {data.membershipTier ? `${tierLabel(data.membershipTier)} |` : ""}{data.points != null ? ` ${data.points}分` : ""}
             </Text>
-          )}
-          {data.stale && (
-            <Text font="caption2" foregroundStyle="#FFD66E">快取</Text>
           )}
         </HStack>
         <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
