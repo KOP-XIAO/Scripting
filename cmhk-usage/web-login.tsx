@@ -118,8 +118,11 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
         saveCapture(url, body)
         if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)
         if (/getNickname/i.test(url)) saveNicknameJson(body)
-        // 首个命中即最佳；usageQuery 优先
-        if (!best || /usageQuery/i.test(url)) {
+        // 用量接口评分：cbs/usageQuery（数据最全：total/usage/margin）> indexUsageQuery > 其他。
+        // v1.19.10 修：旧逻辑 /usageQuery/i 一律覆盖——indexUsageQuery 晚到会把会话
+        // 从真身拽走，之后重放的是一个没有 total/usage 的残缺接口。
+        const usageRank = (u: string) => (/cbs\/usageQuery/i.test(u) ? 3 : /usageQuery/i.test(u) ? 2 : 1)
+        if (!best || usageRank(url) > usageRank(best.url)) {
           best = { url, method: String(msg?.method ?? "GET"), reqBody: String(msg?.reqBody ?? ""), body }
           appendDebug(`捕获 API: ${best.method} ${url.slice(0, 120)}`)
         }
@@ -179,6 +182,7 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
       method: best.method,
       reqBody: best.reqBody,
       pageUrl: pageUrl ?? undefined,
+      at: Date.now(),
       cookie,
     })
     return { captured: true, url: best.url, body: best.body }

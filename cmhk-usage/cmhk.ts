@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.9"  // 与 script.json 同步
+export const VERSION = "1.19.10"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -131,11 +131,13 @@ export type WebSession = {
   method?: string                // GET/POST
   reqBody?: string               // 请求体（若有）
   pageUrl?: string               // 当时所在页面（页内 fetch 的上下文）
+  at?: number                    // 会话捕获时间（epoch ms，v1.19.10+；旧会话无此字段）
   authorization: string | null
   cookie: string | null
 }
 
 const KC_WEB_METHOD = "cmhk.web.method"
+const KC_WEB_AT = "cmhk.web.at"
 const KC_WEB_REQBODY = "cmhk.web.reqbody"
 const KC_WEB_PAGEURL = "cmhk.web.pageurl"
 
@@ -146,14 +148,17 @@ export function saveWebSession(s: WebSession): boolean {
     Keychain.set(KC_WEB_COOKIE, s.cookie ?? "") &&
     Keychain.set(KC_WEB_METHOD, s.method ?? "GET") &&
     Keychain.set(KC_WEB_REQBODY, s.reqBody ?? "") &&
-    Keychain.set(KC_WEB_PAGEURL, s.pageUrl ?? "")
+    Keychain.set(KC_WEB_PAGEURL, s.pageUrl ?? "") &&
+    Keychain.set(KC_WEB_AT, s.at != null ? String(s.at) : "")
   return ok
 }
 export function readWebSession(): WebSession | null {
   const url = Keychain.get(KC_WEB_URL)
   if (!url) return null
+  const atRaw = Keychain.get(KC_WEB_AT)
   return {
     url,
+    at: atRaw ? Number(atRaw) : undefined,
     method: Keychain.get(KC_WEB_METHOD) || "GET",
     reqBody: Keychain.get(KC_WEB_REQBODY) || "",
     pageUrl: Keychain.get(KC_WEB_PAGEURL) || undefined,
@@ -256,9 +261,36 @@ export function readLoginRequests(): LoginRequest[] {
 // ---- 首次捕获的用量 body（来自 web-login 注入钩子） ----
 export function saveCapturedBody(body: string) {
   Storage.set(KEY_WEB_BODY, body.slice(0, 60000))
+  Storage.set(KEY_WEB_BODY_AT, Date.now()) // v1.19.10：快照时间，供回退判定
 }
 export function readCapturedBody(): string | null {
   return Storage.get<string>(KEY_WEB_BODY)
+}
+const KEY_WEB_BODY_AT = "cmhk.web.body.at"
+function readCapturedBodyAt(): number | null {
+  const v = Storage.get<number>(KEY_WEB_BODY_AT)
+  return typeof v === "number" ? v : null
+}
+
+// v1.19.10：缓存是否"确实更新"到值得拒绝登录快照——时间戳判定。
+// 旧逻辑只看 stale 标志：上次成功刷新写入的缓存永远"非 stale"，会话过期几天后
+// 连重新登录拿到的新鲜快照都被拒（数据永久冻结在最后一次成功刷新）。
+// 规则：stale 缓存永远让路；缓存时间未知宁可接受快照；超过2小时不算"较新"；
+// 双方时间已知时精确比较；快照时间未知时只保护2小时内的缓存。
+function cacheBeatsSnapshot(cur: UsageData | null, snapAt: number | null): boolean {
+  if (!cur || cur.stale === true) return false
+  const t = typeof cur.fetchedAt === "number" ? cur.fetchedAt : Date.parse(String(cur.fetchedAt ?? ""))
+  if (!Number.isFinite(t)) return false
+  if (Date.now() - t > 2 * 3600_000) return false
+  if (snapAt != null && Number.isFinite(snapAt) && snapAt > 0) return t >= snapAt // 平局保缓存：同样新鲜时不无谓打快取标
+  return true
+}
+
+function cacheAgeDesc(cur: UsageData | null): string {
+  const t = typeof cur?.fetchedAt === "number" ? cur.fetchedAt : Date.parse(String(cur?.fetchedAt ?? ""))
+  if (!Number.isFinite(t)) return ""
+  const min = Math.round((Date.now() - t) / 60000)
+  return min < 60 ? `(${min}分钟前)` : `(${Math.round(min / 60)}小时前)`
 }
 
 // 启发式字段识别：fieldMap 全部落空时，在 JSON 树里按字段名猜测用量数据
@@ -444,7 +476,7 @@ export function summaryHasUsage(v: any): boolean {
   if (typeof v !== "object" || v === null) return false
   if (Object.keys(parseUsageQueryJson(v)).length > 0) return true
   const s = JSON.stringify(v)
-  return /remainingGB|totalGB|lastUpdateDate|offerInfo|remainFee/i.test(s)
+  return /remainingGB|totalGB|lastUpdateDate|offerInfo|remainFee|"usage"\s*:/i.test(s)
 }
 
 async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
@@ -626,11 +658,12 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
           appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
-            // 保留更新的缓存：登录快照可能比现有缓存旧，不能用旧数据覆盖
+            // 保留更新的缓存：仅当缓存真的更新（时间戳判定，v1.19.10）
             const cur = readCache()
-            if (cur && cur.stale !== true) {
-              appendDebug("刷新: 快取回退被拒（现有缓存更新，保留）")
-              saveReport(`刷新失败·保留较新缓存${shortReason}`, via, false, false, false)
+            const snapAt = readWebSession()?.at ?? readCapturedBodyAt()
+            if (cacheBeatsSnapshot(cur, snapAt)) {
+              appendDebug("刷新: 快照回退被拒（现有缓存更新，保留）")
+              saveReport(`刷新失败·保留较新缓存${cacheAgeDesc(cur)}${shortReason}`, via, false, false, false)
               return cur
             }
             try { summary = JSON.parse(body) } catch { summary = body }
@@ -645,8 +678,8 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
     } else if (readCaptures().length) {
       // 无会话但有历史捕获：现有缓存更新时保留，否则用最近一次捕获内容
       const cur = readCache()
-      if (cur && cur.stale !== true) {
-        saveReport("刷新失败·保留较新缓存", via, false, false, false)
+      if (cacheBeatsSnapshot(cur, readCaptures()[0]?.at ?? null)) {
+        saveReport(`刷新失败·保留较新缓存${cacheAgeDesc(cur)}`, via, false, false, false)
         return cur
       }
       summary = readCaptures()[0].body
