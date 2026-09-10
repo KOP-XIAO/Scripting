@@ -81,7 +81,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
         <Text font="title3" fontWeight="bold" foregroundStyle={theme.textPrimary}>
           {ratio != null ? `${Math.round(ratio * 100)}%` : "--"}
         </Text>
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>流量剩餘</Text>
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>流量剩餘</Text>
       </VStack>
     </ZStack>
   )
@@ -91,7 +91,7 @@ function Row({ icon, label, value, color }: { icon: string; label: string; value
   return (
     <HStack spacing={9} alignment="center">
       <Image systemName={icon} font={10} foregroundStyle={color ?? theme.accent} frame={{ width: 10, height: 10 }} />
-      <Text font="caption2" foregroundStyle={theme.textTertiary}>{label}</Text>
+      <Text font="caption2" foregroundStyle={theme.textSecondary}>{label}</Text>
       <Spacer />
       <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
     </HStack>
@@ -104,7 +104,7 @@ function FeeRow(d: UsageData): { label: string; value: string; color: string } {
     return { label: "欠費", value: `HK$ ${fmtMoney(Math.abs(d.billAmountHKD))}`, color: owed ? "#FF6B5E" : theme.textPrimary }
   }
   if (d.balanceHKD != null) return { label: "餘額", value: `HK$ ${fmtMoney(d.balanceHKD)}`, color: theme.textPrimary }
-  return { label: "欠費", value: "--", color: theme.textTertiary }
+  return { label: "欠費", value: "--", color: theme.textSecondary }
 }
 function voiceValue(d: UsageData): string {
   if (d.voiceUnlimited) return `${fmtMin(d.voiceRemainingMin)} 分鐘 | ∞`
@@ -155,7 +155,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <Spacer />
       <HStack alignment="lastTextBaseline" spacing={4}>
         <Text font="callout" fontWeight="bold" foregroundStyle={theme.textPrimary}>{fee.value}</Text>
-        <Text font="caption2" foregroundStyle={theme.textTertiary}>{fee.label}</Text>
+        <Text font="caption2" foregroundStyle={theme.textSecondary}>{fee.label}</Text>
         <Spacer />
       </HStack>
       </VStack>

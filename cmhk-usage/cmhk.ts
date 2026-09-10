@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.13"  // 与 script.json 同步
+export const VERSION = "1.19.14"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -956,7 +956,7 @@ export function fmtGB(v: number | null): string {
 }
 export function fmtMoney(v: number | null): string {
   if (v == null) return "--"
-  return v.toFixed(2)
+  return v.toFixed(1) // v1.19.14：金额 1 位小数（用户要求，与 GB 口径一致）
 }
 export function fmtMin(v: number | null): string {
   if (v == null) return "--"
