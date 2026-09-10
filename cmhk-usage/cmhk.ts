@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.10"  // 与 script.json 同步
+export const VERSION = "1.19.11"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -491,12 +491,19 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   if (hasBody) init.body = s.reqBody
   const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("直连超时")), 5000))
   const res = (await Promise.race([fetch(apiUrl, init), timer])) as any
-  if (!res || !res.ok) return null
+  if (!res || !res.ok) {
+    appendDebug(`直连未命中: ${res ? `HTTP ${res.status}` : "无响应"}`)
+    return null
+  }
   try {
     const j = await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
-    if (isApiError(j)) return null // HTTP 200 + 业务错误 JSON（会话/令牌过期）→ 视为未命中
+    if (isApiError(j)) {
+      appendDebug(`直连未命中: 错误响应 ${JSON.stringify(j).slice(0, 120)}`)
+      return null // HTTP 200 + 业务错误 JSON → 视为未命中
+    }
     return j
   } catch {
+    appendDebug("直连未命中: 非JSON响应")
     return null
   }
 }
@@ -535,10 +542,14 @@ async function fetchWithWebSession(): Promise<any> {
       ? `{ "Accept": "application/json", "Content-Type": "application/json" }`
       : `{ "Accept": "application/json" }`
     const bodyJs = hasBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
+    // v1.19.11：瑞数 WAF 令牌（XGiOG2f705）单次/短效——携带登录时的旧令牌重放会被拒。
+    // 剥掉旧令牌，让页面自带的 WAF fetch 钩子为本次请求现铸新令牌（真机日志证实旧令牌立即失效）。
+    const replayUrl = apiUrl.replace(/[?&]XGiOG2f705=[^&]*/i, "").replace(/\?$/, "")
+    if (replayUrl !== apiUrl) appendDebug("页内重放: 已剥离旧WAF令牌")
     const script = [
       "(function(){",
       "  try {",
-      `    fetch(${JSON.stringify(apiUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: ${headersJs}${bodyJs} })`,
+      `    fetch(${JSON.stringify(replayUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: ${headersJs}${bodyJs} })`,
       "      .then(function(r){ return r.text().then(function(t){ return { ok: r.ok, status: r.status, text: t } }) })",
       "      .then(function(v){ window.webkit.messageHandlers.cmhkReplay.postMessage(v) })",
       "      .catch(function(e){ window.webkit.messageHandlers.cmhkReplay.postMessage({ ok: false, status: 0, text: \"FETCHERR:\" + String((e && e.message) || e) }) })",
@@ -566,7 +577,14 @@ async function fetchWithWebSession(): Promise<any> {
     }
     let j: any
     try { j = JSON.parse(text) } catch { return text }
-    if (isApiError(j)) throw new Error("网页会话已过期（错误响应），请重新「网页登录」")
+    if (isApiError(j)) {
+      // v1.19.11：区分真会话过期与 WAF/接口错误——不再一律宣称"会话过期"
+      // （v1.19.9 的误标导致登录后立刻弹"重新登录"，用户被无意义打扰）
+      const sn = JSON.stringify(j).slice(0, 150)
+      throw new Error(/未登錄|未登录|過期|过期/.test(sn)
+        ? `网页会话已过期（${sn}）`
+        : `页内请求错误响应（${sn}）`)
+    }
     return j
   } finally {
     wv.dispose()
@@ -654,7 +672,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
         } catch (e) {
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
-          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
