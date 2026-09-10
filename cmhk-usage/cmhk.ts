@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.11"  // 与 script.json 同步
+export const VERSION = "1.19.12"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -508,88 +508,105 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   }
 }
 
-// 网页会话刷新：无头 WebView 打开官网页面，在页面上下文里重放用量 API。
-// Cookie 由 WebView 自动携带（含 httpOnly 会话 Cookie），无需手动拼头。
-// v1.19.2：结果改经 messageHandler 回传（与网页登录捕获同机制，真机已验证）——
-// 不再依赖 evaluateJavaScript 对 Promise 返回值的处理（官方文档只有同步示例，从未承诺）；
-// POST 补 Content-Type（与直连路径一致）；检查 HTTP 状态；失败原因可诊断。
+// 网页会话刷新（v1.19.12 重写）：无头 WebView 打开真实用量页，用与登录捕获同款的
+// fetch/XHR 钩子截获页面自己发出的 usageQuery 响应。
+//
+// 演化史（为什么不再"自己发请求"）：
+//   v1.19.2 页内 fetch 重放（带捕获时的 URL+令牌）→ 瑞数 WAF 令牌单次/短效后必被拒；
+//   v1.19.11 剥令牌重放 → 无令牌请求同样被拒（真机实证"错误响应"）。
+// 页面自身的请求机制（现场铸新令牌）是唯一被 WAF 认可的通路——登录期间钩子抓取已真机
+// 验证，故刷新直接复用：加载用量页 → 轮询注入钩子 → 等页面自发 usageQuery → 截获返回。
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
 
-  const { apiUrl, pageUrl } = resolveSessionUrl(s)
-
   const wv = new WebViewController()
   try {
-    // 每一步都加超时保护：无头 WebView 在受限上下文中可能加载卡死
     const withTimeout = <T,>(pr: Promise<T>, ms: number, label: string): Promise<T> =>
       Promise.race([pr, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`超时: ${label}`)), ms))])
 
-    // 结果通道：页内 fetch 完成后 postMessage 回传（登录捕获同款，已真机验证）
-    let result: { ok?: boolean; status?: number; text?: string } | null = null
+    // 截获通道：页面发出的每个 fetch/XHR 响应经 messageHandler 回传（登录捕获同款机制）
+    const captures: { url: string; body: string }[] = []
     await wv.addScriptMessageHandler<any>("cmhkReplay", (msg) => {
-      result = msg ?? null
+      try {
+        const url = String(msg?.url ?? "")
+        const body = String(msg?.body ?? "")
+        if (url && body) captures.push({ url, body })
+      } catch { /* 忽略 */ }
       return null
     })
 
-    await withTimeout(wv.loadURL(pageUrl), 20000, "打开页面")
-    await withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续尝试 */ })
-    await new Promise((r) => setTimeout(r, 1200)) // 等残余 JS 跑完
+    // 用量页：会话记录的页面曾是用量页则优先，否则标准用量查询页
+    const startUrl = s.pageUrl && /usage|用量/i.test(s.pageUrl)
+      ? s.pageUrl
+      : "https://www.hk.chinamobile.com/tc/home/my-zone/menu/usage-query"
+    appendDebug(`页内捕获: 打开 ${startUrl.slice(0, 90)}`)
+    await withTimeout(wv.loadURL(startUrl), 20000, "打开页面")
 
-    const method = (s.method ?? "GET").toUpperCase()
-    const hasBody = method !== "GET" && !!s.reqBody
-    const headersJs = hasBody
-      ? `{ "Accept": "application/json", "Content-Type": "application/json" }`
-      : `{ "Accept": "application/json" }`
-    const bodyJs = hasBody ? `, body: ${JSON.stringify(s.reqBody)}` : ""
-    // v1.19.11：瑞数 WAF 令牌（XGiOG2f705）单次/短效——携带登录时的旧令牌重放会被拒。
-    // 剥掉旧令牌，让页面自带的 WAF fetch 钩子为本次请求现铸新令牌（真机日志证实旧令牌立即失效）。
-    const replayUrl = apiUrl.replace(/[?&]XGiOG2f705=[^&]*/i, "").replace(/\?$/, "")
-    if (replayUrl !== apiUrl) appendDebug("页内重放: 已剥离旧WAF令牌")
-    const script = [
-      "(function(){",
-      "  try {",
-      `    fetch(${JSON.stringify(replayUrl)}, { method: ${JSON.stringify(method)}, credentials: "include", headers: ${headersJs}${bodyJs} })`,
-      "      .then(function(r){ return r.text().then(function(t){ return { ok: r.ok, status: r.status, text: t } }) })",
-      "      .then(function(v){ window.webkit.messageHandlers.cmhkReplay.postMessage(v) })",
-      "      .catch(function(e){ window.webkit.messageHandlers.cmhkReplay.postMessage({ ok: false, status: 0, text: \"FETCHERR:\" + String((e && e.message) || e) }) })",
-      "  } catch (e) {",
-      "    window.webkit.messageHandlers.cmhkReplay.postMessage({ ok: false, status: 0, text: \"JSERR:\" + String((e && e.message) || e) })",
-      "  }",
-      "  return true",
-      "})()",
-    ].join("\n")
-    await withTimeout(wv.evaluateJavaScript<boolean>(script), 5000, "发起页内请求") // 只等脚本启动，不等 fetch
-    // 轮询等待页内结果（最多 12 秒）
-    const deadline = Date.now() + 12000
-    while (result == null && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 400))
+    const looksUsable = (body: string): boolean => {
+      try {
+        const j = JSON.parse(body)
+        return !isApiError(j) && summaryHasUsage(j)
+      } catch { return false }
     }
-    if (result == null) throw new Error("页内请求超时（结果未回传）")
-    if (result.ok === false) {
-      const rt = String(result.text ?? "")
-      throw new Error(/^FETCHERR:|^JSERR:/.test(rt) ? rt : `页内请求失败 HTTP ${result.status ?? "?"}`)
+    // v1.19.12 关键时序：注入与页面加载并行——SPA 的 usageQuery 可能在 waitForLoad
+    // 返回的瞬间发出，等加载完成再注入会错过。从导航开始就持续轮询注入（幂等标志，
+    // WAF 换页重置 window 后重注入真正生效），命中即返回（总预算 15 秒）。
+    void withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续 */ })
+    const deadline = Date.now() + 15000
+    while (Date.now() < deadline) {
+      await withTimeout(wv.evaluateJavaScript<boolean>(CAPTURE_HOOK_JS), 4000, "注入钩子").catch(() => false)
+      const hit = captures.find((c) => /cbs\/usageQuery/i.test(c.url) && looksUsable(c.body))
+      if (hit) {
+        appendDebug("页内捕获: 命中 usageQuery（页面自带现场令牌）")
+        try { saveCapture(hit.url, hit.body); saveCapturedBody(hit.body) } catch { /* 忽略 */ }
+        return JSON.parse(hit.body)
+      }
+      await new Promise((r) => setTimeout(r, 800))
     }
-    const text = String(result.text ?? "")
-    if (!text) throw new Error("页内请求返回为空")
-    if (/^\s*<(!DOCTYPE|html)/i.test(text)) {
-      throw new Error("网页会话已过期，请重新「网页登录」")
-    }
-    let j: any
-    try { j = JSON.parse(text) } catch { return text }
-    if (isApiError(j)) {
-      // v1.19.11：区分真会话过期与 WAF/接口错误——不再一律宣称"会话过期"
-      // （v1.19.9 的误标导致登录后立刻弹"重新登录"，用户被无意义打扰）
-      const sn = JSON.stringify(j).slice(0, 150)
-      throw new Error(/未登錄|未登录|過期|过期/.test(sn)
-        ? `网页会话已过期（${sn}）`
-        : `页内请求错误响应（${sn}）`)
-    }
-    return j
+    // 会话已死（页面重定向登录）或页面异常：12 秒无用量请求
+    throw new Error("页内捕获超时：页面未发出用量请求，网页会话已过期，请重新「网页登录」")
   } finally {
     wv.dispose()
   }
 }
+
+// 页内捕获钩子：包 fetch/XHR，响应经 messageHandler 回传（web-login.tsx INJECT_HOOK 的刷新版）
+const CAPTURE_HOOK_JS = `
+(function () {
+  if (window.__cmhkHooked) return true
+  window.__cmhkHooked = true
+  function send(info) {
+    try { window.webkit.messageHandlers.cmhkReplay.postMessage(info) } catch (e) {}
+  }
+  var of = window.fetch
+  if (of) {
+    window.fetch = function (input, init) {
+      var url = (input && input.url) || String(input)
+      return of.apply(this, arguments).then(function (r) {
+        try {
+          var c = r.clone()
+          c.text().then(function (t) {
+            if (t && t.length > 2) send({ url: url, body: t.slice(0, 60000) })
+          }).catch(function () {})
+        } catch (e) {}
+        return r
+      })
+    }
+  }
+  var O = XMLHttpRequest.prototype.open
+  var S = XMLHttpRequest.prototype.send
+  XMLHttpRequest.prototype.open = function (m, u) { this.__cmhkUrl = u; return O.apply(this, arguments) }
+  XMLHttpRequest.prototype.send = function (b) {
+    var xhr = this
+    xhr.addEventListener("load", function () {
+      try { send({ url: String(xhr.__cmhkUrl), body: String(xhr.responseText).slice(0, 60000) }) } catch (e) {}
+    })
+    return S.apply(this, arguments)
+  }
+  return true
+})()
+`
 
 // 密码 REST 方式（校准区）
 async function login(): Promise<string> {
@@ -667,8 +684,8 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
         try {
           summary = await fetchWithWebSession()
           if (!summaryHasUsage(summary)) throw new Error("页内响应无用量数据")
-          pathLabel = "WebView 重放"
-          appendDebug("刷新: WebView 重放成功")
+          pathLabel = "页内捕获"
+          appendDebug("刷新: 页内捕获成功")
         } catch (e) {
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
