@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.14"  // 与 script.json 同步
+export const VERSION = "1.19.15"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -508,6 +508,29 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   }
 }
 
+// ===== v1.19.15 网页窗口互斥（登录优先）=====
+// 真机故障：点「重新網頁登入」半天不弹窗 → 用户连点 → 半分钟后多个登录窗口一起弹出。
+// 根因三条：① 登录窗口 present() 原先写在 await loadURL() 之后（页面加载完才上屏）；
+// ② 登录无防重入（busy 只挡了刷新按钮）；③ v1.19.12 起刷新的无头 WebView 会加载同一
+// 站点最长 15 秒，与登录页抢网络/会话，把登录页加载拖得更久。这组闸门同时治三条。
+let webLoginBusy = false
+let loginPriority = false
+
+/** 登录入口互斥：已在登录中返回 false（防连点堆积多个登录窗口） */
+export function tryBeginWebLogin(): boolean {
+  if (webLoginBusy) return false
+  webLoginBusy = true
+  loginPriority = true
+  return true
+}
+export function endWebLogin(): void {
+  webLoginBusy = false
+  loginPriority = false
+}
+export function isWebLoginBusy(): boolean {
+  return webLoginBusy
+}
+
 // 网页会话刷新（v1.19.12 重写）：无头 WebView 打开真实用量页，用与登录捕获同款的
 // fetch/XHR 钩子截获页面自己发出的 usageQuery 响应。
 //
@@ -519,6 +542,8 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
 async function fetchWithWebSession(): Promise<any> {
   const s = readWebSession()
   if (!s) throw new Error("无网页会话")
+  // 登录窗口优先：登录期间不再开无头 WebView 抢站点（否则登录页加载被拖慢、用户误以为没反应）
+  if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
 
   const wv = new WebViewController()
   try {
@@ -555,6 +580,7 @@ async function fetchWithWebSession(): Promise<any> {
     void withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续 */ })
     const deadline = Date.now() + 15000
     while (Date.now() < deadline) {
+      if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
       await withTimeout(wv.evaluateJavaScript<boolean>(CAPTURE_HOOK_JS), 4000, "注入钩子").catch(() => false)
       const hit = captures.find((c) => /cbs\/usageQuery/i.test(c.url) && looksUsable(c.body))
       if (hit) {
@@ -645,7 +671,25 @@ async function authedGet(path: string): Promise<any> {
 // ---- 对外主入口：抓取并归一化（失败时回退缓存并标记 stale） ----
 // opts.directOnly：只走轻量路径（手动接口 / 直连重放），不创建 WebView。
 //   供 widget 进程与 AppIntent 快路径使用：命中返回新数据（已写缓存），未命中返回 null。
+// v1.19.15 刷新去重：自动刷新与手动点击重叠时不再叠加第二个无头 WebView
+let refreshInFlight: Promise<UsageData | null> | null = null
+
 export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }): Promise<UsageData | null> {
+  if (opts?.directOnly === true || isDemoMode()) return runRefresh(opts)
+  if (refreshInFlight) {
+    appendDebug("刷新: 已有刷新在途，复用其结果")
+    return refreshInFlight
+  }
+  const p = runRefresh(opts)
+  refreshInFlight = p
+  try {
+    return await p
+  } finally {
+    if (refreshInFlight === p) refreshInFlight = null
+  }
+}
+
+async function runRefresh(opts?: { directOnly?: boolean; via?: string }): Promise<UsageData | null> {
   const directOnly = opts?.directOnly === true
   const via = opts?.via ?? "app"
   let fromCaptured = false // 本次数据是否来自登录时捕获的旧 body（诚实标记 stale）
@@ -689,7 +733,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
         } catch (e) {
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
-          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {

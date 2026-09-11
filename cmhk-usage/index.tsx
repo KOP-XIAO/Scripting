@@ -47,6 +47,7 @@ import {
   hasWebSession,
   isDemoMode,
   readCache,
+  isWebLoginBusy,
   readCaptures,
   readDebugLog,
   readLoginRequests,
@@ -111,6 +112,8 @@ function Page() {
   }
 
   async function handleWebLogin() {
+    // v1.19.15 防重入：登录窗口弹出前有加载期，连点会堆积多个登录流程（真机故障）
+    if (busy || isWebLoginBusy()) return
     setBusy(true)
     setStatus(null)
     try {

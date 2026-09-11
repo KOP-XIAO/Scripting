@@ -5,7 +5,7 @@
 // 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
 // （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
-import { appendDebug, getWebStartUrl, isLoginRequest, saveCapture, saveLoginRequest, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession } from "./cmhk"
+import { appendDebug, endWebLogin, getWebStartUrl, isLoginRequest, saveCapture, saveLoginRequest, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession, tryBeginWebLogin } from "./cmhk"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -94,7 +94,18 @@ function looksLikeUsageJson(url: string, body: string): boolean {
   return /"(margin|total|usage|unit|balance|points|tier|plan)"\s*:/.test(body)
 }
 
+// v1.19.15 防重入：真机故障——登录窗口半天不出现（页面加载完才上屏），用户连点，
+// 每次点击都悄悄起一个登录流程，加载完一起弹窗（"连续跳出一堆网页"）。
 export async function runWebLogin(): Promise<{ captured: boolean; url: string | null; body: string | null }> {
+  if (!tryBeginWebLogin()) throw new Error("登录窗口已打开：请先完成登录或关闭当前窗口，再重新发起")
+  try {
+    return await runWebLoginInner()
+  } finally {
+    endWebLogin()
+  }
+}
+
+async function runWebLoginInner(): Promise<{ captured: boolean; url: string | null; body: string | null }> {
   appendDebug("web-login: 开始")
   const webView = new WebViewController()
 
@@ -131,15 +142,20 @@ export async function runWebLogin(): Promise<{ captured: boolean; url: string | 
     return null
   })
 
-  await webView.loadURL(getWebStartUrl())
-  appendDebug(`起始页: ${getWebStartUrl()}`)
-
   let closed = false
   let overviewSaved = false
+  // v1.19.15 核心修复：先上屏，再加载。原先 present() 写在 await loadURL() 之后——
+  // CMHK 页面（含瑞数 WAF 挑战）加载完成前窗口根本不出现，用户面对的是纯空白等待期，
+  // 误以为点击无效而连点，堆积出多个登录流程。现在窗口立即弹出，页面在里面加载。
   const presentP = webView
     .present({ navigationTitle: "登录后进入「用量查询」和「我的账户/首页」，再关闭本窗口" })
     .then(() => { closed = true })
     .catch(() => { closed = true })
+
+  const startUrl = getWebStartUrl()
+  appendDebug(`起始页: ${startUrl}`)
+  // 不 await：加载快慢不再阻塞窗口出现（加载失败也让窗口留着，用户可重试导航）
+  void webView.loadURL(startUrl).catch((e) => appendDebug(`起始页加载失败: ${String(e).slice(0, 80)}`))
 
   // 轮询直到窗口关闭：用量 API 与账户概览页分别独立捕获
   while (!closed) {
