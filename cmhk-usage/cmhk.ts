@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.15"  // 与 script.json 同步
+export const VERSION = "1.19.16"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -578,7 +578,7 @@ async function fetchWithWebSession(): Promise<any> {
     // 返回的瞬间发出，等加载完成再注入会错过。从导航开始就持续轮询注入（幂等标志，
     // WAF 换页重置 window 后重注入真正生效），命中即返回（总预算 15 秒）。
     void withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续 */ })
-    const deadline = Date.now() + 15000
+    const deadline = Date.now() + 12000 // v1.19.16：15s → 12s，压缩最坏情况等待
     while (Date.now() < deadline) {
       if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
       await withTimeout(wv.evaluateJavaScript<boolean>(CAPTURE_HOOK_JS), 4000, "注入钩子").catch(() => false)
@@ -674,7 +674,7 @@ async function authedGet(path: string): Promise<any> {
 // v1.19.15 刷新去重：自动刷新与手动点击重叠时不再叠加第二个无头 WebView
 let refreshInFlight: Promise<UsageData | null> | null = null
 
-export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }): Promise<UsageData | null> {
+export async function refreshUsage(opts?: { directOnly?: boolean; via?: string; snapshotFirst?: boolean }): Promise<UsageData | null> {
   if (opts?.directOnly === true || isDemoMode()) return runRefresh(opts)
   if (refreshInFlight) {
     appendDebug("刷新: 已有刷新在途，复用其结果")
@@ -689,7 +689,7 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string }
   }
 }
 
-async function runRefresh(opts?: { directOnly?: boolean; via?: string }): Promise<UsageData | null> {
+async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotFirst?: boolean }): Promise<UsageData | null> {
   const directOnly = opts?.directOnly === true
   const via = opts?.via ?? "app"
   let fromCaptured = false // 本次数据是否来自登录时捕获的旧 body（诚实标记 stale）
@@ -706,13 +706,36 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string }): Promis
     if (directOnly && !readManualEndpoint() && !hasWebSession()) return null
     let summary: any
     const manual = readManualEndpoint()
-    if (manual) {
+    // v1.19.16 刚登录快路径：登录窗口捕获的 body 就是"现场数据"（页面几秒前的真实响应）。
+    // 此前它被排在链路最末——刚登录完仍要先等"直连 5 秒超时"、再等"页内捕获最长 15 秒"，
+    // 最后才回退到这份就在手上的数据，用户刷新一次要等 5 秒以上（真机反馈）。
+    // 现在：登录后 2 分钟内直接解析现场数据，跳过全部网络尝试（解析是本地操作，<1 秒）。
+    let snapReady = false
+    if (!manual && opts?.snapshotFirst === true) {
+      const body = readCapturedBody()
+      const at = readCapturedBodyAt()
+      if (body && at != null && Date.now() - at < 120_000) {
+        try {
+          const j = JSON.parse(body)
+          if (summaryHasUsage(j)) {
+            summary = j
+            snapReady = true
+            fromCaptured = false // 现场数据（几秒前的真实响应），非陈旧快照
+            pathLabel = "登录快照"
+            appendDebug(`刷新: 登录快照即时命中（${Math.round((Date.now() - at) / 1000)}秒前的现场数据，跳过网络）`)
+          }
+        } catch { /* 非 JSON 忽略，走常规链路 */ }
+      }
+    }
+    if (snapReady) {
+      // 已有登录现场数据，无需任何网络尝试
+    } else if (manual) {
       // 手动接口：抓包粘贴的真实用量接口（最优先）
       summary = await fetchJson(manual.url, { headers: manual.headers }, directOnly ? 5000 : 12000)
       appendDebug("刷新: 手动接口")
       pathLabel = "手动接口"
     } else if (hasWebSession()) {
-      // 快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
+      // 网络快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
       let direct: any = null
       try { direct = await fetchDirectWithSession(readWebSession()!) } catch { direct = null }
       const directOk = direct != null && summaryHasUsage(direct)

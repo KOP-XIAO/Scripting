@@ -121,8 +121,8 @@ function Page() {
       if (r.captured) {
         if (r.body) saveCapturedBody(r.body)
         setWebSession(true)
-        setStatus("已捕获用量接口，正在拉取数据…")
-        await handleRefresh()
+        setStatus("已捕获用量接口，正在处理数据…")
+        await handleRefresh({ snapshotFirst: true }) // v1.19.16：现场数据直接用，不再等网络
       } else {
         setStatus("未捕获到用量数据：请确认登录后打开过「用量查询」页面，再关闭窗口")
       }
@@ -133,11 +133,11 @@ function Page() {
     }
   }
 
-  async function handleRefresh() {
+  async function handleRefresh(opts?: { snapshotFirst?: boolean }) {
     setBusy(true)
     setStatus(null)
     try {
-      const d = await refreshUsage({ via: "app" })
+      const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst === true })
       if (!d) return
       setData(d)
       Widget.reloadUserWidgets()
