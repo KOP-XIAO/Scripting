@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.16"  // 与 script.json 同步
+export const VERSION = "1.19.17"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -489,7 +489,7 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   if (hasBody) headers["Content-Type"] = "application/json"
   const init: Record<string, any> = { method, headers }
   if (hasBody) init.body = s.reqBody
-  const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("直连超时")), 5000))
+  const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("直连超时")), 3000)) // v1.19.17：5s→3s，压缩无效等待
   const res = (await Promise.race([fetch(apiUrl, init), timer])) as any
   if (!res || !res.ok) {
     appendDebug(`直连未命中: ${res ? `HTTP ${res.status}` : "无响应"}`)
@@ -498,7 +498,10 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   try {
     const j = await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
     if (isApiError(j)) {
-      appendDebug(`直连未命中: 错误响应 ${JSON.stringify(j).slice(0, 120)}`)
+      const sn = JSON.stringify(j).slice(0, 120)
+      appendDebug(`直连未命中: 错误响应 ${sn}`)
+      // 服务端明确说未登录/已过期 → 这是会话真死的证据（供页内捕获超时时定性）
+      if (/未登錄|未登录|not\s*login|please\s*login|過期|过期|expired|unauthorized/i.test(sn)) lastDirectAuthError = sn
       return null // HTTP 200 + 业务错误 JSON → 视为未命中
     }
     return j
@@ -507,6 +510,11 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
     return null
   }
 }
+
+// v1.19.17 会话"真死"的证据：只有拿到服务端明确的未登录响应，或页面被重定向到登录页，
+// 才能宣称会话过期。此前仅凭"页内捕获超时"就报"会话已过期"并弹重登窗——用户点进去发现
+// 其实已登录（超时的真实原因常常只是页面没发出用量请求，与会话死活无关）。
+let lastDirectAuthError: string | null = null
 
 // ===== v1.19.15 网页窗口互斥（登录优先）=====
 // 真机故障：点「重新網頁登入」半天不弹窗 → 用户连点 → 半分钟后多个登录窗口一起弹出。
@@ -579,6 +587,7 @@ async function fetchWithWebSession(): Promise<any> {
     // WAF 换页重置 window 后重注入真正生效），命中即返回（总预算 15 秒）。
     void withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续 */ })
     const deadline = Date.now() + 12000 // v1.19.16：15s → 12s，压缩最坏情况等待
+    let sawLoginPage = false
     while (Date.now() < deadline) {
       if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
       await withTimeout(wv.evaluateJavaScript<boolean>(CAPTURE_HOOK_JS), 4000, "注入钩子").catch(() => false)
@@ -588,10 +597,35 @@ async function fetchWithWebSession(): Promise<any> {
         try { saveCapture(hit.url, hit.body); saveCapturedBody(hit.body) } catch { /* 忽略 */ }
         return JSON.parse(hit.body)
       }
+      // v1.19.17 会话真死的证据之一：页面被重定向到登录/认证页
+      if (!sawLoginPage) {
+        const href = await withTimeout(wv.evaluateJavaScript<string>("return location.href"), 2000, "读取地址").catch(() => null)
+        if (typeof href === "string" && /login|authn|signin|sso|verify/i.test(href)) sawLoginPage = true
+      }
+      // 证据之二：页面自己发出的请求收到了"未登录"错误响应（页面确实通了、服务端明确拒绝）
+      if (!lastDirectAuthError) {
+        for (const c of captures) {
+          if (!/usageQuery/i.test(c.url)) continue
+          try {
+            const j = JSON.parse(c.body)
+            if (!isApiError(j)) continue
+            const sn = JSON.stringify(j).slice(0, 120)
+            if (/未登錄|未登录|not\s*login|please\s*login|過期|过期|expired|unauthorized/i.test(sn)) {
+              lastDirectAuthError = sn
+              appendDebug(`页内捕获: 页面请求被拒（${sn}）→ 会话失效证据`)
+            }
+          } catch { /* 非 JSON 忽略 */ }
+        }
+      }
       await new Promise((r) => setTimeout(r, 800))
     }
-    // 会话已死（页面重定向登录）或页面异常：12 秒无用量请求
-    throw new Error("页内捕获超时：页面未发出用量请求，网页会话已过期，请重新「网页登录」")
+    // v1.19.17 超时定性：只有拿到"会话真死"的证据才宣称过期（否则误弹重登窗，
+    // 而用户点进去发现仍是登录态）。证据三种：① 页面被重定向到登录页；
+    // ② 直连收到服务端未登录响应；③ 页面自发请求被服务端以未登录拒绝。
+    // 无任何证据时如实报告"未捕获到请求"，不吓唬用户。
+    if (sawLoginPage) throw new Error("网页会话已过期（页面被重定向到登录页），请重新「网页登录」")
+    if (lastDirectAuthError) throw new Error(`网页会话已过期（服务端响应：${lastDirectAuthError}），请重新「网页登录」`)
+    throw new Error("页内捕获超时（未捕获到用量请求，未能确认会话是否失效）")
   } finally {
     wv.dispose()
   }
@@ -710,6 +744,8 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
     // 此前它被排在链路最末——刚登录完仍要先等"直连 5 秒超时"、再等"页内捕获最长 15 秒"，
     // 最后才回退到这份就在手上的数据，用户刷新一次要等 5 秒以上（真机反馈）。
     // 现在：登录后 2 分钟内直接解析现场数据，跳过全部网络尝试（解析是本地操作，<1 秒）。
+    lastDirectAuthError = null // v1.19.17：每次刷新的证据独立
+    let fetchedAtOverride: number | null = null // 快路径用真实捕获时间，不谎报"刚刚"
     let snapReady = false
     if (!manual && opts?.snapshotFirst === true) {
       const body = readCapturedBody()
@@ -720,6 +756,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
           if (summaryHasUsage(j)) {
             summary = j
             snapReady = true
+            fetchedAtOverride = at
             fromCaptured = false // 现场数据（几秒前的真实响应），非陈旧快照
             pathLabel = "登录快照"
             appendDebug(`刷新: 登录快照即时命中（${Math.round((Date.now() - at) / 1000)}秒前的现场数据，跳过网络）`)
@@ -756,7 +793,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
         } catch (e) {
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
-          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /未捕获/.test(reason) ? "·未捕获" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
@@ -924,7 +961,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
       })),
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? (parsed.buckets?.[0]?.expiry ?? null),
-      fetchedAt: Date.now(),
+      fetchedAt: fetchedAtOverride ?? Date.now(),
       stale: fromCaptured ? true : undefined,
     }
     const prevCache = readCache()

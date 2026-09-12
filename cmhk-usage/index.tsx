@@ -137,7 +137,9 @@ function Page() {
     setBusy(true)
     setStatus(null)
     try {
-      const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst === true })
+      // v1.19.17：手动刷新按钮同样走快路径——刚登录完手上就有现场数据，
+      // 此前只有"登录完成"那一刻走快路径，点按钮仍要白等直连 3s + 页内捕获 12s。
+      const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst !== false })
       if (!d) return
       setData(d)
       Widget.reloadUserWidgets()
@@ -170,7 +172,7 @@ function Page() {
   // 静默自动刷新：失败不弹窗，仅更新状态行
   async function handleRefreshSilent() {
     try {
-      const d = await refreshUsage({ via: "app-auto" })
+      const d = await refreshUsage({ via: "app-auto", snapshotFirst: true })
       if (!d) return
       setData(d)
       Widget.reloadUserWidgets()
