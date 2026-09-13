@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.17"  // 与 script.json 同步
+export const VERSION = "1.19.19"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -501,7 +501,7 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
       const sn = JSON.stringify(j).slice(0, 120)
       appendDebug(`直连未命中: 错误响应 ${sn}`)
       // 服务端明确说未登录/已过期 → 这是会话真死的证据（供页内捕获超时时定性）
-      if (/未登錄|未登录|not\s*login|please\s*login|過期|过期|expired|unauthorized/i.test(sn)) lastDirectAuthError = sn
+      if (/未登錄|未登录|not\s*login|please\s*login|過期|过期|expired|unauthorized/i.test(sn)) recordAuthError(sn)
       return null // HTTP 200 + 业务错误 JSON → 视为未命中
     }
     return j
@@ -515,6 +515,20 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
 // 才能宣称会话过期。此前仅凭"页内捕获超时"就报"会话已过期"并弹重登窗——用户点进去发现
 // 其实已登录（超时的真实原因常常只是页面没发出用量请求，与会话死活无关）。
 let lastDirectAuthError: string | null = null
+// v1.19.18 证据轮次隔离：证据是模块级变量，若不隔离会被**上一轮刷新**污染
+// （真实事故：T16a 直连记录了"未登錄"，T16b 页内捕获已成功拿到数据，却因读到残留
+// 证据而抛"会话过期"，把到手的新数据扔掉）。每轮刷新分配新令牌，只有本轮写入的证据有效。
+let authErrorEpoch = 0
+let authErrorEpochOf = -1
+function recordAuthError(sn: string): void {
+  lastDirectAuthError = sn
+  authErrorEpochOf = authErrorEpoch
+}
+function currentAuthError(): string | null {
+  return authErrorEpochOf === authErrorEpoch ? lastDirectAuthError : null
+}
+// v1.19.18：直连胜出后放弃并行的页内捕获（避免白开一个 WebView 空转）
+let webCaptureAbort = false
 
 // ===== v1.19.15 网页窗口互斥（登录优先）=====
 // 真机故障：点「重新網頁登入」半天不弹窗 → 用户连点 → 半分钟后多个登录窗口一起弹出。
@@ -553,6 +567,11 @@ async function fetchWithWebSession(): Promise<any> {
   // 登录窗口优先：登录期间不再开无头 WebView 抢站点（否则登录页加载被拖慢、用户误以为没反应）
   if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
 
+  // v1.19.19 证据时点隔离：只认"本次页内捕获开始之后"写入的证据。
+  // 真实事故（T16b）：直连先收到"未登錄"并记录证据 → 页内捕获刚启动就被该证据判死，
+  // 而它的请求还在路上、马上就会成功——到手的新数据被扔掉。
+  const authEpochAtStart = authErrorEpoch
+
   const wv = new WebViewController()
   try {
     const withTimeout = <T,>(pr: Promise<T>, ms: number, label: string): Promise<T> =>
@@ -574,7 +593,13 @@ async function fetchWithWebSession(): Promise<any> {
       ? s.pageUrl
       : "https://www.hk.chinamobile.com/tc/home/my-zone/menu/usage-query"
     appendDebug(`页内捕获: 打开 ${startUrl.slice(0, 90)}`)
-    await withTimeout(wv.loadURL(startUrl), 20000, "打开页面")
+    // v1.19.18 时序优化：**不等加载完成**就开始注入。此前是 await loadURL() 之后才进入
+    // 注入循环——页面加载（数秒）与钩子注入被串起来，SPA 的 usageQuery 往往在加载尾段
+    // 发出，注入晚一步就得再等一整轮。现在导航一发就并行轮询注入（幂等标志保证重复注入
+    // 无害，导航途中注入失败被 catch 吞掉、下一轮重试）。
+    let loadErr: string | null = null
+    let loadErrAt = 0
+    void wv.loadURL(startUrl).catch((e) => { loadErr = String(e); loadErrAt = Date.now() })
 
     const looksUsable = (body: string): boolean => {
       try {
@@ -582,14 +607,13 @@ async function fetchWithWebSession(): Promise<any> {
         return !isApiError(j) && summaryHasUsage(j)
       } catch { return false }
     }
-    // v1.19.12 关键时序：注入与页面加载并行——SPA 的 usageQuery 可能在 waitForLoad
-    // 返回的瞬间发出，等加载完成再注入会错过。从导航开始就持续轮询注入（幂等标志，
-    // WAF 换页重置 window 后重注入真正生效），命中即返回（总预算 15 秒）。
-    void withTimeout(wv.waitForLoad(), 15000, "等待页面加载").catch(() => { /* 加载不完全也继续 */ })
-    const deadline = Date.now() + 12000 // v1.19.16：15s → 12s，压缩最坏情况等待
+    const deadline = Date.now() + 12000 // 最坏情况预算 12 秒
     let sawLoginPage = false
     while (Date.now() < deadline) {
+      if (webCaptureAbort) throw new Error("已取消（直连已取得数据）")
       if (loginPriority) throw new Error("登录窗口优先，本次刷新让路")
+      // 页面加载明确失败且迟迟无捕获 → 提前退出，不必空等满 12 秒
+      if (loadErr && Date.now() - loadErrAt > 2000) throw new Error(`页面加载失败：${loadErr.slice(0, 60)}`)
       await withTimeout(wv.evaluateJavaScript<boolean>(CAPTURE_HOOK_JS), 4000, "注入钩子").catch(() => false)
       const hit = captures.find((c) => /cbs\/usageQuery/i.test(c.url) && looksUsable(c.body))
       if (hit) {
@@ -603,7 +627,7 @@ async function fetchWithWebSession(): Promise<any> {
         if (typeof href === "string" && /login|authn|signin|sso|verify/i.test(href)) sawLoginPage = true
       }
       // 证据之二：页面自己发出的请求收到了"未登录"错误响应（页面确实通了、服务端明确拒绝）
-      if (!lastDirectAuthError) {
+      if (!currentAuthError()) {
         for (const c of captures) {
           if (!/usageQuery/i.test(c.url)) continue
           try {
@@ -611,20 +635,30 @@ async function fetchWithWebSession(): Promise<any> {
             if (!isApiError(j)) continue
             const sn = JSON.stringify(j).slice(0, 120)
             if (/未登錄|未登录|not\s*login|please\s*login|過期|过期|expired|unauthorized/i.test(sn)) {
-              lastDirectAuthError = sn
+              recordAuthError(sn)
               appendDebug(`页内捕获: 页面请求被拒（${sn}）→ 会话失效证据`)
             }
           } catch { /* 非 JSON 忽略 */ }
         }
       }
-      await new Promise((r) => setTimeout(r, 800))
+      // v1.19.18 证据即时退出：已确认会话真死就没必要空等满 12 秒（用户等的是结论，不是超时）。
+      // v1.19.19：只认可"页内捕获开始后"新产生的证据（页内自己的请求被拒），
+      // 直连先前的证据不杀死进行中的页内捕获。
+      if (sawLoginPage) throw new Error("网页会话已过期（页面被重定向到登录页），请重新「网页登录」")
+      if (authErrorEpoch !== authEpochAtStart) {
+        const ae = currentAuthError()
+        if (ae) throw new Error(`网页会话已过期（服务端响应：${ae}），请重新「网页登录」`)
+      }
+      await new Promise((r) => setTimeout(r, 400)) // v1.19.18：800ms → 400ms，命中更早发现
     }
     // v1.19.17 超时定性：只有拿到"会话真死"的证据才宣称过期（否则误弹重登窗，
     // 而用户点进去发现仍是登录态）。证据三种：① 页面被重定向到登录页；
     // ② 直连收到服务端未登录响应；③ 页面自发请求被服务端以未登录拒绝。
     // 无任何证据时如实报告"未捕获到请求"，不吓唬用户。
     if (sawLoginPage) throw new Error("网页会话已过期（页面被重定向到登录页），请重新「网页登录」")
-    if (lastDirectAuthError) throw new Error(`网页会话已过期（服务端响应：${lastDirectAuthError}），请重新「网页登录」`)
+    // 超时定性：此时页内捕获确实一无所获，先前直连的未登录证据是有效参考
+    const ae2 = currentAuthError()
+    if (ae2) throw new Error(`网页会话已过期（服务端响应：${ae2}），请重新「网页登录」`)
     throw new Error("页内捕获超时（未捕获到用量请求，未能确认会话是否失效）")
   } finally {
     wv.dispose()
@@ -744,7 +778,8 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
     // 此前它被排在链路最末——刚登录完仍要先等"直连 5 秒超时"、再等"页内捕获最长 15 秒"，
     // 最后才回退到这份就在手上的数据，用户刷新一次要等 5 秒以上（真机反馈）。
     // 现在：登录后 2 分钟内直接解析现场数据，跳过全部网络尝试（解析是本地操作，<1 秒）。
-    lastDirectAuthError = null // v1.19.17：每次刷新的证据独立
+    authErrorEpoch++ // v1.19.18：开新轮次——上一轮遗留的证据对本轮无效（防污染）
+    lastDirectAuthError = null
     let fetchedAtOverride: number | null = null // 快路径用真实捕获时间，不谎报"刚刚"
     let snapReady = false
     if (!manual && opts?.snapshotFirst === true) {
@@ -772,29 +807,71 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
       appendDebug("刷新: 手动接口")
       pathLabel = "手动接口"
     } else if (hasWebSession()) {
-      // 网络快路径：直连重放（不依赖 WebView，widget/AppIntent 上下文友好）
-      let direct: any = null
-      try { direct = await fetchDirectWithSession(readWebSession()!) } catch { direct = null }
-      const directOk = direct != null && summaryHasUsage(direct)
-      if (direct != null && !directOk) appendDebug("刷新: 直连响应无用量数据，视为未命中")
-      if (directOk) {
-        summary = direct
-        appendDebug("刷新: 直连重放成功")
-        pathLabel = "直连重放"
-      } else if (directOnly) {
-        return null
+      // v1.19.18 并行竞速（用户建议）：直连与页内捕获**同时启动**，谁先成功用谁。
+      // 此前是严格串行——直连先白等超时（3s），之后才启动页内捕获（最长 12s），
+      // 最坏 15s 且毫无重叠；而两者其实互不依赖（直连靠 Cookie 头，页内捕获靠页面自发请求）。
+      // 现在：命中任一即返回（典型 1-3 秒）；页内捕获在直连胜出后主动放弃（不开空转 WebView）。
+      const session = readWebSession()!
+      webCaptureAbort = false // 每轮竞速独立（上次的取消不能影响本次）
+      let webErr: any = null
+
+      if (directOnly) {
+        // 轻量模式（widget/AppIntent）：只做直连，绝不创建 WebView
+        const dv = await fetchDirectWithSession(session).catch(() => null)
+        if (dv != null && summaryHasUsage(dv)) {
+          summary = dv
+          appendDebug("刷新: 直连重放成功")
+          pathLabel = "直连重放"
+        } else {
+          if (dv != null) appendDebug("刷新: 直连响应无用量数据，视为未命中")
+          return null
+        }
       } else {
-        // 网页会话：无头 WebView 页内重放（Cookie 自动携带）；失败退回登录时捕获的内容
-        try {
-          summary = await fetchWithWebSession()
-          if (!summaryHasUsage(summary)) throw new Error("页内响应无用量数据")
-          pathLabel = "页内捕获"
-          appendDebug("刷新: 页内捕获成功")
-        } catch (e) {
+        const directP = fetchDirectWithSession(session)
+          .then((r) => (r != null && summaryHasUsage(r) ? r : null))
+          .catch(() => null)
+        const webP = (async (): Promise<{ ok: true; value: any } | { ok: false; err: any }> => {
+          try {
+            return { ok: true, value: await fetchWithWebSession() }
+          } catch (err) {
+            return { ok: false, err }
+          }
+        })()
+
+        // v1.19.19 真竞速：两者同时跑，**谁先成功用谁**。此前写成"先 await 直连，失败再等页内"
+        // ——直连慢时仍要等满它的超时，等于串行（T22a 用 2 秒慢直连抓到 2004ms 的假并行）。
+        const race = await new Promise<{ from: "direct" | "web"; value: any } | null>((resolve) => {
+          let settled = false
+          let failures = 0
+          const win = (from: "direct" | "web", value: any) => { if (!settled) { settled = true; resolve({ from, value }) } }
+          const lose = () => { failures++; if (!settled && failures >= 2) { settled = true; resolve(null) } }
+          directP.then((v) => { if (v != null) win("direct", v); else lose() })
+          webP.then((r) => {
+            if (r.ok && summaryHasUsage(r.value)) win("web", r.value)
+            else { if (!r.ok) webErr = r.err; lose() }
+          })
+        })
+
+        if (race) {
+          summary = race.value
+          if (race.from === "direct") {
+            appendDebug("刷新: 直连重放成功")
+            pathLabel = "直连重放"
+            webCaptureAbort = true // 直连胜出：让页内捕获放弃，别空转
+            void webP.catch(() => { /* 已放弃，忽略 */ })
+          } else {
+            appendDebug("刷新: 页内捕获成功")
+            pathLabel = "页内捕获"
+          }
+        } else {
+          // 两者均未命中：取页内捕获的错误用于分类（此时它已 settled），走快照回退
+          const wr = await webP
+          if (!wr.ok) webErr = wr.err
+          const e = webErr ?? new Error("页内捕获无结果")
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
           const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /未捕获/.test(reason) ? "·未捕获" : /超时/.test(reason) ? "·超时" : "·请求失败"
-          appendDebug(`刷新: WebView 重放失败 ${reason.slice(0, 120)}`)
+          appendDebug(`刷新: 页内捕获失败 ${reason.slice(0, 120)}`)
           const body = readCapturedBody()
           if (body) {
             // 保留更新的缓存：仅当缓存真的更新（时间戳判定，v1.19.10）
