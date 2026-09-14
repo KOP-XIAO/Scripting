@@ -48,6 +48,7 @@ import {
   countHistory,
   findBySourceURL,
   insertHistory,
+  updateHistoryNote,
   deleteHistoryRecord,
   clearHistoryRecords,
   type HistoryRecord,
@@ -60,57 +61,86 @@ import {
   shareFile,
   canSaveToPhotos,
 } from "./services/file-actions"
-import { VERSION, extractFirstURL, formatBytes, formatDate } from "./utils/common"
+import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration } from "./utils/common"
 
 declare const openURL: (url: string) => Promise<boolean>
 
 // -------------------------------------------------------------
-// 历史记录行
+// 历史记录行：标题单行截断 + 元信息行（类型 · 大小 · 时长 · 日期）
 // -------------------------------------------------------------
 function HistoryRow(props: { item: HistoryRecord; onChanged: () => Promise<void> }) {
   const { item, onChanged } = props
 
   const openActions = async () => {
     const exists = await FileManager.exists(item.file_path)
+    const inPhotos = item.note.includes("相册")
+    // 文件不在本地时，隐藏需要文件的动作
+    const fileActions = exists
+      ? [
+          ...(canSaveToPhotos(item.file_name) ? [{ label: "保存到相册" }] : []),
+          { label: "导出到文件" },
+          { label: "分享文件" },
+        ]
+      : []
+    const actions = [
+      ...fileActions,
+      { label: "打开原始链接" },
+      { label: "复制原始链接" },
+      ...(exists
+        ? [{ label: "删除记录和文件", destructive: true }]
+        : [{ label: "删除记录", destructive: true }]),
+    ]
     const result = await Dialog.actionSheet({
       title: item.title || item.file_name,
-      message: `${formatDate(item.created_at)} · ${formatBytes(item.bytes_written)}${exists ? "" : " · 文件已不存在"}`,
-      actions: [
-        { label: "保存到相册" },
-        { label: "导出到文件" },
-        { label: "分享文件" },
-        { label: "打开原始链接" },
-        { label: "复制原始链接" },
-        { label: "删除记录", destructive: true },
-        { label: "删除记录和文件", destructive: true },
-      ],
+      message: `${formatDate(item.created_at)} · ${formatBytes(item.bytes_written)}${
+        inPhotos ? " · 已存入相册" : exists ? "" : " · 文件已不存在"
+      }`,
+      actions,
       cancelButton: true,
     })
+    if (result == null || result < 0) return
     try {
-      if (result === 0) await saveFilePathToPhotos(item.file_path, item.file_name)
-      if (result === 1) await exportFilePathToFiles(item.file_path, item.file_name)
-      if (result === 2) await shareFile(item.file_path)
-      if (result === 3) await openURL(item.source_url)
-      if (result === 4) await Pasteboard.setString(item.source_url)
-      if (result === 5) await deleteHistoryRecord(item.id)
-      if (result === 6) await deleteHistoryRecord(item.id, true)
-      if (result >= 0) await onChanged()
+      const label = actions[result].label
+      if (label === "保存到相册") {
+        await saveFilePathToPhotos(item.file_path, item.file_name)
+        await updateHistoryNote(item.id, "已存入相册")
+      }
+      if (label === "导出到文件") await exportFilePathToFiles(item.file_path, item.file_name)
+      if (label === "分享文件") await shareFile(item.file_path)
+      if (label === "打开原始链接") await openURL(item.source_url)
+      if (label === "复制原始链接") await Pasteboard.setString(item.source_url)
+      if (label === "删除记录") await deleteHistoryRecord(item.id)
+      if (label === "删除记录和文件") await deleteHistoryRecord(item.id, true)
+      await onChanged()
     } catch (e) {
       await Dialog.alert({ title: "操作失败", message: String(e) })
     }
   }
 
+  const meta = [
+    KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind,
+    formatBytes(item.bytes_written),
+    formatDuration(item.duration_sec ?? 0),
+    formatDate(item.created_at),
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
   return (
     <VStack alignment="leading" spacing={4}>
-      <Button
-        title={item.title || item.file_name}
-        buttonStyle="plain"
-        action={() => void openActions()}
-      />
-      <Text font="caption" foregroundStyle="secondaryLabel">
-        {KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind} ·{" "}
-        {formatBytes(item.bytes_written)} · {formatDate(item.created_at)}
+      <Text font="headline" lineLimit={1} onTapGesture={() => void openActions()}>
+        {item.title || item.file_name}
       </Text>
+      <HStack spacing={6}>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
+          {meta}
+        </Text>
+        {item.note.includes("相册") ? (
+          <Text font="caption2" foregroundStyle="systemGreen">
+            已存相册
+          </Text>
+        ) : null}
+      </HStack>
     </VStack>
   )
 }
@@ -333,14 +363,24 @@ function View() {
 
     const log = (line: string) => setLogs((prev) => [...prev, line])
     try {
-      // 历史去重
+      // 历史去重：文件还在本地，或已标记"已存入相册"，都视为已下载
       if (prefs.dedupe) {
         const dup = (await findBySourceURL(url)).filter(Boolean)[0]
-        if (dup && (await FileManager.exists(dup.file_path))) {
-          setStatus(`已在历史中（${formatDate(dup.created_at)}），跳过重复下载`)
-          setLastFiles([{ path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written }])
-          setLoading(false)
-          return
+        if (dup) {
+          const fileExists = await FileManager.exists(dup.file_path)
+          const inPhotos = dup.note.includes("相册")
+          if (fileExists || inPhotos) {
+            setStatus(
+              `已在历史中（${formatDate(dup.created_at)}${inPhotos && !fileExists ? "，已存入相册" : ""}），跳过重复下载`,
+            )
+            if (fileExists) {
+              setLastFiles([
+                { path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written, durationSec: dup.duration_sec },
+              ])
+            }
+            setLoading(false)
+            return
+          }
         }
       }
 
@@ -351,22 +391,31 @@ function View() {
         onProgress: (done, total) => setProgress({ done, total }),
       })
 
+      const inserted: string[] = []
       for (const f of outcome.files) {
-        await insertHistory({
+        const rec = await insertHistory({
           sourceURL: url,
           kind: outcome.kind,
           title: outcome.title,
           filePath: f.path,
           fileName: f.name,
           bytesWritten: f.bytes,
+          durationSec: f.durationSec,
         })
+        inserted.push(rec.id)
       }
       await refreshHistory()
       setLastFiles(outcome.files)
 
-      const message = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
-      setStatus(message)
-      appendDebug(`下载完成: ${outcome.title} (${outcome.files.length} 个文件) -> ${message}`)
+      const action = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
+      // 移入相册后本地副本已不存在，标记历史记录避免误导
+      if (action.savedToPhotos) {
+        for (const id of inserted) await updateHistoryNote(id, "已存入相册")
+        await refreshHistory()
+        setLastFiles([])
+      }
+      setStatus(action.message)
+      appendDebug(`下载完成: ${outcome.title} (${outcome.files.length} 个文件) -> ${action.message}`)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setStatus(`失败：${message}`)
@@ -489,7 +538,7 @@ function View() {
           header={<Text>{`下载历史 (${history.length})`}</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              点击记录可打开更多操作；文件保存在 App 文档目录 Video/Downloads 下。
+              点击记录可打开更多操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
             </Text>
           }
         >

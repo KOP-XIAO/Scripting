@@ -1,6 +1,6 @@
 // utils/common.ts — 通用小工具（与抖音下载器同源的稳健实现）
 
-export const VERSION = "1.1.0"
+export const VERSION = "1.1.1"
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -35,6 +35,17 @@ export function todayStr(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, "0")
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+// 秒 → mm:ss / h:mm:ss
+export function formatDuration(seconds: number): string {
+  if (!seconds || !isFinite(seconds) || seconds <= 0) return ""
+  const s = Math.round(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const p = (n: number) => String(n).padStart(2, "0")
+  return h > 0 ? `${h}:${p(m)}:${p(sec)}` : `${m}:${p(sec)}`
 }
 
 // 从分享文本中抽出第一个 http(s) 链接（中文/emoji 贴边也能切开）

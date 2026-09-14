@@ -13,6 +13,7 @@ export type HistoryRecord = {
   file_path: string
   file_name: string
   bytes_written: number
+  duration_sec?: number
   created_at: string
   note: string
 }
@@ -24,6 +25,7 @@ export type NewHistoryItem = {
   filePath: string
   fileName: string
   bytesWritten: number
+  durationSec?: number
   note?: string
 }
 
@@ -86,6 +88,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     file_path: item.filePath,
     file_name: item.fileName,
     bytes_written: item.bytesWritten,
+    duration_sec: item.durationSec ?? 0,
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }
@@ -104,6 +107,15 @@ export async function deleteHistoryRecord(id: string, deleteFile = false) {
     } catch {}
   }
   await writeAll(all.filter((r) => r.id !== id))
+}
+
+export async function updateHistoryNote(id: string, note: string) {
+  const all = await readAll()
+  const target = all.find((r) => r.id === id)
+  if (target) {
+    target.note = note
+    await writeAll(all)
+  }
 }
 
 export async function clearHistoryRecords() {

@@ -6,7 +6,7 @@
 import { Intent, Script } from "scripting"
 import { runDownload, detectKind, KIND_LABELS } from "./services/downloader"
 import { getPreferences } from "./services/preferences"
-import { initDatabase, findBySourceURL, insertHistory } from "./services/history"
+import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote } from "./services/history"
 import { appendDebug } from "./services/debug"
 import { postDownloadAction } from "./services/file-actions"
 import { extractFirstURL } from "./utils/common"
@@ -52,42 +52,65 @@ async function run() {
     const kind = detectKind(url)
     appendDebug(`intent 收到: ${url} (${KIND_LABELS[kind]})`)
 
-    // 历史去重：文件还在就直接复用
+    // 历史去重：文件还在本地，或已存入相册，都直接复用记录
     if (prefs.dedupe) {
       const dup = (await findBySourceURL(url)).filter(Boolean)[0]
-      if (dup && (await FileManager.exists(dup.file_path))) {
-        const message = await postDownloadAction(
-          [{ path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written }],
-          prefs.defaultSaveMode,
-        )
-        Script.exit(
-          Intent.json({
-            ok: true,
-            deduped: true,
-            message: `已在历史中，未重复下载。${message}`,
-            title: dup.title,
-            localFilePath: dup.file_path,
-          }),
-        )
-        return
+      if (dup) {
+        const fileExists = await FileManager.exists(dup.file_path)
+        const inPhotos = dup.note.includes("相册")
+        if (fileExists || inPhotos) {
+          if (fileExists) {
+            const action = await postDownloadAction(
+              [{ path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written, durationSec: dup.duration_sec }],
+              prefs.defaultSaveMode,
+            )
+            if (action.savedToPhotos) await updateHistoryNote(dup.id, "已存入相册")
+            Script.exit(
+              Intent.json({
+                ok: true,
+                deduped: true,
+                message: `已在历史中，未重复下载。${action.message}`,
+                title: dup.title,
+                localFilePath: dup.file_path,
+              }),
+            )
+          } else {
+            Script.exit(
+              Intent.json({
+                ok: true,
+                deduped: true,
+                message: `已在历史中且已存入相册（${dup.title}），未重复下载。`,
+                title: dup.title,
+              }),
+            )
+          }
+          return
+        }
       }
     }
 
     const logs: string[] = []
     const outcome = await runDownload(url, { prefs, onLog: (l) => logs.push(l) })
 
+    const inserted: string[] = []
     for (const f of outcome.files) {
-      await insertHistory({
+      const rec = await insertHistory({
         sourceURL: url,
         kind: outcome.kind,
         title: outcome.title,
         filePath: f.path,
         fileName: f.name,
         bytesWritten: f.bytes,
+        durationSec: f.durationSec,
       })
+      inserted.push(rec.id)
     }
 
-    const message = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
+    const action = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
+    if (action.savedToPhotos) {
+      for (const id of inserted) await updateHistoryNote(id, "已存入相册")
+    }
+    const message = action.message
     appendDebug(`intent 完成: ${outcome.title} -> ${message}`)
 
     Script.exit(

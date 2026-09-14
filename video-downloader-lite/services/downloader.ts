@@ -15,7 +15,7 @@ export type VideoKind = "wx-channels" | "m3u8" | "direct" | "platform"
 
 export type ResolvedVideo = { label: string; url: string; ext: string }
 
-export type DownloadedFile = { path: string; name: string; bytes: number }
+export type DownloadedFile = { path: string; name: string; bytes: number; durationSec?: number }
 
 export type DownloadOutcome = {
   kind: VideoKind
@@ -94,6 +94,20 @@ function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
     offset += c.length
   }
   return out
+}
+
+// 探测视频时长（秒）。AVAsset 是免费全局对象；不可用时静默返回 0
+async function probeDuration(path: string): Promise<number> {
+  try {
+    if (typeof AVAsset === "undefined") return 0
+    const asset = new AVAsset(path)
+    const d = await asset.loadDuration()
+    asset.dispose()
+    const s = d?.seconds ?? 0
+    return isFinite(s) && s > 0 ? s : 0
+  } catch {
+    return 0
+  }
 }
 
 // -------------------------------------------------------------
@@ -271,6 +285,11 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     }
   }
 
+  // 探测时长（AVAsset 为免费全局对象；失败静默返回 0）
+  for (const f of files) {
+    f.durationSec = await probeDuration(f.path)
+  }
+
   // 下载报告，对齐桌面版 download-report.md
   const report = [
     `# 下载报告`,
@@ -279,7 +298,10 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     `- 类型: ${KIND_LABELS[kind]}`,
     `- 时间: ${new Date().toISOString()}`,
     `- 文件:`,
-    ...files.map((f) => `  - ${f.name}（${(f.bytes / 1048576).toFixed(1)} MB）`),
+    ...files.map(
+      (f) =>
+        `  - ${f.name}（${(f.bytes / 1048576).toFixed(1)} MB${f.durationSec ? `，${Math.round(f.durationSec)}s` : ""}）`,
+    ),
     ``,
   ].join("\n")
   await FileManager.writeAsString(Path.join(dir, "download-report.md"), report)

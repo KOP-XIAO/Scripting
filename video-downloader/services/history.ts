@@ -12,6 +12,7 @@ export type HistoryRecord = {
   file_path: string
   file_name: string
   bytes_written: number
+  duration_sec?: number
   created_at: string
   note: string
 }
@@ -23,6 +24,7 @@ export type NewHistoryItem = {
   filePath: string
   fileName: string
   bytesWritten: number
+  durationSec?: number
   note?: string
 }
 
@@ -55,16 +57,22 @@ export async function initDatabase() {
       file_path TEXT NOT NULL,
       file_name TEXT NOT NULL,
       bytes_written INTEGER NOT NULL,
+      duration_sec REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       note TEXT NOT NULL DEFAULT ''
     )
   `)
+
+  // 老库迁移：补 duration_sec 列
+  try {
+    await database.execute(`ALTER TABLE downloads ADD COLUMN duration_sec REAL NOT NULL DEFAULT 0`)
+  } catch {}
 }
 
 export async function listHistory(limit?: number): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   const sql = `
-    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, created_at, note
+    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note
     FROM downloads
     ORDER BY datetime(created_at) DESC
     ${limit ? `LIMIT ${Math.floor(limit)}` : ""}
@@ -81,7 +89,7 @@ export async function countHistory(): Promise<number> {
 export async function findBySourceURL(url: string): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   return database.fetchAll<HistoryRecord>(
-    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, created_at, note
+    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note
      FROM downloads WHERE source_url = ? ORDER BY datetime(created_at) DESC`,
     [url],
   )
@@ -97,13 +105,14 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     file_path: item.filePath,
     file_name: item.fileName,
     bytes_written: item.bytesWritten,
+    duration_sec: item.durationSec ?? 0,
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }
   await database.execute(
     `INSERT OR REPLACE INTO downloads
-      (id, source_url, kind, title, file_path, file_name, bytes_written, created_at, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.id,
       record.source_url,
@@ -112,6 +121,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
       record.file_path,
       record.file_name,
       record.bytes_written,
+      record.duration_sec ?? 0,
       record.created_at,
       record.note,
     ],
@@ -134,6 +144,11 @@ export async function deleteHistoryRecord(id: string, deleteFile = false) {
     }
   }
   await database.execute(`DELETE FROM downloads WHERE id = ?`, [id])
+}
+
+export async function updateHistoryNote(id: string, note: string) {
+  const database = await getDatabase()
+  await database.execute(`UPDATE downloads SET note = ? WHERE id = ?`, [note, id])
 }
 
 export async function clearHistoryRecords() {
