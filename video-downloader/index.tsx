@@ -59,7 +59,7 @@ import {
   ensureWidgetSnapshot,
   type HistoryRecord,
 } from "./services/history"
-import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage } from "./services/debug"
+import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage, ERROR_LINE_RE } from "./services/debug"
 import {
   postDownloadAction,
   saveFilePathToPhotos,
@@ -72,57 +72,20 @@ import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration } fro
 declare const openURL: (url: string) => Promise<boolean>
 
 // -------------------------------------------------------------
-// 历史记录行：标题单行截断 + 元信息行（类型 · 大小 · 时长 · 日期）
+// 历史记录行：编号 + 单行摘要，点击展开详情卡（信息 + 内联操作按钮）
 // -------------------------------------------------------------
-function HistoryRow(props: { item: HistoryRecord; onChanged: () => Promise<void> }) {
-  const { item, onChanged } = props
+function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () => Promise<void> }) {
+  const { item, index, onChanged } = props
+  const [expanded, setExpanded] = useState(false)
+  const [fileExists, setFileExists] = useState<boolean | null>(null)
 
-  const openActions = async () => {
-    const exists = await FileManager.exists(item.file_path)
-    const inPhotos = item.note.includes("相册")
-    // 文件不在本地时，隐藏需要文件的动作
-    const fileActions = exists
-      ? [
-          ...(canSaveToPhotos(item.file_name) ? [{ label: "保存到相册" }] : []),
-          { label: "导出到文件" },
-          { label: "分享文件" },
-        ]
-      : []
-    const actions = [
-      ...fileActions,
-      { label: "打开原始链接" },
-      { label: "复制原始链接" },
-      ...(exists
-        ? [{ label: "删除记录和文件", destructive: true }]
-        : [{ label: "删除记录", destructive: true }]),
-    ]
-    const result = await Dialog.actionSheet({
-      title: item.title || item.file_name,
-      message: `${formatDate(item.created_at)} · ${formatBytes(item.bytes_written)}${
-        inPhotos ? " · 已存入相册" : exists ? "" : " · 文件已不存在"
-      }`,
-      actions,
-      cancelButton: true,
-    })
-    if (result == null || result < 0) return
-    try {
-      const label = actions[result].label
-      if (label === "保存到相册") {
-        await saveFilePathToPhotos(item.file_path, item.file_name)
-        await updateHistoryNote(item.id, "已存入相册")
-      }
-      if (label === "导出到文件") await exportFilePathToFiles(item.file_path, item.file_name)
-      if (label === "分享文件") await shareFile(item.file_path)
-      if (label === "打开原始链接") await openURL(item.source_url)
-      if (label === "复制原始链接") await Pasteboard.setString(item.source_url)
-      if (label === "删除记录") await deleteHistoryRecord(item.id)
-      if (label === "删除记录和文件") await deleteHistoryRecord(item.id, true)
-      await onChanged()
-    } catch (e) {
-      await Dialog.alert({ title: "操作失败", message: String(e) })
+  useEffect(() => {
+    if (expanded && fileExists === null) {
+      void FileManager.exists(item.file_path).then(setFileExists).catch(() => setFileExists(false))
     }
-  }
+  }, [expanded])
 
+  const inPhotos = item.note.includes("相册")
   const meta = [
     KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind,
     formatBytes(item.bytes_written),
@@ -132,21 +95,104 @@ function HistoryRow(props: { item: HistoryRecord; onChanged: () => Promise<void>
     .filter(Boolean)
     .join(" · ")
 
+  const run = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      await onChanged()
+    } catch (e) {
+      await Dialog.alert({ title: "操作失败", message: String(e) })
+    }
+  }
+
   return (
-    <VStack alignment="leading" spacing={4}>
-      <Text font="headline" lineLimit={1} onTapGesture={() => void openActions()}>
-        {item.title || item.file_name}
-      </Text>
-      <HStack spacing={6}>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
-          {meta}
+    <VStack alignment="leading" spacing={6}>
+      {/* 摘要行：编号 + 标题 + 元信息 + 展开指示 */}
+      <HStack
+        spacing={8}
+        onTapGesture={() => setExpanded(!expanded)}
+      >
+        <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
+          {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
-        {item.note.includes("相册") ? (
-          <Text font="caption2" foregroundStyle="systemGreen">
-            已存相册
+        <VStack alignment="leading" spacing={3}>
+          <Text font="subheadline" fontWeight="medium" lineLimit={1}>
+            {item.title || item.file_name}
           </Text>
-        ) : null}
+          <HStack spacing={6}>
+            <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
+              {meta}
+            </Text>
+            {inPhotos ? (
+              <Text font="caption2" foregroundStyle="systemGreen">
+                已存相册
+              </Text>
+            ) : null}
+          </HStack>
+        </VStack>
+        <Spacer />
+        <Image
+          systemName={expanded ? "chevron.up" : "chevron.down"}
+          font={10}
+          foregroundStyle="tertiaryLabel"
+        />
       </HStack>
+
+      {/* 展开的详情卡 */}
+      {expanded ? (
+        <VStack alignment="leading" spacing={8} padding={{ leading: 26 }}>
+          <VStack alignment="leading" spacing={3}>
+            <Text font="caption" foregroundStyle="secondaryLabel">
+              {`类型 ${item.kind} · 大小 ${formatBytes(item.bytes_written)}${
+                item.duration_sec ? ` · 时长 ${formatDuration(item.duration_sec)}` : ""
+              } · ${formatDate(item.created_at)}`}
+            </Text>
+            <Text font="caption" foregroundStyle="secondaryLabel">
+              {`状态 ${inPhotos ? "已存入相册（本地副本已移除）" : fileExists ? "文件在本地" : "文件已不存在"}`}
+            </Text>
+            <HStack spacing={4} onTapGesture={() => run(() => Pasteboard.setString(item.source_url))}>
+              <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
+                {item.source_url}
+              </Text>
+              <Image systemName="doc.on.doc" font={9} foregroundStyle="tertiaryLabel" />
+            </HStack>
+          </VStack>
+          <HStack spacing={10}>
+            {fileExists && canSaveToPhotos(item.file_name) ? (
+              <Button
+                title="存相册"
+                action={() =>
+                  run(async () => {
+                    await saveFilePathToPhotos(item.file_path, item.file_name)
+                    await updateHistoryNote(item.id, "已存入相册")
+                  })
+                }
+              />
+            ) : null}
+            {fileExists ? (
+              <Button title="导出" action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))} />
+            ) : null}
+            {fileExists ? (
+              <Button title="分享" action={() => run(() => shareFile(item.file_path))} />
+            ) : null}
+            <Button title="打开链接" action={() => run(() => openURL(item.source_url))} />
+            <Button
+              title="删除"
+              role="destructive"
+              action={() =>
+                run(async () => {
+                  const ok = await Dialog.confirm({
+                    title: "删除记录",
+                    message: fileExists ? "同时删除已下载的文件？" : "删除这条历史记录？",
+                    confirmLabel: fileExists ? "删除文件和记录" : "删除",
+                    cancelLabel: "取消",
+                  })
+                  if (ok) await deleteHistoryRecord(item.id, !!fileExists)
+                })
+              }
+            />
+          </HStack>
+        </VStack>
+      ) : null}
     </VStack>
   )
 }
@@ -324,7 +370,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
 }
 
 // -------------------------------------------------------------
-// 诊断中心
+// 诊断中心（终端风日志 + 范围导出）
 // -------------------------------------------------------------
 function DiagnosticsPage() {
   const [logs, setLogs] = useState<string[]>(getDebugLog())
@@ -335,27 +381,68 @@ function DiagnosticsPage() {
   }, [])
 
   const doExport = async () => {
+    // 范围选择：全部 / 最近 50 / 最近 20 / 仅错误
+    const idx = await Dialog.actionSheet({
+      title: "导出范围",
+      message: `当前共 ${logs.length} 条诊断日志`,
+      actions: [
+        { label: `全部日志（${logs.length} 条）` },
+        { label: "最近 50 条" },
+        { label: "最近 20 条" },
+        { label: "仅错误与失败" },
+      ],
+      cancelButton: true,
+    })
+    if (idx == null || idx < 0) return
+    const picked: { logs: string[]; label: string } =
+      idx === 0
+        ? { logs, label: `全部（${logs.length} 条）` }
+        : idx === 1
+          ? { logs: logs.slice(-50), label: "最近 50 条" }
+          : idx === 2
+            ? { logs: logs.slice(-20), label: "最近 20 条" }
+            : { logs: logs.filter((l) => ERROR_LINE_RE.test(l)), label: "仅错误与失败" }
     try {
-      const path = await exportDebugPackage({ historyCount })
+      const path = await exportDebugPackage({ historyCount }, picked)
       await ShareSheet.present([path])
     } catch (e) {
       await Dialog.alert({ title: "导出失败", message: String(e) })
     }
   }
 
+  const shown = logs.slice(-40).reverse()
+
   return (
     <List navigationTitle="诊断中心" navigationBarTitleDisplayMode="inline">
       <Section title="概览">
-        <Text>版本：{VERSION}</Text>
-        <Text>历史记录：{historyCount} 条</Text>
-        <Text>诊断日志：{logs.length} 条</Text>
+        <HStack>
+          <Text>版本</Text>
+          <Spacer />
+          <Text monospaced foregroundStyle="secondaryLabel">
+            v{VERSION}
+          </Text>
+        </HStack>
+        <HStack>
+          <Text>历史记录</Text>
+          <Spacer />
+          <Text monospaced foregroundStyle="secondaryLabel">
+            {historyCount}
+          </Text>
+        </HStack>
+        <HStack>
+          <Text>诊断日志</Text>
+          <Spacer />
+          <Text monospaced foregroundStyle="secondaryLabel">
+            {logs.length}
+          </Text>
+        </HStack>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
           下载目录：{FileManager.documentsDirectory}/Video/Downloads
         </Text>
       </Section>
 
       <Section title="操作">
-        <Button title="导出诊断包并分享" action={() => void doExport()} />
+        <Button title="导出诊断包（可选范围）" action={() => void doExport()} />
         <Button
           title="清空诊断日志"
           role="destructive"
@@ -366,19 +453,64 @@ function DiagnosticsPage() {
         />
       </Section>
 
-      <Section title="最近日志">
-        {logs.length === 0 ? (
+      <Section
+        header={
+          <HStack spacing={6}>
+            <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
+            <Text>日志终端</Text>
+          </HStack>
+        }
+        footer={
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            红色为错误/失败行；导出时可只选这部分。此处显示最近 40 条。
+          </Text>
+        }
+      >
+        {shown.length === 0 ? (
           <Text foregroundStyle="secondaryLabel">暂无日志。</Text>
         ) : (
-          logs
-            .slice(-40)
-            .reverse()
-            .map((l, i) => (
-              <Text key={i} font="caption" foregroundStyle="secondaryLabel">
-                {l}
+          <ZStack>
+            <RoundedRectangle cornerRadius={10} fill="#0D1117" />
+            <VStack alignment="leading" spacing={3} padding={10}>
+              <Text font="caption2" monospaced foregroundStyle="#7EE787">
+                vdl@ios:~$ diag --tail 40
               </Text>
-            ))
+              {shown.map((l, i) => (
+                <Text
+                  key={i}
+                  font="caption2"
+                  monospaced
+                  foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
+                  lineLimit={2}
+                >
+                  {l}
+                </Text>
+              ))}
+            </VStack>
+          </ZStack>
         )}
+      </Section>
+    </List>
+  )
+}
+
+// -------------------------------------------------------------
+// 全部历史页
+// -------------------------------------------------------------
+function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise<void> }) {
+  const { history, onChanged } = props
+  return (
+    <List navigationTitle="全部下载历史" navigationBarTitleDisplayMode="inline">
+      <Section
+        footer={
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            点按记录展开详情与操作；共 {history.length} 条。
+          </Text>
+        }
+      >
+        {history.map((item, i) => (
+          <HistoryRow key={item.id} item={item} index={i} onChanged={onChanged} />
+        ))}
       </Section>
     </List>
   )
@@ -650,17 +782,25 @@ function View() {
           header={<Text>{`下载历史 (${history.length})`}</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              点击记录可打开更多操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
+              仅显示最近 5 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
             </Text>
           }
         >
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
-            history.slice(0, 30).map((item) => (
-              <HistoryRow key={item.id} item={item} onChanged={refreshHistory} />
+            history.slice(0, 5).map((item, i) => (
+              <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
             ))
           )}
+          {history.length > 5 ? (
+            <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
+              <HStack spacing={4}>
+                <Text>{`查看全部 ${history.length} 条`}</Text>
+                <Image systemName="chevron.right" font={10} foregroundStyle="secondaryLabel" />
+              </HStack>
+            </NavigationLink>
+          ) : null}
         </Section>
 
         <Section title="更多">

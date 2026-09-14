@@ -28,15 +28,24 @@ export function clearDebugLog() {
   Storage.remove(KEY_DEBUG)
 }
 
-// 汇总设置快照（脱敏）与最近日志，写成文本文件，返回路径供 ShareSheet 分享
-export async function exportDebugPackage(extra?: Record<string, unknown>): Promise<string> {
+// 错误/失败行识别（诊断中心高亮与范围导出共用）
+export const ERROR_LINE_RE = /失败|错误|error|HTTP \d|errCode|超时|timeout|abort/i
+
+// 汇总设置快照（脱敏）与日志写成文本文件，返回路径供 ShareSheet 分享。
+// opts.logs 可指定导出的日志子集（范围导出）；opts.label 进入文件名。
+export async function exportDebugPackage(
+  extra?: Record<string, unknown>,
+  opts?: { logs?: string[]; label?: string },
+): Promise<string> {
   const prefs = getPreferences()
   const masked = { ...prefs, cobaltApi: prefs.cobaltApi ? "<已配置>" : "<未配置>" }
+  const logs = opts?.logs ?? getDebugLog()
   const lines = [
     `# Video Downloader 诊断包`,
     ``,
     `- 版本: ${VERSION}`,
     `- 导出时间: ${new Date().toISOString()}`,
+    `- 日志范围: ${opts?.label ?? `全部（${logs.length} 条）`}`,
     `- 文档目录: ${FileManager.documentsDirectory}`,
     ``,
     `## 设置`,
@@ -45,9 +54,9 @@ export async function exportDebugPackage(extra?: Record<string, unknown>): Promi
     "```",
     ``,
     extra ? `## 附加上下文\n\`\`\`json\n${JSON.stringify(extra, null, 2)}\n\`\`\`\n` : "",
-    `## 最近日志（${getDebugLog().length} 条）`,
+    `## 日志（${logs.length} 条）`,
     "```",
-    ...getDebugLog(),
+    ...logs,
     "```",
     ``,
   ]
