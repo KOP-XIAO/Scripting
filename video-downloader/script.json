@@ -1,0 +1,29 @@
+{
+  "name": "Video Downloader",
+  "icon": "arrow.down.circle.fill",
+  "color": "rgba(88, 86, 214, 1)",
+  "version": "1.0.0",
+  "entry": "index.tsx",
+  "runInApp": true,
+  "permissions": null,
+  "contributors": [],
+  "intentInputTypes": ["URLs", "Text"],
+  "description": "视频下载器：支持微信视频号、m3u8、mp4 等直链下载；YouTube/B站等平台可对接 cobalt 兼容解析实例。含下载历史、诊断日志导出，可保存到相册或导出到文件。",
+  "localizedNames": {
+    "zh": "视频下载器",
+    "en": "Video Downloader"
+  },
+  "localizedDescriptions": {
+    "zh": "视频号/m3u8/直链下载，平台链接走在线解析实例，支持历史记录与诊断导出。",
+    "en": "Download WeChat Channels, m3u8 and direct video links; platform URLs via a cobalt-compatible resolver. History and diagnostics included."
+  },
+  "author": {
+    "name": "KOP-XIAO",
+    "email": null,
+    "homepage": "https://github.com/KOP-XIAO"
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/KOP-XIAO/Scripting/refs/heads/main/video-downloader.scripting",
+    "autoUpdateInterval": 86400
+  }
+}

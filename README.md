@@ -7,6 +7,7 @@
 | 项目 | 说明 |
 |------|------|
 | [cmhk-usage](./cmhk-usage/) | CMHK（中国移动香港 / MyLink）话费、流量、通话、账单日展示 + 现代化主屏幕小组件 |
+| [video-downloader](./video-downloader/) | 视频下载器：视频号 / m3u8 / 直链下载，平台链接走 cobalt 解析实例，含历史记录与诊断导出 |
 
 ## 远程安装
 
@@ -15,6 +16,7 @@
 | 项目 | 直接安装 / 远程导入地址 |
 |------|------|
 | cmhk-usage | `https://raw.githubusercontent.com/KOP-XIAO/Scripting/main/cmhk-usage.scripting` |
+| video-downloader | `https://raw.githubusercontent.com/KOP-XIAO/Scripting/main/video-downloader.scripting` |
 
 在 Scripting App 中选「**导入远程脚本**」并粘贴上述地址即可。包内 `remoteResource` 已指向该地址并启用每日自动更新（86400s）。
 
