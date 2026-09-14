@@ -21,6 +21,7 @@ import {
   TextField,
   Toggle,
   VStack,
+  Widget,
   useEffect,
   useState,
 } from "scripting"
@@ -331,7 +332,13 @@ function View() {
   const [history, setHistory] = useState<HistoryRecord[]>([])
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
 
-  const refreshHistory = async () => setHistory(await listHistory(50))
+  const refreshHistory = async () => {
+    setHistory(await listHistory(50))
+    // 历史变化后主动通知主屏幕小组件重渲染
+    try {
+      Widget.reloadAll()
+    } catch {}
+  }
 
   useEffect(() => {
     void initDatabase().then(refreshHistory)

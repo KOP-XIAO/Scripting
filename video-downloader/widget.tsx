@@ -6,9 +6,10 @@
 //   —— <脚本名> 取 script.json 的 name 字段；若真机点按无反应，检查此处名称是否一致。
 // 全局对象（禁止从 scripting 导入）：FileManager
 
-import { HStack, Image, Link, Script, Spacer, Text, VStack, Widget } from "scripting"
+import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { initDatabase, listHistory, type HistoryRecord } from "./services/history"
 import { formatBytes, formatDate, formatDuration } from "./utils/common"
+import { ReloadWidgetIntent } from "./app_intents"
 
 const SCRIPT_NAME = "Video Downloader"
 // 官方构造器：scripting://run_single/<name>?autopaste=1
@@ -63,54 +64,79 @@ function LatestInfo({ latest, compact }: { latest: HistoryRecord | null; compact
   )
 }
 
-function SmallView({ latest }: { latest: HistoryRecord | null }) {
+// 角落悬浮刷新按钮：plain 无底色；图标内缩避开圆角裁切（cmhk 真机教训）
+function RefreshButton({ offsetX, offsetY }: { offsetX: number; offsetY: number }) {
   return (
-    <VStack alignment="leading" spacing={8} padding widgetURL={RUN_URL}>
-      <HStack spacing={6}>
-        <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={ACCENT} />
-        <Text font="caption" fontWeight="semibold">
-          视频下载器
-        </Text>
-      </HStack>
-      <LatestInfo latest={latest} compact />
-      <Spacer />
-      <HStack spacing={4}>
-        <Image systemName="plus.circle.fill" font={16} foregroundStyle={ACCENT} />
-        <Text font="caption" foregroundStyle={ACCENT} fontWeight="semibold">
-          粘贴链接下载
-        </Text>
-      </HStack>
-    </VStack>
+    <Button intent={ReloadWidgetIntent(undefined)} buttonStyle="plain">
+      <ZStack frame={{ width: 24, height: 24 }}>
+        <Image
+          systemName="arrow.clockwise"
+          font={9}
+          foregroundStyle="#8E8E93"
+          frame={{ width: 9, height: 9 }}
+          offset={{ x: offsetX, y: offsetY }}
+        />
+      </ZStack>
+    </Button>
   )
 }
 
-function MediumView({ latest }: { latest: HistoryRecord | null }) {
+function SmallView({ latest }: { latest: HistoryRecord | null }) {
   return (
-    <HStack spacing={12} padding>
-      <VStack alignment="leading" spacing={8} widgetURL={RUN_URL}>
+    <ZStack alignment="topTrailing">
+      <VStack alignment="leading" spacing={8} padding widgetURL={RUN_URL}>
         <HStack spacing={6}>
           <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={ACCENT} />
           <Text font="caption" fontWeight="semibold">
             视频下载器
           </Text>
         </HStack>
-        <LatestInfo latest={latest} />
+        <LatestInfo latest={latest} compact />
         <Spacer />
+        <HStack spacing={4}>
+          <Image systemName="plus.circle.fill" font={16} foregroundStyle={ACCENT} />
+          <Text font="caption" foregroundStyle={ACCENT} fontWeight="semibold">
+            粘贴链接下载
+          </Text>
+        </HStack>
       </VStack>
-      <Spacer />
-      <VStack>
-        <Spacer />
-        <Link url={RUN_URL}>
-          <HStack spacing={4} padding={{ leading: 14, trailing: 14, top: 8, bottom: 8 }}>
-            <Image systemName="plus" font={12} foregroundStyle={ACCENT} />
-            <Text font="subheadline" fontWeight="semibold" foregroundStyle={ACCENT}>
-              下载
+      {/* 右上角：避开底部「＋」行 */}
+      <RefreshButton offsetX={-3} offsetY={3} />
+    </ZStack>
+  )
+}
+
+function MediumView({ latest }: { latest: HistoryRecord | null }) {
+  return (
+    <ZStack alignment="bottomLeading">
+      <HStack spacing={12} padding>
+        <VStack alignment="leading" spacing={8} widgetURL={RUN_URL}>
+          <HStack spacing={6}>
+            <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={ACCENT} />
+            <Text font="caption" fontWeight="semibold">
+              视频下载器
             </Text>
           </HStack>
-        </Link>
+          <LatestInfo latest={latest} />
+          <Spacer />
+        </VStack>
         <Spacer />
-      </VStack>
-    </HStack>
+        <VStack>
+          <Spacer />
+          <Link url={RUN_URL}>
+            <HStack spacing={4} padding={{ leading: 14, trailing: 14, top: 8, bottom: 8 }}>
+              <Image systemName="plus" font={12} foregroundStyle={ACCENT} />
+              <Text font="subheadline" fontWeight="semibold" foregroundStyle={ACCENT}>
+                下载
+              </Text>
+            </HStack>
+          </Link>
+          <Spacer />
+        </VStack>
+      </HStack>
+      {/* 左下角：信息区下方的空白角 */}
+      <RefreshButton offsetX={3} offsetY={-3} />
+    </ZStack>
   )
 }
 

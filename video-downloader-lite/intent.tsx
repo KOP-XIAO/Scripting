@@ -3,7 +3,7 @@
 // 之后在微信 / Safari / YouTube 等 App 里点分享 → Scripting → 本脚本即可。
 // 全局对象（禁止从 scripting 导入）：Storage、Dialog、Pasteboard、FileManager
 
-import { Intent, Script } from "scripting"
+import { Intent, Script, Widget } from "scripting"
 import { runDownload, detectKind, KIND_LABELS } from "./services/downloader"
 import { getPreferences } from "./services/preferences"
 import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote } from "./services/history"
@@ -110,6 +110,10 @@ async function run() {
     if (action.savedToPhotos) {
       for (const id of inserted) await updateHistoryNote(id, "已存入相册")
     }
+    // 历史已变，通知小组件重渲染
+    try {
+      Widget.reloadAll()
+    } catch {}
     const message = action.message
     appendDebug(`intent 完成: ${outcome.title} -> ${message}`)
 
