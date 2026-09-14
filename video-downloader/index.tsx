@@ -68,8 +68,9 @@ import {
   canSaveToPhotos,
 } from "./services/file-actions"
 import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration } from "./utils/common"
+import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
 
-declare const openURL: (url: string) => Promise<boolean>
+// Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
 
 // -------------------------------------------------------------
 // 历史记录行：编号 + 单行摘要，点击展开详情卡（信息 + 内联操作按钮）
@@ -149,13 +150,11 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             <Text font="caption" foregroundStyle="secondaryLabel">
               {`状态 ${inPhotos ? "已存入相册（本地副本已移除）" : fileExists ? "文件在本地" : "文件已不存在"}`}
             </Text>
-            <HStack spacing={4} onTapGesture={() => run(() => Pasteboard.setString(item.source_url))}>
-              <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
-                {item.source_url}
-              </Text>
-              <Image systemName="doc.on.doc" font={9} foregroundStyle="tertiaryLabel" />
-            </HStack>
+            <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
+              {item.source_url}
+            </Text>
           </VStack>
+          {/* 主操作行（删除单独一行，防误触） */}
           <HStack spacing={10}>
             {fileExists && canSaveToPhotos(item.file_name) ? (
               <Button
@@ -174,15 +173,19 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             {fileExists ? (
               <Button title="分享" action={() => run(() => shareFile(item.file_path))} />
             ) : null}
-            <Button title="打开链接" action={() => run(() => openURL(item.source_url))} />
+            <Button title="打开链接" action={() => run(() => Safari.openURL(item.source_url))} />
+            <Button title="复制链接" action={() => run(() => Pasteboard.setString(item.source_url))} />
+          </HStack>
+          <HStack>
+            <Spacer />
             <Button
-              title="删除"
+              title="删除记录"
               role="destructive"
               action={() =>
                 run(async () => {
                   const ok = await Dialog.confirm({
                     title: "删除记录",
-                    message: fileExists ? "同时删除已下载的文件？" : "删除这条历史记录？",
+                    message: fileExists ? "将同时删除已下载的文件。" : "删除这条历史记录？",
                     confirmLabel: fileExists ? "删除文件和记录" : "删除",
                     cancelLabel: "取消",
                   })
@@ -204,6 +207,20 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
   const { prefs, onSave } = props
   const [draft, setDraft] = useState<Preferences>({ ...prefs })
   const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
+  const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
+
+  const chooseTheme = async () => {
+    const keys = Object.keys(THEMES) as ThemeKey[]
+    const idx = await Dialog.actionSheet({
+      title: "外观主题",
+      message: "影响小组件背景与按钮配色、日志终端的点缀色。",
+      actions: keys.map((k) => ({ label: THEMES[k].label })),
+      cancelButton: true,
+    })
+    if (idx == null || idx < 0) return
+    setThemeKeyLocal(keys[idx])
+    setThemeKey(keys[idx]) // 内部会 Widget.reloadAll()，小组件立即换肤
+  }
   const update = (patch: Partial<Preferences>) => {
     const next = { ...draft, ...patch }
     setDraft(next)
@@ -295,6 +312,22 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           onChanged={(v) => update({ cobaltApi: v })}
           prompt="https://cobalt.example.com"
         />
+      </Section>
+
+      <Section
+        header={
+          <HStack spacing={6}>
+            <Image systemName="paintpalette" font={11} foregroundStyle="secondaryLabel" />
+            <Text>外观主题</Text>
+          </HStack>
+        }
+        footer={
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            影响小组件背景与按钮配色、日志终端的点缀色；切换后小组件立即换肤。
+          </Text>
+        }
+      >
+        <Button title={`主题：${THEMES[themeKey].label}`} action={() => void chooseTheme()} />
       </Section>
 
       <Section
@@ -472,7 +505,7 @@ function DiagnosticsPage() {
           <ZStack>
             <RoundedRectangle cornerRadius={10} fill="#0D1117" />
             <VStack alignment="leading" spacing={3} padding={10}>
-              <Text font="caption2" monospaced foregroundStyle="#7EE787">
+              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
                 vdl@ios:~$ diag --tail 40
               </Text>
               {shown.map((l, i) => (
@@ -719,11 +752,11 @@ function View() {
               </HStack>
             }
           >
-            {/* 终端风日志卡：深色底 + 等宽绿字 */}
+            {/* 终端风日志卡：深色底 + 等宽绿字，提示符用主题色 */}
             <ZStack>
               <RoundedRectangle cornerRadius={10} fill="#0D1117" />
               <VStack alignment="leading" spacing={3} padding={10}>
-                <Text font="caption2" monospaced foregroundStyle="#7EE787">
+                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
                   vdl@ios:~$ run
                 </Text>
                 {logs.map((l, i) => (
@@ -732,7 +765,7 @@ function View() {
                   </Text>
                 ))}
                 {loading ? (
-                  <Text font="caption2" monospaced foregroundStyle="#7EE787">
+                  <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
                     {"▌"}
                   </Text>
                 ) : null}
@@ -803,7 +836,14 @@ function View() {
           ) : null}
         </Section>
 
-        <Section title="更多">
+        <Section
+          title="更多"
+          footer={
+            <Text font="caption" foregroundStyle="tertiaryLabel">
+              v{VERSION} · 视频号本地解析移植自 ltaoo/wx_channels_download · 平台解析兼容 cobalt API
+            </Text>
+          }
+        >
           <NavigationLink destination={<SettingsPage prefs={prefs} onSave={savePrefs} />}>
             <Text>设置</Text>
           </NavigationLink>
@@ -811,16 +851,6 @@ function View() {
             <Text>诊断中心</Text>
           </NavigationLink>
           <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
-        </Section>
-
-        <Section
-          footer={
-            <Text font="caption" foregroundStyle="tertiaryLabel">
-              v{VERSION} · 视频号解析服务由 sph.litao.workers.dev 提供 · 移植自 z-video-downloader skill
-            </Text>
-          }
-        >
-          <Text>{""}</Text>
         </Section>
       </List>
     </NavigationStack>
