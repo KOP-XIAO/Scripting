@@ -46,3 +46,26 @@ export const WX_CODEC_LABELS: Record<WxCodec, string> = {
   h265: "仅 H.265（体积更小）",
   both: "两个编码都保存",
 }
+
+// -------------------------------------------------------------
+// 元宝 Cookie（视频号本地解析用）—— 存系统钥匙串，不进普通偏好
+// Keychain 为全局对象，禁止从 scripting 导入
+// -------------------------------------------------------------
+const KC_YUANBAO_COOKIE = "vdl.yuanbao.cookie"
+
+export function getYuanbaoCookie(): string {
+  try {
+    if (typeof Keychain === "undefined") return ""
+    return Keychain.get(KC_YUANBAO_COOKIE) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+export function setYuanbaoCookie(value: string) {
+  try {
+    if (typeof Keychain === "undefined") return
+    if (value.trim()) Keychain.set(KC_YUANBAO_COOKIE, value.trim())
+    else Keychain.remove(KC_YUANBAO_COOKIE)
+  } catch {}
+}

@@ -34,6 +34,8 @@ import {
 import {
   getPreferences,
   persistPreferences,
+  getYuanbaoCookie,
+  setYuanbaoCookie,
   SAVE_MODE_LABELS,
   WX_CODEC_LABELS,
   type Preferences,
@@ -119,6 +121,7 @@ function HistoryRow(props: { item: HistoryRecord; onChanged: () => Promise<void>
 function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => void }) {
   const { prefs, onSave } = props
   const [draft, setDraft] = useState<Preferences>({ ...prefs })
+  const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
   const update = (patch: Partial<Preferences>) => {
     const next = { ...draft, ...patch }
     setDraft(next)
@@ -148,6 +151,30 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
 
   return (
     <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
+      <Section
+        header={<Text>视频号解析</Text>}
+        footer={
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            上游在线解析服务已停服。填入元宝 Cookie 后改用本地两步解析（不走第三方服务）：
+            电脑浏览器登录 yuanbao.tencent.com → 开发者工具 → Network 任选一个请求 →
+            复制其 Cookie 请求头整串粘贴到这里。Cookie 保存在系统钥匙串，仅本机使用。
+          </Text>
+        }
+      >
+        <TextField
+          title="元宝 Cookie"
+          value={cookieDraft}
+          onChanged={(v) => {
+            setCookieDraft(v)
+            setYuanbaoCookie(v)
+          }}
+          prompt="pgv_pvid=...; pac_uid=...（可留空尝试在线服务）"
+        />
+        <Text font="caption" foregroundStyle={cookieDraft.trim() ? "systemGreen" : "secondaryLabel"}>
+          {cookieDraft.trim() ? "✓ 已配置，视频号将走本地解析" : "未配置：视频号走在线服务（可能不可用）"}
+        </Text>
+      </Section>
+
       <Section
         header={<Text>平台解析</Text>}
         footer={

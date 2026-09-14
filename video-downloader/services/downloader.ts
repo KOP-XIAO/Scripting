@@ -1,12 +1,14 @@
 // services/downloader.ts — 核心下载逻辑
-// 支持：微信视频号（在线解析服务）/ m3u8（选最高码率变体逐分片拼接）/ mp4 等直链 /
-//       YouTube、B站等平台链接（经 cobalt 兼容解析实例取直链）
+// 支持：微信视频号（本地元宝 Cookie 解析，在线服务兜底）/ m3u8（选最高码率变体逐分片拼接）/
+//       mp4 等直链 / YouTube、B站等平台链接（经 cobalt 兼容解析实例取直链）
 // 全局对象（禁止从 scripting 导入）：FileManager、AVAsset、AVAssetExportSession
 // 需要从 scripting 导入：fetch、Path
 
 import { Path, fetch } from "scripting"
 import { sanitizeFileName, todayStr } from "../utils/common"
 import type { Preferences } from "./preferences"
+import { getYuanbaoCookie } from "./preferences"
+import { resolveWxChannels } from "./wxchannels"
 import { appendDebug } from "./debug"
 
 export type VideoKind = "wx-channels" | "m3u8" | "direct" | "platform"
@@ -31,8 +33,7 @@ export type RunOptions = {
 const UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
-// 与桌面版 skill 相同的公开解析服务（感谢 ltaoo/wx_channels_download）
-const WX_PARSE_API = "https://sph.litao.workers.dev/api/fetch_video_profile"
+// 视频号解析（本地/在线）在 services/wxchannels.ts 中实现
 
 const DIRECT_EXT_RE = /\.(mp4|webm|mov|m4v|mkv|flv|ogv|ts)(\?|#|$)/i
 const WX_RE = /^https?:\/\/([a-z0-9-]+\.)?weixin\.qq\.com\/sph\//i
@@ -98,33 +99,8 @@ function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
 // -------------------------------------------------------------
 // 微信视频号解析
 // -------------------------------------------------------------
-async function resolveWxChannels(shareUrl: string): Promise<{ title: string; videos: ResolvedVideo[] }> {
-  const resp = await fetch(WX_PARSE_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": UA },
-    body: JSON.stringify({ url: shareUrl }),
-  })
-  if (!resp.ok) throw new Error(`视频号解析服务 HTTP ${resp.status}`)
-  const data: any = await resp.json()
-  if (data?.errCode) throw new Error(`视频号解析失败: ${data.errMsg ?? data.errCode}`)
-  if (data?.error) throw new Error(`视频号解析失败: ${String(data.error).slice(0, 160)}`)
-
-  const feed = data?.data?.feedInfo ?? {}
-  const author = data?.data?.authorInfo ?? {}
-  const title =
-    String(feed.description ?? "").trim() || String(author.nickname ?? "").trim() || "视频号视频"
-
-  const videos: ResolvedVideo[] = []
-  const h264 = String(feed.h264VideoInfo?.videoUrl ?? "").trim()
-  const h265 = String(feed.h265VideoInfo?.videoUrl ?? "").trim()
-  const def = String(feed.videoUrl ?? "").trim()
-  if (h264) videos.push({ label: "H264", url: h264, ext: "mp4" })
-  if (h265 && h265 !== h264) videos.push({ label: "H265", url: h265, ext: "mp4" })
-  if (!videos.length && def) videos.push({ label: "default", url: def, ext: "mp4" })
-  if (!videos.length) throw new Error("解析成功但没有可下载的视频地址")
-  return { title, videos }
-}
-
+// 视频号解析已抽到 services/wxchannels.ts（本地元宝 Cookie 两步 + 在线兜底）
+// -------------------------------------------------------------
 function filterWxCodec(videos: ResolvedVideo[], codec: Preferences["wxCodec"]): ResolvedVideo[] {
   if (codec === "both") return videos
   const want = codec === "h265" ? "H265" : "H264"
@@ -253,10 +229,12 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
   let title = "video"
   let targets: ResolvedVideo[] = []
   if (kind === "wx-channels") {
-    const r = await resolveWxChannels(url)
+    const cookie = getYuanbaoCookie()
+    log(cookie ? "视频号解析：本地元宝通道" : "视频号解析：在线服务（未配置元宝 Cookie）")
+    const r = await resolveWxChannels(url, cookie)
     title = r.title
     targets = filterWxCodec(r.videos, opts.prefs.wxCodec)
-    log(`视频号: ${title}（保存 ${targets.map((t) => t.label).join("/")}）`)
+    log(`视频号: ${title}（保存 ${targets.map((t) => t.label).join("/")}，通道 ${r.route}）`)
   } else if (kind === "platform") {
     const api = opts.prefs.cobaltApi.trim()
     if (!api) {
