@@ -75,45 +75,6 @@ function RefreshButton({ offsetX, offsetY, color }: { offsetX: number; offsetY: 
   )
 }
 
-// 来源感水印：一堆视频/平台类 SF 图标以不同大小、透明度、偏移散乱堆叠
-// tone: w=白色 t=主题色；坐标以组件中心为原点，故意少量出血出边
-type ScatterIcon = { sf: string; size: number; x: number; y: number; alpha: number; tone?: "w" | "t" }
-
-const SCATTER: Record<"small" | "medium", ScatterIcon[]> = {
-  small: [
-    { sf: "play.rectangle.fill", size: 36, x: -78, y: -52, alpha: 0.12 },
-    { sf: "video.fill", size: 22, x: 58, y: -78, alpha: 0.15 },
-    { sf: "arrow.down.circle.fill", size: 48, x: 66, y: 28, alpha: 0.09, tone: "t" },
-    { sf: "film.fill", size: 28, x: -58, y: 58, alpha: 0.12 },
-    { sf: "tv.fill", size: 26, x: -8, y: -98, alpha: 0.09 },
-    { sf: "music.note", size: 18, x: -100, y: 2, alpha: 0.14 },
-    { sf: "play.fill", size: 16, x: 18, y: 78, alpha: 0.16 },
-    { sf: "photo.on.rectangle", size: 22, x: 98, y: -24, alpha: 0.10 },
-    { sf: "square.and.arrow.down.fill", size: 20, x: -30, y: -18, alpha: 0.10, tone: "t" },
-    { sf: "play.circle.fill", size: 26, x: -112, y: -70, alpha: 0.10 },
-    { sf: "waveform", size: 18, x: 100, y: 66, alpha: 0.12 },
-    { sf: "camera.fill", size: 20, x: 30, y: -40, alpha: 0.08 },
-  ],
-  medium: [
-    { sf: "play.rectangle.fill", size: 42, x: -195, y: -58, alpha: 0.11 },
-    { sf: "video.fill", size: 28, x: 118, y: -66, alpha: 0.15 },
-    { sf: "arrow.down.circle.fill", size: 60, x: 168, y: 32, alpha: 0.09, tone: "t" },
-    { sf: "film.fill", size: 32, x: -125, y: 55, alpha: 0.13 },
-    { sf: "tv.fill", size: 32, x: 8, y: -82, alpha: 0.09 },
-    { sf: "music.note", size: 22, x: -232, y: 22, alpha: 0.14 },
-    { sf: "play.fill", size: 20, x: -62, y: 75, alpha: 0.16 },
-    { sf: "photo.on.rectangle", size: 26, x: 232, y: -18, alpha: 0.10 },
-    { sf: "rectangle.stack.fill", size: 26, x: 58, y: 58, alpha: 0.11 },
-    { sf: "dot.radiowaves.right", size: 22, x: -262, y: -45, alpha: 0.12 },
-    { sf: "play.circle.fill", size: 30, x: -155, y: -5, alpha: 0.10, tone: "t" },
-    { sf: "square.and.arrow.down.fill", size: 24, x: -20, y: -30, alpha: 0.10, tone: "t" },
-    { sf: "waveform", size: 20, x: 85, y: -10, alpha: 0.13 },
-    { sf: "camera.fill", size: 24, x: -95, y: -72, alpha: 0.09 },
-    { sf: "video.circle.fill", size: 34, x: 255, y: 60, alpha: 0.10 },
-    { sf: "play.square.fill", size: 22, x: -275, y: 55, alpha: 0.11 },
-  ],
-}
-
 // 背景层：主题渐变打底 + 主题 PNG 纹理 + 散乱图标堆 + 底部平台字样
 function BackgroundLayer({ family }: { family: "small" | "medium" }) {
   const theme = getTheme()
@@ -138,22 +99,6 @@ function BackgroundLayer({ family }: { family: "small" | "medium" }) {
         frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
         opacity={0.9}
       />
-      {/* 散乱图标水印（ZStack 中心锚定 + offset 散布，白色/主题色混排） */}
-      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-        {SCATTER[family].map((icon, i) => {
-          const hex = icon.tone === "t" ? theme.accent : "#FFFFFF"
-          const rgb = `${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)}`
-          return (
-            <Image
-              key={i}
-              systemName={icon.sf}
-              font={icon.size}
-              foregroundStyle={`rgba(${rgb},${icon.alpha})`}
-              offset={{ x: icon.x, y: icon.y }}
-            />
-          )
-        })}
-      </ZStack>
       {family === "medium" ? (
         <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
           <Spacer />
