@@ -1,0 +1,72 @@
+// utils/common.ts — 通用小工具（与抖音下载器同源的稳健实现）
+
+export const VERSION = "1.0.0"
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export function sanitizeFileName(input: string): string {
+  return (
+    (input || "video")
+      .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "video"
+  )
+}
+
+export function formatBytes(bytes: number): string {
+  if (!bytes) return "0 B"
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+export function formatDate(dateString: string): string {
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return dateString
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`
+}
+
+export function todayStr(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+// 从分享文本中抽出第一个 http(s) 链接（中文/emoji 贴边也能切开）
+export function extractFirstURL(text: string): string | null {
+  const urlRegex = /(https?:\/\/[a-zA-Z0-9\-_.~!*'();:@&=+$,/?#[\]%]+)/i
+  const match = text.match(urlRegex)
+  return match?.[0] || null
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+export function safeJSONParse(text: string | null | undefined): unknown | null {
+  if (!text) return null
+  const candidates = [text, text.trim(), text.replace(/\u2028|\u2029/g, ""), text.replace(/\\u002F/g, "/")]
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (typeof parsed === "string") {
+        try {
+          return JSON.parse(parsed)
+        } catch {
+          return parsed
+        }
+      }
+      return parsed
+    } catch {}
+  }
+  return null
+}
+
+export function newId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}

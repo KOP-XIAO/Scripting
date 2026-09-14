@@ -1,0 +1,29 @@
+{
+  "name": "Video Downloader Lite",
+  "icon": "arrow.down.circle",
+  "color": "rgba(52, 199, 89, 1)",
+  "version": "1.0.0",
+  "entry": "index.tsx",
+  "runInApp": true,
+  "permissions": null,
+  "contributors": [],
+  "intentInputTypes": ["URLs", "Text"],
+  "description": "视频下载器 Lite（免费版可用）：微信视频号、m3u8、mp4 直链下载；YouTube/B站等平台可对接 cobalt 兼容解析实例。历史记录使用 JSON 存储，不依赖 Pro 专属 API。",
+  "localizedNames": {
+    "zh": "视频下载器 Lite",
+    "en": "Video Downloader Lite"
+  },
+  "localizedDescriptions": {
+    "zh": "视频号/m3u8/直链下载，平台链接走在线解析实例，历史与诊断导出，免费版全功能可用。",
+    "en": "Download WeChat Channels, m3u8 and direct video links without any Pro-only APIs. History and diagnostics included."
+  },
+  "author": {
+    "name": "KOP-XIAO",
+    "email": null,
+    "homepage": "https://github.com/KOP-XIAO"
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/KOP-XIAO/Scripting/refs/heads/main/video-downloader-lite.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
