@@ -32,6 +32,53 @@ const ROOT_DIR = Path.join(FileManager.documentsDirectory, "Video", "Downloader"
 const DB_PATH = Path.join(ROOT_DIR, "history.sqlite")
 let db: SQLiteDatabase | null = null
 
+// -------------------------------------------------------------
+// 小组件快照：widget 扩展进程读不到 App 文档目录里的 sqlite，
+// 走 Storage（同脚本跨进程共享，cmhk 实证）。每次历史变更后同步。
+// -------------------------------------------------------------
+export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
+
+export type WidgetSnapshot = {
+  title: string
+  fileName: string
+  bytes: number
+  durationSec: number
+  createdAt: string
+  note: string
+}
+
+export function getWidgetSnapshot(): WidgetSnapshot | null {
+  try {
+    return Storage.get<WidgetSnapshot>(WIDGET_SNAPSHOT_KEY)
+  } catch {
+    return null
+  }
+}
+
+// 老版本升级迁移：历史已有数据但还没有快照时，回填一次
+export async function ensureWidgetSnapshot() {
+  try {
+    if (!getWidgetSnapshot()) await syncWidgetSnapshot()
+  } catch {}
+}
+
+export async function syncWidgetSnapshot() {
+  try {
+    const database = await getDatabase()
+    const rows = await database.fetchAll<HistoryRecord>(
+      `SELECT title, file_name, bytes_written, duration_sec, created_at, note
+       FROM downloads ORDER BY datetime(created_at) DESC LIMIT 1`,
+    )
+    const r = rows[0]
+    Storage.set(
+      WIDGET_SNAPSHOT_KEY,
+      r
+        ? { title: r.title, fileName: r.file_name, bytes: r.bytes_written, durationSec: r.duration_sec ?? 0, createdAt: r.created_at, note: r.note }
+        : null,
+    )
+  } catch {}
+}
+
 async function ensureRootDir() {
   if (!(await FileManager.exists(ROOT_DIR))) {
     await FileManager.createDirectory(ROOT_DIR, true)
@@ -126,6 +173,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
       record.note,
     ],
   )
+  await syncWidgetSnapshot()
   return record
 }
 
@@ -144,14 +192,17 @@ export async function deleteHistoryRecord(id: string, deleteFile = false) {
     }
   }
   await database.execute(`DELETE FROM downloads WHERE id = ?`, [id])
+  await syncWidgetSnapshot()
 }
 
 export async function updateHistoryNote(id: string, note: string) {
   const database = await getDatabase()
   await database.execute(`UPDATE downloads SET note = ? WHERE id = ?`, [note, id])
+  await syncWidgetSnapshot()
 }
 
 export async function clearHistoryRecords() {
   const database = await getDatabase()
   await database.execute(`DELETE FROM downloads`)
+  await syncWidgetSnapshot()
 }

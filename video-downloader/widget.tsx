@@ -1,15 +1,15 @@
-// widget.tsx — 主屏幕小组件：最近下载一览 + 「＋」快速入口
-// 点击行为：small 整个组件通过 widgetURL 跳回主脚本并自动读剪贴板；
-//           medium 左侧信息同理，右侧「＋ 下载」按钮为独立 Link。
-// URL scheme：scripting://run_single/<脚本名>?autopaste=1
-//   —— run_single 保证每次点按都重新执行入口文件（autopaste 才会生效）。
-//   —— <脚本名> 取 script.json 的 name 字段；若真机点按无反应，检查此处名称是否一致。
-// 全局对象（禁止从 scripting 导入）：FileManager
+// widget.tsx — 主屏幕小组件：最近下载一览 + 「＋」快速入口 + 角落刷新按钮
+// 数据源：Storage 里的快照（vdl.widget.latest）——widget 扩展进程的
+//   FileManager 目录与 App 不一致，读不到历史文件，Storage 是同脚本
+//   跨进程共享的可靠通道（cmhk-usage 真机实证）。
+// 点击行为：small 整个组件 widgetURL 跳回主脚本并自动读剪贴板；
+//           medium 左侧信息同理，右侧「＋ 下载」为独立 Link 按钮。
+// 全局对象（禁止从 scripting 导入）：Storage
 
 import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
-import { initDatabase, listHistory, type HistoryRecord } from "./services/history"
-import { formatBytes, formatDate, formatDuration } from "./utils/common"
+import { getWidgetSnapshot, type WidgetSnapshot } from "./services/history"
 import { ReloadWidgetIntent } from "./app_intents"
+import { formatBytes, formatDate, formatDuration } from "./utils/common"
 
 const SCRIPT_NAME = "Video Downloader"
 // 官方构造器：scripting://run_single/<name>?autopaste=1
@@ -17,17 +17,7 @@ const SCRIPT_NAME = "Video Downloader"
 const RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME, { autopaste: "1" })
 const ACCENT = "rgba(88, 86, 214, 1)"
 
-async function getLatest(): Promise<HistoryRecord | null> {
-  try {
-    await initDatabase()
-    const list = await listHistory(1)
-    return list[0] ?? null
-  } catch {
-    return null
-  }
-}
-
-function LatestInfo({ latest, compact }: { latest: HistoryRecord | null; compact?: boolean }) {
+function LatestInfo({ latest, compact }: { latest: WidgetSnapshot | null; compact?: boolean }) {
   if (!latest) {
     return (
       <VStack alignment="leading" spacing={4}>
@@ -39,16 +29,16 @@ function LatestInfo({ latest, compact }: { latest: HistoryRecord | null; compact
     )
   }
   const meta = [
-    formatBytes(latest.bytes_written),
-    formatDuration(latest.duration_sec ?? 0),
-    formatDate(latest.created_at).slice(5), // 去掉年份，省空间
+    formatBytes(latest.bytes),
+    formatDuration(latest.durationSec),
+    formatDate(latest.createdAt).slice(5), // 去掉年份，省空间
   ]
     .filter(Boolean)
     .join(" · ")
   return (
     <VStack alignment="leading" spacing={4}>
       <Text font="headline" lineLimit={compact ? 1 : 2}>
-        {latest.title || latest.file_name}
+        {latest.title || latest.fileName}
       </Text>
       <HStack spacing={6}>
         <Text font="caption" foregroundStyle="#8E8E93" lineLimit={1}>
@@ -68,12 +58,12 @@ function LatestInfo({ latest, compact }: { latest: HistoryRecord | null; compact
 function RefreshButton({ offsetX, offsetY }: { offsetX: number; offsetY: number }) {
   return (
     <Button intent={ReloadWidgetIntent(undefined)} buttonStyle="plain">
-      <ZStack frame={{ width: 24, height: 24 }}>
+      <ZStack frame={{ width: 26, height: 26 }}>
         <Image
           systemName="arrow.clockwise"
-          font={9}
+          font={10}
           foregroundStyle="#8E8E93"
-          frame={{ width: 9, height: 9 }}
+          frame={{ width: 10, height: 10 }}
           offset={{ x: offsetX, y: offsetY }}
         />
       </ZStack>
@@ -81,7 +71,7 @@ function RefreshButton({ offsetX, offsetY }: { offsetX: number; offsetY: number 
   )
 }
 
-function SmallView({ latest }: { latest: HistoryRecord | null }) {
+function SmallView({ latest }: { latest: WidgetSnapshot | null }) {
   return (
     <ZStack alignment="topTrailing">
       <VStack alignment="leading" spacing={8} padding widgetURL={RUN_URL}>
@@ -93,20 +83,21 @@ function SmallView({ latest }: { latest: HistoryRecord | null }) {
         </HStack>
         <LatestInfo latest={latest} compact />
         <Spacer />
-        <HStack spacing={4}>
-          <Image systemName="plus.circle.fill" font={16} foregroundStyle={ACCENT} />
-          <Text font="caption" foregroundStyle={ACCENT} fontWeight="semibold">
+        {/* 大按钮入口：整个 small 组件可点，这里做大只是视觉引导 */}
+        <HStack spacing={6}>
+          <Image systemName="plus.circle.fill" font={24} foregroundStyle={ACCENT} />
+          <Text font="subheadline" foregroundStyle={ACCENT} fontWeight="bold">
             粘贴链接下载
           </Text>
         </HStack>
       </VStack>
-      {/* 右上角：避开底部「＋」行 */}
+      {/* 右上角刷新，避开底部入口行 */}
       <RefreshButton offsetX={-3} offsetY={3} />
     </ZStack>
   )
 }
 
-function MediumView({ latest }: { latest: HistoryRecord | null }) {
+function MediumView({ latest }: { latest: WidgetSnapshot | null }) {
   return (
     <ZStack alignment="bottomLeading">
       <HStack spacing={12} padding>
@@ -121,12 +112,16 @@ function MediumView({ latest }: { latest: HistoryRecord | null }) {
           <Spacer />
         </VStack>
         <Spacer />
+        {/* 大添加按钮：独立 Link 目标，加大图标与热区 */}
         <VStack>
           <Spacer />
           <Link url={RUN_URL}>
-            <HStack spacing={4} padding={{ leading: 14, trailing: 14, top: 8, bottom: 8 }}>
-              <Image systemName="plus" font={12} foregroundStyle={ACCENT} />
-              <Text font="subheadline" fontWeight="semibold" foregroundStyle={ACCENT}>
+            <HStack
+              spacing={6}
+              padding={{ leading: 18, trailing: 18, top: 12, bottom: 12 }}
+            >
+              <Image systemName="plus.circle.fill" font={22} foregroundStyle={ACCENT} />
+              <Text font="title3" fontWeight="bold" foregroundStyle={ACCENT}>
                 下载
               </Text>
             </HStack>
@@ -134,25 +129,27 @@ function MediumView({ latest }: { latest: HistoryRecord | null }) {
           <Spacer />
         </VStack>
       </HStack>
-      {/* 左下角：信息区下方的空白角 */}
+      {/* 左下角刷新：信息区下方空白角 */}
       <RefreshButton offsetX={3} offsetY={-3} />
     </ZStack>
   )
 }
 
-async function run() {
-  const latest = await getLatest()
+function run() {
+  const latest = getWidgetSnapshot()
   const view = Widget.family === "systemMedium" ? (
     <MediumView latest={latest} />
   ) : (
     <SmallView latest={latest} />
   )
   Widget.present(view, {
-    // 15 分钟重载一次，让"最近下载"保持新鲜（iOS 实际按预算裁量）
+    // 15 分钟重载一次兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()
     reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
   })
 }
 
-run().catch((e) => {
+try {
+  run()
+} catch (e) {
   Widget.present(<Text padding>{String(e)}</Text>)
-})
+}

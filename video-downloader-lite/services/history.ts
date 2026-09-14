@@ -33,6 +33,48 @@ const ROOT_DIR = Path.join(FileManager.documentsDirectory, "Video", "Downloader"
 const DB_PATH = Path.join(ROOT_DIR, "history.json")
 const MAX_RECORDS = 200 // 上限，防止 JSON 无限增长
 
+// -------------------------------------------------------------
+// 小组件快照：widget 扩展进程的 FileManager 目录与 App 不一致，
+// 读不到历史文件；Storage（UserDefaults 同脚本跨进程共享，cmhk 实证）
+// 才是可靠的通道。每次历史变更后把最新一条写进 Storage 供 widget 读。
+// -------------------------------------------------------------
+export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
+
+export type WidgetSnapshot = {
+  title: string
+  fileName: string
+  bytes: number
+  durationSec: number
+  createdAt: string
+  note: string
+}
+
+function toSnapshot(r: HistoryRecord): WidgetSnapshot {
+  return {
+    title: r.title,
+    fileName: r.file_name,
+    bytes: r.bytes_written,
+    durationSec: r.duration_sec ?? 0,
+    createdAt: r.created_at,
+    note: r.note,
+  }
+}
+
+export function writeWidgetSnapshot(list: HistoryRecord[]) {
+  try {
+    const latest = sortDesc(list)[0]
+    Storage.set(WIDGET_SNAPSHOT_KEY, latest ? toSnapshot(latest) : null)
+  } catch {}
+}
+
+export function getWidgetSnapshot(): WidgetSnapshot | null {
+  try {
+    return Storage.get<WidgetSnapshot>(WIDGET_SNAPSHOT_KEY)
+  } catch {
+    return null
+  }
+}
+
 async function ensureRootDir() {
   if (!(await FileManager.exists(ROOT_DIR))) {
     await FileManager.createDirectory(ROOT_DIR, true)
@@ -95,6 +137,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
   const all = await readAll()
   all.unshift(record)
   await writeAll(all)
+  writeWidgetSnapshot(all)
   return record
 }
 
@@ -106,7 +149,9 @@ export async function deleteHistoryRecord(id: string, deleteFile = false) {
       await FileManager.remove(target.file_path)
     } catch {}
   }
-  await writeAll(all.filter((r) => r.id !== id))
+  const rest = all.filter((r) => r.id !== id)
+  await writeAll(rest)
+  writeWidgetSnapshot(rest)
 }
 
 export async function updateHistoryNote(id: string, note: string) {
@@ -115,9 +160,19 @@ export async function updateHistoryNote(id: string, note: string) {
   if (target) {
     target.note = note
     await writeAll(all)
+    writeWidgetSnapshot(all)
   }
+}
+
+// 老版本升级迁移：历史已有数据但还没有快照时，回填一次
+export async function ensureWidgetSnapshot() {
+  try {
+    if (getWidgetSnapshot()) return
+    writeWidgetSnapshot(await listHistory())
+  } catch {}
 }
 
 export async function clearHistoryRecords() {
   await writeAll([])
+  writeWidgetSnapshot([])
 }

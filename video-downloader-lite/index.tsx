@@ -9,11 +9,14 @@
 import {
   Button,
   HStack,
+  Image,
+  Link,
   List,
   Navigation,
   NavigationLink,
   NavigationStack,
   ProgressView,
+  RoundedRectangle,
   Script,
   Section,
   Spacer,
@@ -22,6 +25,7 @@ import {
   Toggle,
   VStack,
   Widget,
+  ZStack,
   useEffect,
   useState,
 } from "scripting"
@@ -52,6 +56,7 @@ import {
   updateHistoryNote,
   deleteHistoryRecord,
   clearHistoryRecords,
+  ensureWidgetSnapshot,
   type HistoryRecord,
 } from "./services/history"
 import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage } from "./services/debug"
@@ -183,7 +188,12 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
   return (
     <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
       <Section
-        header={<Text>视频号解析</Text>}
+        header={
+          <HStack spacing={6}>
+            <Image systemName="bubble.left.and.bubble.right" font={11} foregroundStyle="secondaryLabel" />
+            <Text>视频号解析</Text>
+          </HStack>
+        }
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
             上游在线解析服务已停服。填入元宝 Cookie 后改用本地两步解析（不走第三方服务）：
@@ -199,19 +209,37 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             setCookieDraft(v)
             setYuanbaoCookie(v)
           }}
-          prompt="pgv_pvid=...; pac_uid=...（可留空尝试在线服务）"
+          prompt="pgv_pvid=...; hy_token=...（可留空尝试在线服务）"
         />
-        <Text font="caption" foregroundStyle={cookieDraft.trim() ? "systemGreen" : "secondaryLabel"}>
-          {cookieDraft.trim() ? "✓ 已配置，视频号将走本地解析" : "未配置：视频号走在线服务（可能不可用）"}
-        </Text>
+        <HStack>
+          <Text font="caption" foregroundStyle={cookieDraft.trim() ? "systemGreen" : "secondaryLabel"}>
+            {cookieDraft.trim() ? "✓ 已配置，视频号将走本地解析" : "未配置：视频号走在线服务（可能不可用）"}
+          </Text>
+          <Spacer />
+          {cookieDraft.trim() ? (
+            <Button
+              title="清除"
+              role="destructive"
+              action={() => {
+                setCookieDraft("")
+                setYuanbaoCookie("")
+              }}
+            />
+          ) : null}
+        </HStack>
       </Section>
 
       <Section
-        header={<Text>平台解析</Text>}
+        header={
+          <HStack spacing={6}>
+            <Image systemName="globe" font={11} foregroundStyle="secondaryLabel" />
+            <Text>平台解析</Text>
+          </HStack>
+        }
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            用于 YouTube、B站、X、抖音等平台链接。填自建或信任的 cobalt 兼容实例地址，脚本向其
-            POST 换取直链（自动兼容新版 / 与旧版 /api/json 端点）。留空则平台链接不可用。
+            用于 YouTube、Instagram、B站、X、抖音等平台链接。填自建或信任的 cobalt 兼容实例地址，
+            脚本向其 POST 换取直链（自动兼容新版 / 与旧版 /api/json 端点）。留空则平台链接不可用。
           </Text>
         }
       >
@@ -223,7 +251,14 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         />
       </Section>
 
-      <Section title="下载行为">
+      <Section
+        header={
+          <HStack spacing={6}>
+            <Image systemName="arrow.down.to.line" font={11} foregroundStyle="secondaryLabel" />
+            <Text>下载行为</Text>
+          </HStack>
+        }
+      >
         <Button title={`默认动作：${SAVE_MODE_LABELS[draft.defaultSaveMode]}`} action={() => void chooseSaveMode()} />
         <Button title={`视频号编码：${WX_CODEC_LABELS[draft.wxCodec]}`} action={() => void chooseWxCodec()} />
         <Toggle
@@ -244,14 +279,45 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
       </Section>
 
       <Section
-        title="诊断"
+        header={
+          <HStack spacing={6}>
+            <Image systemName="stethoscope" font={11} foregroundStyle="secondaryLabel" />
+            <Text>诊断</Text>
+          </HStack>
+        }
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            开启后下载过程会写入诊断日志，可在「诊断中心」查看与导出。
+            开启后下载过程会写入诊断日志，可在首页「诊断中心」查看与导出。
           </Text>
         }
       >
         <Toggle title="记录诊断日志" value={draft.debugLog} onChanged={(v) => update({ debugLog: v })} />
+      </Section>
+
+      <Section
+        header={
+          <HStack spacing={6}>
+            <Image systemName="info.circle" font={11} foregroundStyle="secondaryLabel" />
+            <Text>关于</Text>
+          </HStack>
+        }
+      >
+        <HStack>
+          <Text>版本</Text>
+          <Spacer />
+          <Text foregroundStyle="secondaryLabel" monospaced>
+            v{VERSION}
+          </Text>
+        </HStack>
+        <Link url="https://github.com/KOP-XIAO/Scripting">
+          <HStack spacing={4}>
+            <Text>源码仓库</Text>
+            <Image systemName="arrow.up.right" font={10} foregroundStyle="secondaryLabel" />
+          </HStack>
+        </Link>
+        <Text font="caption" foregroundStyle="secondaryLabel">
+          视频号本地解析移植自 ltaoo/wx_channels_download；平台解析兼容 cobalt API。
+        </Text>
       </Section>
     </List>
   )
@@ -341,7 +407,9 @@ function View() {
   }
 
   useEffect(() => {
-    void initDatabase().then(refreshHistory)
+    void initDatabase()
+      .then(refreshHistory)
+      .then(() => ensureWidgetSnapshot()) // 老版本升级：回填小组件快照
     // 小组件/快捷指令跳转进入时（scripting://run_single/<name>?autopaste=1）自动读剪贴板
     const qp = Script.queryParameters
     if (qp && String(qp.autopaste) === "1") {
@@ -380,7 +448,11 @@ function View() {
     setLastFiles([])
     setProgress(null)
 
-    const log = (line: string) => setLogs((prev) => [...prev, line])
+    const log = (line: string) => {
+      const d = new Date()
+      const p = (n: number) => String(n).padStart(2, "0")
+      setLogs((prev) => [...prev, `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}] ${line}`])
+    }
     try {
       // 历史去重：文件还在本地，或已标记"已存入相册"，都视为已下载
       if (prefs.dedupe) {
@@ -507,12 +579,33 @@ function View() {
         </Section>
 
         {logs.length > 0 ? (
-          <Section title="本次日志">
-            {logs.map((l, i) => (
-              <Text key={i} font="caption" foregroundStyle="secondaryLabel">
-                {l}
-              </Text>
-            ))}
+          <Section
+            header={
+              <HStack spacing={6}>
+                <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
+                <Text>实时日志</Text>
+              </HStack>
+            }
+          >
+            {/* 终端风日志卡：深色底 + 等宽绿字 */}
+            <ZStack>
+              <RoundedRectangle cornerRadius={10} fill="#0D1117" />
+              <VStack alignment="leading" spacing={3} padding={10}>
+                <Text font="caption2" monospaced foregroundStyle="#7EE787">
+                  vdl@ios:~$ run
+                </Text>
+                {logs.map((l, i) => (
+                  <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
+                    {"▸ " + l}
+                  </Text>
+                ))}
+                {loading ? (
+                  <Text font="caption2" monospaced foregroundStyle="#7EE787">
+                    {"▌"}
+                  </Text>
+                ) : null}
+              </VStack>
+            </ZStack>
           </Section>
         ) : null}
 
