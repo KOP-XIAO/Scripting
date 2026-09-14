@@ -127,11 +127,13 @@ function filterWxCodec(videos: ResolvedVideo[], codec: Preferences["wxCodec"]): 
 // -------------------------------------------------------------
 async function resolveViaCobalt(apiBase: string, url: string): Promise<ResolvedVideo> {
   const base = apiBase.replace(/\/+$/, "")
-  const resp = await fetch(`${base}/api/json`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": UA },
-    body: JSON.stringify({ url, downloadMode: "auto" }),
-  })
+  // cobalt 新版 API 是 POST /，旧版是 POST /api/json —— 两个都试
+  const headers = { Accept: "application/json", "Content-Type": "application/json", "User-Agent": UA }
+  const body = JSON.stringify({ url, downloadMode: "auto" })
+  let resp = await fetch(`${base}/`, { method: "POST", headers, body })
+  if (resp.status === 404 || resp.status === 405) {
+    resp = await fetch(`${base}/api/json`, { method: "POST", headers, body })
+  }
   if (!resp.ok) throw new Error(`解析实例 HTTP ${resp.status}（请检查实例地址或更换实例）`)
   const data: any = await resp.json()
   const direct = data?.url as string | undefined

@@ -211,7 +211,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
             用于 YouTube、B站、X、抖音等平台链接。填自建或信任的 cobalt 兼容实例地址，脚本向其
-            POST /api/json 换取直链。留空则平台链接不可用。
+            POST 换取直链（自动兼容新版 / 与旧版 /api/json 端点）。留空则平台链接不可用。
           </Text>
         }
       >
