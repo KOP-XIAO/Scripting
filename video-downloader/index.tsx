@@ -335,6 +335,18 @@ function View() {
 
   useEffect(() => {
     void initDatabase().then(refreshHistory)
+    // 小组件/快捷指令跳转进入时（scripting://run_single/<name>?autopaste=1）自动读剪贴板
+    const qp = Script.queryParameters
+    if (qp && String(qp.autopaste) === "1") {
+      void (async () => {
+        const text = await Pasteboard.getString()
+        const found = text ? extractFirstURL(text) : null
+        if (found) {
+          setInputURL(found)
+          setStatus("已填入剪贴板链接，点击「开始下载」")
+        }
+      })()
+    }
   }, [])
 
   const savePrefs = (p: Preferences) => {

@@ -39,6 +39,15 @@ video-downloader/
 
 输出目录：`App 文档目录/Video/Downloads/YYYY-MM-DD-标题/`，每次下载含 `download-report.md`。
 
+## 快速入口
+
+- **主屏幕小组件**（v1.2.0+）：在 Scripting 脚本设置里启用小组件后，长按主屏幕添加。
+  显示最近下载（标题/大小/时长），点按任意位置（medium 右侧有独立「＋ 下载」按钮）
+  跳回主界面并自动填入剪贴板链接。
+- **快捷指令**：新建快捷指令 → 添加 Scripting 的「Run Script in App」动作 →
+  选择本脚本、输入选「剪贴板」，可放到主屏幕/控制中心；分享表单入口则由脚本原生支持
+  （Intent Settings 已声明 URLs/Text），无需快捷指令。
+
 ## 远程安装
 
 ```
