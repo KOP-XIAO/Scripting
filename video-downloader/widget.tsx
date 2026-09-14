@@ -75,8 +75,35 @@ function RefreshButton({ offsetX, offsetY, color }: { offsetX: number; offsetY: 
   )
 }
 
-// 背景层：主题渐变打底 + 主题 PNG 纹理 + 来源感水印
-// （视频/播放图标 + 各平台字样，低透明度垫于内容之下）
+// 来源感水印：一堆视频/平台类 SF 图标以不同大小、透明度、偏移散乱堆叠
+type ScatterIcon = { sf: string; size: number; x: number; y: number; alpha: number }
+
+const SCATTER: Record<"small" | "medium", ScatterIcon[]> = {
+  small: [
+    { sf: "play.rectangle.fill", size: 34, x: -70, y: -50, alpha: 0.10 },
+    { sf: "video.fill", size: 22, x: 55, y: -75, alpha: 0.12 },
+    { sf: "arrow.down.circle.fill", size: 44, x: 62, y: 30, alpha: 0.08 },
+    { sf: "film.fill", size: 26, x: -55, y: 55, alpha: 0.10 },
+    { sf: "tv.fill", size: 26, x: -5, y: -95, alpha: 0.07 },
+    { sf: "music.note", size: 18, x: -95, y: 0, alpha: 0.10 },
+    { sf: "play.fill", size: 16, x: 15, y: 75, alpha: 0.12 },
+    { sf: "photo.on.rectangle", size: 20, x: 95, y: -20, alpha: 0.08 },
+  ],
+  medium: [
+    { sf: "play.rectangle.fill", size: 40, x: -190, y: -60, alpha: 0.09 },
+    { sf: "video.fill", size: 26, x: 120, y: -70, alpha: 0.12 },
+    { sf: "arrow.down.circle.fill", size: 56, x: 165, y: 35, alpha: 0.08 },
+    { sf: "film.fill", size: 30, x: -120, y: 60, alpha: 0.10 },
+    { sf: "tv.fill", size: 32, x: 30, y: -85, alpha: 0.07 },
+    { sf: "music.note", size: 22, x: -230, y: 20, alpha: 0.10 },
+    { sf: "play.fill", size: 20, x: -60, y: 80, alpha: 0.12 },
+    { sf: "photo.on.rectangle", size: 24, x: 230, y: -30, alpha: 0.08 },
+    { sf: "rectangle.stack.fill", size: 24, x: 60, y: 60, alpha: 0.08 },
+    { sf: "dot.radiowaves.right", size: 20, x: -260, y: -50, alpha: 0.09 },
+  ],
+}
+
+// 背景层：主题渐变打底 + 主题 PNG 纹理 + 散乱图标堆 + 底部平台字样
 function BackgroundLayer({ family }: { family: "small" | "medium" }) {
   const theme = getTheme()
   return (
@@ -100,20 +127,26 @@ function BackgroundLayer({ family }: { family: "small" | "medium" }) {
         frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
         opacity={0.9}
       />
-      {/* 水印：右上角竖排视频类图标 + 底部平台字样 */}
-      <VStack alignment="trailing" spacing={10} padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-        <HStack spacing={8} opacity={0.1}>
-          <Image systemName="play.rectangle.fill" font={family === "medium" ? 20 : 16} foregroundStyle="#FFFFFF" />
-          <Image systemName="video.fill" font={family === "medium" ? 20 : 16} foregroundStyle="#FFFFFF" />
-          <Image systemName="arrow.down.circle.fill" font={family === "medium" ? 20 : 16} foregroundStyle="#FFFFFF" />
-        </HStack>
-        <Spacer />
-        {family === "medium" ? (
+      {/* 散乱图标水印（ZStack 中心锚定 + offset 散布） */}
+      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        {SCATTER[family].map((icon, i) => (
+          <Image
+            key={i}
+            systemName={icon.sf}
+            font={icon.size}
+            foregroundStyle={`rgba(255,255,255,${icon.alpha})`}
+            offset={{ x: icon.x, y: icon.y }}
+          />
+        ))}
+      </ZStack>
+      {family === "medium" ? (
+        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+          <Spacer />
           <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.10)">
             YT · IG · WX · XHS
           </Text>
-        ) : null}
-      </VStack>
+        </VStack>
+      ) : null}
     </ZStack>
   )
 }

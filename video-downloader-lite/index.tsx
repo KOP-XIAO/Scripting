@@ -154,11 +154,11 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
               {item.source_url}
             </Text>
           </VStack>
-          {/* 主操作行（删除单独一行，防误触） */}
-          <HStack spacing={10}>
+          {/* 操作行：全部压缩为一行（两字紧凑标签），删除靠右红色隔离 */}
+          <HStack spacing={6}>
             {fileExists && canSaveToPhotos(item.file_name) ? (
               <Button
-                title="存相册"
+                title="相册"
                 action={() =>
                   run(async () => {
                     await saveFilePathToPhotos(item.file_path, item.file_name)
@@ -173,13 +173,11 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             {fileExists ? (
               <Button title="分享" action={() => run(() => shareFile(item.file_path))} />
             ) : null}
-            <Button title="打开链接" action={() => run(() => Safari.openURL(item.source_url))} />
-            <Button title="复制链接" action={() => run(() => Pasteboard.setString(item.source_url))} />
-          </HStack>
-          <HStack>
+            <Button title="打开" action={() => run(() => Safari.openURL(item.source_url))} />
+            <Button title="复制" action={() => run(() => Pasteboard.setString(item.source_url))} />
             <Spacer />
             <Button
-              title="删除记录"
+              title="删除"
               role="destructive"
               action={() =>
                 run(async () => {
@@ -828,10 +826,7 @@ function View() {
           )}
           {history.length > 5 ? (
             <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
-              <HStack spacing={4}>
-                <Text>{`查看全部 ${history.length} 条`}</Text>
-                <Image systemName="chevron.right" font={10} foregroundStyle="secondaryLabel" />
-              </HStack>
+              <Text>{`查看全部 ${history.length} 条`}</Text>
             </NavigationLink>
           ) : null}
         </Section>
