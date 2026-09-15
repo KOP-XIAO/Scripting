@@ -143,7 +143,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
       <VStack alignment="leading" spacing={6} padding widgetURL={RUN_URL}>
         <HStack spacing={6}>
           <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
-          <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
+          <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
             Video Downloader
           </Text>
         </HStack>
@@ -151,7 +151,9 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
           <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         </VStack>
         <Spacer />
-        <SecondRow item={snap?.second ?? null} />
+        <VStack padding={{ top: 6 }}>
+          <SecondRow item={snap?.second ?? null} />
+        </VStack>
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
           <Image systemName="plus.circle.fill" font={28} foregroundStyle={theme.accent} />
@@ -172,17 +174,21 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
     <ZStack alignment="bottomLeading">
       <BackgroundLayer family="medium" />
       <HStack spacing={10} padding>
-        <VStack alignment="leading" spacing={6} widgetURL={RUN_URL}>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
             <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
-            <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
+            <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
               Video Downloader
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
             <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
           </VStack>
-          <SecondRow item={snap?.second ?? null} />
+          <VStack padding={{ top: 6 }}>
+          <VStack padding={{ top: 6 }}>
+            <SecondRow item={snap?.second ?? null} />
+          </VStack>
+        </VStack>
           <Spacer />
           </VStack>
         <Spacer />
@@ -190,7 +196,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
         <VStack>
           <Spacer />
           <Link url={RUN_URL}>
-            <VStack padding={{ leading: 24, trailing: 24, top: 20, bottom: 20 }}>
+            <VStack padding={{ leading: 10, trailing: 10, top: 16, bottom: 16 }}>
               <Image systemName="plus.circle.fill" font={58} foregroundStyle={theme.accent} />
             </VStack>
           </Link>
