@@ -72,6 +72,61 @@ import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./ser
 
 // Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
 
+
+// -------------------------------------------------------------
+// 撒花庆祝层：emoji 粒子（本运行时无旋转/物理动画 API，emoji 规避全部限制）
+// -------------------------------------------------------------
+const CONFETTI_EMOJI = ["🎉", "🎊", "✨", "⭐", "🟡", "🟢", "🟣", "🔵", "🟠"]
+
+type ConfettiPiece = { emoji: string; x: number; y0: number; size: number; drift: number; speed: number }
+
+function newConfettiPieces(): ConfettiPiece[] {
+  return Array.from({ length: 26 }, (_, i) => ({
+    emoji: CONFETTI_EMOJI[i % CONFETTI_EMOJI.length],
+    x: (Math.random() - 0.5) * 300,
+    y0: -120 - Math.random() * 160,
+    size: 14 + Math.random() * 18,
+    drift: (Math.random() - 0.5) * 40,
+    speed: 260 + Math.random() * 160,
+  }))
+}
+
+function ConfettiOverlay() {
+  const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    const t0 = Date.now()
+    const timer = setInterval(() => setTick(Date.now() - t0), 50)
+    return () => clearInterval(timer)
+  }, [])
+
+  const t = tick / 1000
+  const fade = t > 1.3 ? Math.max(0, 1 - (t - 1.3) / 0.5) : 1
+
+  return (
+    <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+      {/* 中央卡片 */}
+      <VStack spacing={8} opacity={fade}>
+        <Text font={54}>"🎉"</Text>
+        <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
+          下载完成
+        </Text>
+      </VStack>
+      {/* 粒子 */}
+      {pieces.map((p2, i) => {
+        const y = p2.y0 + p2.speed * t
+        const x = p2.x + Math.sin(t * 3 + i) * p2.drift
+        return (
+          <Text key={i} font={p2.size} opacity={fade} offset={{ x, y }}>
+            {p2.emoji}
+          </Text>
+        )
+      })}
+    </ZStack>
+  )
+}
+
 // -------------------------------------------------------------
 // 历史记录行：编号 + 单行摘要，点击展开详情卡（信息 + 内联操作按钮）
 // -------------------------------------------------------------
@@ -581,6 +636,12 @@ function View() {
   const [status, setStatus] = useState("就绪")
   const [history, setHistory] = useState<HistoryRecord[]>([])
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
+  const [celebrate, setCelebrate] = useState(false)
+
+  const fireConfetti = () => {
+    setCelebrate(true)
+    setTimeout(() => setCelebrate(false), 1900) // 1.9s 自动消失
+  }
 
   const refreshHistory = async () => {
     setHistory(await listHistory(50))
@@ -696,6 +757,7 @@ function View() {
       }
       setStatus(action.message)
       appendDebug(`下载完成: ${outcome.title} (${outcome.files.length} 个文件) -> ${action.message}`)
+      fireConfetti()
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setStatus(`失败：${message}`)
@@ -723,6 +785,7 @@ function View() {
 
   return (
     <NavigationStack>
+      <ZStack>
       <List
         navigationTitle="视频下载器"
         navigationBarTitleDisplayMode="inline"
@@ -877,6 +940,8 @@ function View() {
           <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
         </Section>
       </List>
+      {celebrate ? <ConfettiOverlay /> : null}
+      </ZStack>
     </NavigationStack>
   )
 }

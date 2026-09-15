@@ -156,7 +156,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         </VStack>
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
-          <Image systemName="plus.circle.fill" font={28} foregroundStyle={theme.accent} />
+          <Image systemName="plus.circle.fill" font={34} foregroundStyle={theme.accent} />
           <Text font="headline" foregroundStyle={theme.accent} fontWeight="bold">
             粘贴链接下载
           </Text>
@@ -197,7 +197,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <Spacer />
           <Link url={RUN_URL}>
             <VStack padding={{ leading: 10, trailing: 10, top: 16, bottom: 16 }}>
-              <Image systemName="plus.circle.fill" font={58} foregroundStyle={theme.accent} />
+              <Image systemName="plus.circle.fill" font={72} foregroundStyle={theme.accent} />
             </VStack>
           </Link>
           <Spacer />
