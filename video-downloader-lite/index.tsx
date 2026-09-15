@@ -85,7 +85,7 @@ type ConfettiPiece = {
   y1: number
   drift: number
   size: number
-  dur: number // 归一化时长系数（小=快）
+  dur: number
 }
 
 function newConfettiPieces(): ConfettiPiece[] {
@@ -96,13 +96,62 @@ function newConfettiPieces(): ConfettiPiece[] {
     y1: 380 + Math.random() * 120,
     drift: (Math.random() - 0.5) * 60,
     size: 16 + Math.random() * 18,
-    dur: 0.75 + Math.random() * 0.4,
+    dur: 1.0 + Math.random() * 0.5,
   }))
 }
 
-// JS 驱动版撒花：33ms 帧率 + easeIn(t²) 加速曲线，粒子独立错帧
-// （原生 Animation 未实证为模块导出，不冒险；粒子数压到 18 控制渲染开销）
-function ConfettiOverlay() {
+// Animation 与 Storage/Dialog 一样是全局对象（文档全部裸用、从不 import）。
+// 运行时探测：有 → 原生 60fps 插值；没有 → JS 驱动兜底（30fps）。
+declare const Animation: any
+const NativeAnim: any = typeof globalThis !== "undefined" ? (globalThis as any).Animation : undefined
+
+// ---- 原生路径（60fps，SwiftUI 插值）----
+function ConfettiNative() {
+  const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
+  const [go, setGo] = useState(false)
+  const [fade, setFade] = useState(1)
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setGo(true), 40)
+    const t2 = setTimeout(() => setFade(0), 1350)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [])
+
+  return (
+    <ZStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+      opacity={fade}
+      animation={{ animation: NativeAnim.easeOut(0.45), value: fade }}
+    >
+      <VStack
+        spacing={8}
+        offset={{ x: 0, y: go ? 0 : 30 }}
+        animation={{ animation: NativeAnim.spring({ duration: 0.45, bounce: 0.4 }), value: go }}
+      >
+        <Text font={54}>🎉</Text>
+        <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
+          下载完成
+        </Text>
+      </VStack>
+      {pieces.map((p2, i) => (
+        <Text
+          key={i}
+          font={p2.size}
+          offset={{ x: go ? p2.x + p2.drift : p2.x, y: go ? p2.y1 : p2.y0 }}
+          animation={{ animation: NativeAnim.easeIn(p2.dur), value: go }}
+        >
+          {p2.emoji}
+        </Text>
+      ))}
+    </ZStack>
+  )
+}
+
+// ---- JS 兜底路径（30fps，easeIn(t²)）----
+function ConfettiJS() {
   const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
   const [tick, setTick] = useState(0)
 
@@ -112,27 +161,24 @@ function ConfettiOverlay() {
     return () => clearInterval(timer)
   }, [])
 
-  const LIFE = 1.55 // 总时长（秒），之后淡出
+  const LIFE = 1.55
   const t = tick / 1000
   const fade = t > LIFE ? Math.max(0, 1 - (t - LIFE) / 0.35) : 1
-  // 卡片弹入：0~0.25s 从 24pt 下方向上回弹（easeOutBack 近似）
   const pop = Math.min(1, t / 0.25)
   const popEased = 1 - Math.pow(1 - pop, 3)
   const overshoot = pop < 1 ? Math.sin(pop * Math.PI) * 8 : 0
 
   return (
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never} opacity={fade}>
-      {/* 中央卡片 */}
       <VStack spacing={8} offset={{ x: 0, y: (1 - popEased) * 24 - overshoot }}>
         <Text font={54}>🎉</Text>
         <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
           下载完成
         </Text>
       </VStack>
-      {/* 粒子：easeIn 加速下落 + 正弦漂移 */}
       {pieces.map((p2, i) => {
-        const pt = Math.min(1, (t / 1.2) * (1 / p2.dur)) // 各自时长的进度
-        const eased = pt * pt // easeIn
+        const pt = Math.min(1, (t / 1.2) * (1 / (p2.dur * 0.85)))
+        const eased = pt * pt
         const y = p2.y0 + (p2.y1 - p2.y0) * eased
         const x = p2.x + Math.sin(pt * Math.PI) * p2.drift
         return (
@@ -143,6 +189,10 @@ function ConfettiOverlay() {
       })}
     </ZStack>
   )
+}
+
+function ConfettiOverlay() {
+  return NativeAnim ? <ConfettiNative /> : <ConfettiJS />
 }
 
 // -------------------------------------------------------------
