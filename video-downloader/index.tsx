@@ -7,6 +7,7 @@
 //       不要从 "scripting" 导入（生产范本验证过，导入会静默拿到 undefined）。
 
 import {
+  Animation,
   Button,
   HStack,
   Image,
@@ -78,51 +79,73 @@ import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./ser
 // -------------------------------------------------------------
 const CONFETTI_EMOJI = ["🎉", "🎊", "✨", "⭐", "🟡", "🟢", "🟣", "🔵", "🟠"]
 
-type ConfettiPiece = { emoji: string; x: number; y0: number; size: number; drift: number; speed: number }
+type ConfettiPiece = {
+  emoji: string
+  x: number
+  y0: number
+  y1: number
+  drift: number
+  size: number
+  dur: number
+}
 
 function newConfettiPieces(): ConfettiPiece[] {
-  return Array.from({ length: 26 }, (_, i) => ({
+  return Array.from({ length: 22 }, (_, i) => ({
     emoji: CONFETTI_EMOJI[i % CONFETTI_EMOJI.length],
     x: (Math.random() - 0.5) * 300,
-    y0: -120 - Math.random() * 160,
-    size: 14 + Math.random() * 18,
-    drift: (Math.random() - 0.5) * 40,
-    speed: 260 + Math.random() * 160,
+    y0: -140 - Math.random() * 160,
+    y1: 380 + Math.random() * 120,
+    drift: (Math.random() - 0.5) * 60,
+    size: 16 + Math.random() * 18,
+    dur: 1.0 + Math.random() * 0.5,
   }))
 }
 
+// 原生动画版撒花：withAnimation + animation 修饰符，60fps 插值
 function ConfettiOverlay() {
   const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
-  const [tick, setTick] = useState(0)
+  const [go, setGo] = useState(false)
+  const [fade, setFade] = useState(1)
 
   useEffect(() => {
-    const t0 = Date.now()
-    const timer = setInterval(() => setTick(Date.now() - t0), 50)
-    return () => clearInterval(timer)
+    // 挂载后下一帧启动下落（easeIn 加速下坠），卡片 spring 弹出
+    const t1 = setTimeout(() => setGo(true), 40)
+    // 1.35s 后整体淡出
+    const t2 = setTimeout(() => setFade(0), 1350)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
   }, [])
 
-  const t = tick / 1000
-  const fade = t > 1.3 ? Math.max(0, 1 - (t - 1.3) / 0.5) : 1
-
   return (
-    <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-      {/* 中央卡片 */}
-      <VStack spacing={8} opacity={fade}>
-        <Text font={54}>"🎉"</Text>
+    <ZStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+      opacity={fade}
+      animation={{ animation: Animation.easeOut(0.45), value: fade }}
+    >
+      {/* 中央卡片：spring 弹入 */}
+      <VStack
+        spacing={8}
+        offset={{ x: 0, y: go ? 0 : 30 }}
+        animation={{ animation: Animation.spring({ duration: 0.45, bounce: 0.4 }), value: go }}
+      >
+        <Text font={54}>🎉</Text>
         <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
           下载完成
         </Text>
       </VStack>
-      {/* 粒子 */}
-      {pieces.map((p2, i) => {
-        const y = p2.y0 + p2.speed * t
-        const x = p2.x + Math.sin(t * 3 + i) * p2.drift
-        return (
-          <Text key={i} font={p2.size} opacity={fade} offset={{ x, y }}>
-            {p2.emoji}
-          </Text>
-        )
-      })}
+      {/* 粒子：各自时长 easeIn 下落 + 侧向漂移 */}
+      {pieces.map((p2, i) => (
+        <Text
+          key={i}
+          font={p2.size}
+          offset={{ x: go ? p2.x + p2.drift : p2.x, y: go ? p2.y1 : p2.y0 }}
+          animation={{ animation: Animation.easeIn(p2.dur), value: go }}
+        >
+          {p2.emoji}
+        </Text>
+      ))}
     </ZStack>
   )
 }
