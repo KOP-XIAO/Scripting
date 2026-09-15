@@ -333,6 +333,11 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           onChanged={(v) => update({ transcodeTsToMp4: v })}
         />
         <Toggle
+          title="小组件进入后自动开始下载"
+          value={draft.autoStartOnEntry}
+          onChanged={(v) => update({ autoStartOnEntry: v })}
+        />
+        <Toggle
           title="历史去重（同链接跳过下载）"
           value={draft.dedupe}
           onChanged={(v) => update({ dedupe: v })}
@@ -570,7 +575,12 @@ function View() {
         const found = text ? extractFirstURL(text) : null
         if (found) {
           setInputURL(found)
-          setStatus("已填入剪贴板链接，点击「开始下载」")
+          if (getPreferences().autoStartOnEntry) {
+            setStatus("已填入剪贴板链接，自动开始下载…")
+            void handleDownload(found)
+          } else {
+            setStatus("已填入剪贴板链接，点击底部「开始下载」")
+          }
         }
       })()
     }
@@ -588,9 +598,9 @@ function View() {
     else await Dialog.alert({ message: "剪贴板里没有找到 http(s) 链接" })
   }
 
-  const handleDownload = async () => {
+  const handleDownload = async (directUrl?: string) => {
     if (loading) return
-    const url = extractFirstURL(inputURL) ?? ""
+    const url = directUrl ?? extractFirstURL(inputURL) ?? ""
     if (!url) {
       await Dialog.alert({ message: "请先输入有效的视频链接" })
       return
@@ -691,6 +701,13 @@ function View() {
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
+          bottomBar: (
+            <Button
+              title={loading ? "下载中…" : "⬇  开始下载"}
+              disabled={loading}
+              action={() => void handleDownload()}
+            />
+          ),
         }}
       >
         <Section
@@ -708,11 +725,7 @@ function View() {
             onChanged={setInputURL}
             prompt="粘贴或输入链接"
           />
-          <HStack>
-            <Button title="从剪贴板粘贴" action={() => void pasteFromClipboard()} />
-            <Spacer />
-            <Button title={loading ? "下载中…" : "开始下载"} action={() => void handleDownload()} />
-          </HStack>
+          <Button title="从剪贴板粘贴" action={() => void pasteFromClipboard()} />
         </Section>
 
         <Section title="状态">

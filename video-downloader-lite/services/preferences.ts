@@ -11,6 +11,7 @@ export type Preferences = {
   dedupe: boolean // 同一来源链接已下载则跳过
   maxMB: number // 直链大小上限，0 = 不限制
   debugLog: boolean // 是否记录诊断日志
+  autoStartOnEntry: boolean // 小组件/URL scheme 带入链接后自动开始下载
 }
 
 export const PREFS_KEY = "vdl.preferences"
@@ -23,6 +24,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   dedupe: true,
   maxMB: 0,
   debugLog: true,
+  autoStartOnEntry: true,
 }
 
 export function getPreferences(): Preferences {
