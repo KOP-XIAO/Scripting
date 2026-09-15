@@ -38,7 +38,7 @@ function LatestInfo({
   if (!item) {
     return (
       <VStack alignment="leading" spacing={4}>
-        <Text font="headline" foregroundStyle={TEXT_PRIMARY}>
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY}>
           暂无下载记录
         </Text>
         <Text font="caption" foregroundStyle={TEXT_SECONDARY}>
@@ -52,11 +52,11 @@ function LatestInfo({
     .join(" · ")
   return (
     <VStack alignment="leading" spacing={4}>
-      <Text font="headline" lineLimit={lines} foregroundStyle={TEXT_PRIMARY}>
+      <Text font="subheadline" fontWeight="semibold" lineLimit={lines} foregroundStyle={TEXT_PRIMARY}>
         {item.title || item.fileName}
       </Text>
       <HStack spacing={6}>
-        <Text font="caption" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+        <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
           {meta}
         </Text>
         <Text font="caption2" monospaced foregroundStyle={accent}>
@@ -64,20 +64,6 @@ function LatestInfo({
         </Text>
       </HStack>
     </VStack>
-  )
-}
-
-// 统计行：累计次数 · 总大小
-function StatsRow({ snap, accent }: { snap: WidgetSnapshot | null; accent: string }) {
-  const n = snap?.totalCount ?? 0
-  const total = formatBytes(snap?.totalBytes ?? 0)
-  return (
-    <HStack spacing={6}>
-      <Image systemName="chart.bar.fill" font={9} foregroundStyle={accent} />
-      <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY}>
-        {`共 ${n} 次 · ${total}`}
-      </Text>
-    </HStack>
   )
 }
 
@@ -156,12 +142,11 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <HStack spacing={6}>
           <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
           <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
-            视频下载器
+            Video Downloader
           </Text>
         </HStack>
         <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
-        <StatsRow snap={snap} accent={theme.accent} />
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
           <Image systemName="plus.circle.fill" font={28} foregroundStyle={theme.accent} />
@@ -186,14 +171,13 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <HStack spacing={6}>
             <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
             <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
-              视频下载器
+              Video Downloader
             </Text>
           </HStack>
           <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
           <SecondRow item={snap?.second ?? null} />
           <Spacer />
-          <StatsRow snap={snap} accent={theme.accent} />
-        </VStack>
+          </VStack>
         <Spacer />
         {/* 超大添加按钮：纯图标独占，热区拉满 */}
         <VStack>
