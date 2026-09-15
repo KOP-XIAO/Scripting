@@ -287,34 +287,61 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           </Text>
         }
       >
-        {(Object.keys(THEMES) as ThemeKey[]).map((k) => {
-          const t = THEMES[k]
-          const selected = k === themeKey
-          return (
-            <Button
-              key={k}
-              buttonStyle="plain"
-              action={() => {
-                setThemeKeyLocal(k)
-                setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
-              }}
-            >
-              <HStack spacing={10} frame={{ maxWidth: "infinity" } as never}>
-                {/* 三色预览：底深 / 底浅 / 强调色 */}
-                <HStack spacing={3}>
-                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgTop} />
-                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgBottom} />
-                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} />
-                </HStack>
-                <Text font="subheadline">{t.label}</Text>
-                <Spacer />
-                {selected ? (
-                  <Image systemName="checkmark.circle.fill" font={16} foregroundStyle={t.accent} />
-                ) : null}
-              </HStack>
-            </Button>
-          )
-        })}
+        {(() => {
+          // 色板网格：点色块即选中，点击区域=视觉区域，无热区歧义
+          const keys = Object.keys(THEMES) as ThemeKey[]
+          const rows: ThemeKey[][] = [keys.slice(0, 5), keys.slice(5)]
+          return rows.map((row, ri) => (
+            <HStack key={ri} spacing={12}>
+              {row.map((k) => {
+                const t = THEMES[k]
+                const selected = k === themeKey
+                return (
+                  <Button
+                    key={k}
+                    buttonStyle="plain"
+                    action={() => {
+                      setThemeKeyLocal(k)
+                      setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
+                    }}
+                  >
+                    <ZStack frame={{ width: 44, height: 44 }}>
+                      {/* 底层：主题背景色（渐变浅端） */}
+                      <RoundedRectangle frame={{ width: 44, height: 44 }} cornerRadius={10} fill={t.bgBottom} />
+                      {/* 中层：渐变深端的小角块，示意渐变方向 */}
+                      <RoundedRectangle
+                        frame={{ width: 22, height: 22 }}
+                        cornerRadius={7}
+                        fill={t.bgTop}
+                        offset={{ x: -8, y: -8 }}
+                      />
+                      {/* 前景：强调色圆点 */}
+                      <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} offset={{ x: 6, y: 6 }} />
+                      {/* 选中态：右上角主题色勾 */}
+                      {selected ? (
+                        <Image
+                          systemName="checkmark.circle.fill"
+                          font={14}
+                          foregroundStyle={t.accent}
+                          offset={{ x: 16, y: -16 }}
+                        />
+                      ) : null}
+                    </ZStack>
+                  </Button>
+                )
+              })}
+            </HStack>
+          ))
+        })()}
+        <HStack spacing={6}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            当前主题
+          </Text>
+          <RoundedRectangle frame={{ width: 10, height: 10 }} cornerRadius={5} fill={THEMES[themeKey].accent} />
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            {THEMES[themeKey].label}
+          </Text>
+        </HStack>
       </Section>
 
       <Section
