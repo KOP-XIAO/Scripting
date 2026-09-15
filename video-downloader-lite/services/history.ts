@@ -36,11 +36,11 @@ const MAX_RECORDS = 200 // 上限，防止 JSON 无限增长
 // -------------------------------------------------------------
 // 小组件快照：widget 扩展进程的 FileManager 目录与 App 不一致，
 // 读不到历史文件；Storage（UserDefaults 同脚本跨进程共享，cmhk 实证）
-// 才是可靠的通道。每次历史变更后把最新一条写进 Storage 供 widget 读。
+// 才是可靠的通道。每次历史变更后把最近两条 + 统计写进 Storage。
 // -------------------------------------------------------------
 export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
-export type WidgetSnapshot = {
+export type WidgetSnapshotItem = {
   title: string
   fileName: string
   bytes: number
@@ -49,7 +49,14 @@ export type WidgetSnapshot = {
   note: string
 }
 
-function toSnapshot(r: HistoryRecord): WidgetSnapshot {
+export type WidgetSnapshot = {
+  latest: WidgetSnapshotItem | null
+  second: WidgetSnapshotItem | null
+  totalCount: number
+  totalBytes: number
+}
+
+function toSnapshotItem(r: HistoryRecord): WidgetSnapshotItem {
   return {
     title: r.title,
     fileName: r.file_name,
@@ -62,14 +69,28 @@ function toSnapshot(r: HistoryRecord): WidgetSnapshot {
 
 export function writeWidgetSnapshot(list: HistoryRecord[]) {
   try {
-    const latest = sortDesc(list)[0]
-    Storage.set(WIDGET_SNAPSHOT_KEY, latest ? toSnapshot(latest) : null)
+    const sorted = sortDesc(list)
+    Storage.set(WIDGET_SNAPSHOT_KEY, {
+      latest: sorted[0] ? toSnapshotItem(sorted[0]) : null,
+      second: sorted[1] ? toSnapshotItem(sorted[1]) : null,
+      totalCount: sorted.length,
+      totalBytes: sorted.reduce((s, r) => s + (r.bytes_written || 0), 0),
+    } satisfies WidgetSnapshot)
   } catch {}
 }
 
+// 兼容 v1.5.x 的旧扁平快照（{title,...}）→ 视作只有 latest
 export function getWidgetSnapshot(): WidgetSnapshot | null {
   try {
-    return Storage.get<WidgetSnapshot>(WIDGET_SNAPSHOT_KEY)
+    const raw = Storage.get<any>(WIDGET_SNAPSHOT_KEY)
+    if (!raw) return null
+    if ("totalCount" in raw) return raw as WidgetSnapshot
+    return {
+      latest: raw.title ? (raw as WidgetSnapshotItem) : null,
+      second: null,
+      totalCount: raw.title ? 1 : 0,
+      totalBytes: raw.bytes ?? 0,
+    }
   } catch {
     return null
   }

@@ -6,7 +6,7 @@
 // 全局对象（禁止从 scripting 导入）：Storage
 
 import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
-import { getWidgetSnapshot, type WidgetSnapshot } from "./services/history"
+import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
 import { getTheme } from "./services/theme"
 import { formatBytes, formatDate, formatDuration } from "./utils/common"
 import { ReloadWidgetIntent } from "./app_intents"
@@ -19,8 +19,16 @@ const RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME, { autopaste: "1" })
 const TEXT_PRIMARY = "#F0F3F6"
 const TEXT_SECONDARY = "#9BA3AB"
 
-function LatestInfo({ latest, compact, accent }: { latest: WidgetSnapshot | null; compact?: boolean; accent: string }) {
-  if (!latest) {
+function LatestInfo({
+  item,
+  lines,
+  accent,
+}: {
+  item: WidgetSnapshotItem | null
+  lines: number
+  accent: string
+}) {
+  if (!item) {
     return (
       <VStack alignment="leading" spacing={4}>
         <Text font="headline" foregroundStyle={TEXT_PRIMARY}>
@@ -32,29 +40,52 @@ function LatestInfo({ latest, compact, accent }: { latest: WidgetSnapshot | null
       </VStack>
     )
   }
-  const meta = [
-    formatBytes(latest.bytes),
-    formatDuration(latest.durationSec),
-    formatDate(latest.createdAt).slice(5), // 去掉年份，省空间
-  ]
+  const meta = [formatBytes(item.bytes), formatDuration(item.durationSec), formatDate(item.createdAt).slice(5)]
     .filter(Boolean)
     .join(" · ")
   return (
     <VStack alignment="leading" spacing={4}>
-      <Text font="headline" lineLimit={compact ? 1 : 2} foregroundStyle={TEXT_PRIMARY}>
-        {latest.title || latest.fileName}
+      <Text font="headline" lineLimit={lines} foregroundStyle={TEXT_PRIMARY}>
+        {item.title || item.fileName}
       </Text>
       <HStack spacing={6}>
         <Text font="caption" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
           {meta}
         </Text>
-        {latest.note.includes("相册") ? (
+        {item.note.includes("相册") ? (
           <Text font="caption2" foregroundStyle={accent}>
             已存相册
           </Text>
         ) : null}
       </HStack>
     </VStack>
+  )
+}
+
+// 统计行：累计次数 · 总大小
+function StatsRow({ snap, accent }: { snap: WidgetSnapshot | null; accent: string }) {
+  const n = snap?.totalCount ?? 0
+  const total = formatBytes(snap?.totalBytes ?? 0)
+  return (
+    <HStack spacing={6}>
+      <Image systemName="chart.bar.fill" font={9} foregroundStyle={accent} />
+      <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY}>
+        {`共 ${n} 次 · ${total}`}
+      </Text>
+    </HStack>
+  )
+}
+
+// 次近一条（一行简报）
+function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
+  if (!item) return null
+  return (
+    <HStack spacing={6}>
+      <Image systemName="clock" font={9} foregroundStyle={TEXT_SECONDARY} />
+      <Text font="caption2" foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+        {`前一条：${item.title || item.fileName}`}
+      </Text>
+    </HStack>
   )
 }
 
@@ -111,23 +142,24 @@ function BackgroundLayer({ family }: { family: "small" | "medium" }) {
   )
 }
 
-function SmallView({ latest }: { latest: WidgetSnapshot | null }) {
+function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
   const theme = getTheme()
   return (
     <ZStack alignment="topTrailing">
       <BackgroundLayer family="small" />
-      <VStack alignment="leading" spacing={8} padding widgetURL={RUN_URL}>
+      <VStack alignment="leading" spacing={6} padding widgetURL={RUN_URL}>
         <HStack spacing={6}>
           <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
           <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
             视频下载器
           </Text>
         </HStack>
-        <LatestInfo latest={latest} compact accent={theme.accent} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
+        <StatsRow snap={snap} accent={theme.accent} />
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
-          <Image systemName="plus.circle.fill" font={30} foregroundStyle={theme.accent} />
+          <Image systemName="plus.circle.fill" font={28} foregroundStyle={theme.accent} />
           <Text font="headline" foregroundStyle={theme.accent} fontWeight="bold">
             粘贴链接下载
           </Text>
@@ -139,21 +171,23 @@ function SmallView({ latest }: { latest: WidgetSnapshot | null }) {
   )
 }
 
-function MediumView({ latest }: { latest: WidgetSnapshot | null }) {
+function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
   const theme = getTheme()
   return (
     <ZStack alignment="bottomLeading">
       <BackgroundLayer family="medium" />
-      <HStack spacing={12} padding>
-        <VStack alignment="leading" spacing={8} widgetURL={RUN_URL}>
+      <HStack spacing={10} padding>
+        <VStack alignment="leading" spacing={6} widgetURL={RUN_URL}>
           <HStack spacing={6}>
             <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
             <Text font="caption" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY} monospaced>
               视频下载器
             </Text>
           </HStack>
-          <LatestInfo latest={latest} accent={theme.accent} />
+          <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
+          <SecondRow item={snap?.second ?? null} />
           <Spacer />
+          <StatsRow snap={snap} accent={theme.accent} />
         </VStack>
         <Spacer />
         {/* 超大添加按钮：独立 Link 目标，大图标大热区 */}
@@ -177,9 +211,9 @@ function MediumView({ latest }: { latest: WidgetSnapshot | null }) {
 }
 
 function run() {
-  const latest = getWidgetSnapshot()
+  const snap = getWidgetSnapshot()
   const medium = Widget.family === "systemMedium"
-  Widget.present(medium ? <MediumView latest={latest} /> : <SmallView latest={latest} />, {
+  Widget.present(medium ? <MediumView snap={snap} /> : <SmallView snap={snap} />, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()
     reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
   })

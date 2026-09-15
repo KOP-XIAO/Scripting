@@ -38,7 +38,7 @@ let db: SQLiteDatabase | null = null
 // -------------------------------------------------------------
 export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
-export type WidgetSnapshot = {
+export type WidgetSnapshotItem = {
   title: string
   fileName: string
   bytes: number
@@ -47,9 +47,25 @@ export type WidgetSnapshot = {
   note: string
 }
 
+export type WidgetSnapshot = {
+  latest: WidgetSnapshotItem | null
+  second: WidgetSnapshotItem | null
+  totalCount: number
+  totalBytes: number
+}
+
+// 兼容 v1.5.x 的旧扁平快照（{title,...}）→ 视作只有 latest
 export function getWidgetSnapshot(): WidgetSnapshot | null {
   try {
-    return Storage.get<WidgetSnapshot>(WIDGET_SNAPSHOT_KEY)
+    const raw = Storage.get<any>(WIDGET_SNAPSHOT_KEY)
+    if (!raw) return null
+    if ("totalCount" in raw) return raw as WidgetSnapshot
+    return {
+      latest: raw.title ? (raw as WidgetSnapshotItem) : null,
+      second: null,
+      totalCount: raw.title ? 1 : 0,
+      totalBytes: raw.bytes ?? 0,
+    }
   } catch {
     return null
   }
@@ -65,17 +81,30 @@ export async function ensureWidgetSnapshot() {
 export async function syncWidgetSnapshot() {
   try {
     const database = await getDatabase()
-    const rows = await database.fetchAll<HistoryRecord>(
+    const top = await database.fetchAll<HistoryRecord>(
       `SELECT title, file_name, bytes_written, duration_sec, created_at, note
-       FROM downloads ORDER BY datetime(created_at) DESC LIMIT 1`,
+       FROM downloads ORDER BY datetime(created_at) DESC LIMIT 2`,
     )
-    const r = rows[0]
-    Storage.set(
-      WIDGET_SNAPSHOT_KEY,
+    const agg = await database.fetchAll<{ n: number; total: number | null }>(
+      `SELECT COUNT(*) AS n, SUM(bytes_written) AS total FROM downloads`,
+    )
+    const toItem = (r: HistoryRecord | undefined): WidgetSnapshotItem | null =>
       r
-        ? { title: r.title, fileName: r.file_name, bytes: r.bytes_written, durationSec: r.duration_sec ?? 0, createdAt: r.created_at, note: r.note }
-        : null,
-    )
+        ? {
+            title: r.title,
+            fileName: r.file_name,
+            bytes: r.bytes_written,
+            durationSec: r.duration_sec ?? 0,
+            createdAt: r.created_at,
+            note: r.note,
+          }
+        : null
+    Storage.set(WIDGET_SNAPSHOT_KEY, {
+      latest: toItem(top[0]),
+      second: toItem(top[1]),
+      totalCount: agg[0]?.n ?? 0,
+      totalBytes: agg[0]?.total ?? 0,
+    } satisfies WidgetSnapshot)
   } catch {}
 }
 
