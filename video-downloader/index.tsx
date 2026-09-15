@@ -207,45 +207,6 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
   const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
 
-  const chooseTheme = async () => {
-    const keys = Object.keys(THEMES) as ThemeKey[]
-    const idx = await Dialog.actionSheet({
-      title: "外观主题",
-      message: "影响小组件背景与按钮配色、日志终端的点缀色。",
-      actions: keys.map((k) => ({ label: THEMES[k].label })),
-      cancelButton: true,
-    })
-    if (idx == null || idx < 0) return
-    setThemeKeyLocal(keys[idx])
-    setThemeKey(keys[idx]) // 内部会 Widget.reloadAll()，小组件立即换肤
-  }
-  const update = (patch: Partial<Preferences>) => {
-    const next = { ...draft, ...patch }
-    setDraft(next)
-    onSave(next)
-  }
-
-  const chooseSaveMode = async () => {
-    const modes: SaveMode[] = ["ask", "photos", "files", "keep"]
-    const idx = await Dialog.actionSheet({
-      title: "下载完成后的默认动作",
-      actions: modes.map((m) => ({ label: SAVE_MODE_LABELS[m] })),
-      cancelButton: true,
-    })
-    if (idx >= 0) update({ defaultSaveMode: modes[idx] })
-  }
-
-  const chooseWxCodec = async () => {
-    const codecs: WxCodec[] = ["h264", "h265", "both"]
-    const idx = await Dialog.actionSheet({
-      title: "视频号编码偏好",
-      message: "视频号解析会同时返回 H.264 / H.265 两种地址。",
-      actions: codecs.map((c) => ({ label: WX_CODEC_LABELS[c] })),
-      cancelButton: true,
-    })
-    if (idx >= 0) update({ wxCodec: codecs[idx] })
-  }
-
   return (
     <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
       <Section
@@ -325,7 +286,32 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           </Text>
         }
       >
-        <Button title={`主题：${THEMES[themeKey].label}`} action={() => void chooseTheme()} />
+        {(Object.keys(THEMES) as ThemeKey[]).map((k) => {
+          const t = THEMES[k]
+          const selected = k === themeKey
+          return (
+            <HStack
+              key={k}
+              spacing={10}
+              onTapGesture={() => {
+                setThemeKeyLocal(k)
+                setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
+              }}
+            >
+              {/* 三色预览：底深 / 底浅 / 强调色 */}
+              <HStack spacing={3}>
+                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgTop} />
+                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgBottom} />
+                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} />
+              </HStack>
+              <Text font="subheadline">{t.label}</Text>
+              <Spacer />
+              {selected ? (
+                <Image systemName="checkmark.circle.fill" font={16} foregroundStyle={t.accent} />
+              ) : null}
+            </HStack>
+          )
+        })}
       </Section>
 
       <Section

@@ -47,19 +47,20 @@ function LatestInfo({
       </VStack>
     )
   }
-  const meta = [formatBytes(item.bytes), formatDuration(item.durationSec), formatDate(item.createdAt).slice(5)]
-    .filter(Boolean)
-    .join(" · ")
+  const line1 = [formatBytes(item.bytes), formatDuration(item.durationSec)].filter(Boolean).join(" · ")
   return (
-    <VStack alignment="leading" spacing={4}>
+    <VStack alignment="leading" spacing={3}>
       <Text font="subheadline" fontWeight="semibold" lineLimit={lines} foregroundStyle={TEXT_PRIMARY}>
         {item.title || item.fileName}
       </Text>
-      <HStack spacing={6}>
+      <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+        {line1}
+      </Text>
+      <HStack spacing={4}>
         <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
-          {meta}
+          {formatDate(item.createdAt).slice(5)}
         </Text>
-        <Text font="caption2" monospaced foregroundStyle={accent}>
+        <Text font="caption2" monospaced foregroundStyle={accent} lineLimit={1}>
           {KIND_SHORT[item.kind] ?? item.kind}
         </Text>
       </HStack>
@@ -147,6 +148,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         </HStack>
         <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
+        <SecondRow item={snap?.second ?? null} />
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
           <Image systemName="plus.circle.fill" font={28} foregroundStyle={theme.accent} />

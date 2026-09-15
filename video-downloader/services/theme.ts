@@ -1,7 +1,16 @@
 // services/theme.ts — 可切换外观主题（Storage 持久化，App / Widget 进程共享）
 // Storage / Widget 为全局对象，禁止从 scripting 导入
 
-export type ThemeKey = "terminal" | "hermes" | "prussian" | "tiffany" | "klein" | "burgundy"
+export type ThemeKey =
+  | "terminal"
+  | "hermes"
+  | "prussian"
+  | "tiffany"
+  | "klein"
+  | "burgundy"
+  | "sakura"
+  | "olive"
+  | "graphite"
 
 export type Theme = {
   key: ThemeKey
@@ -62,6 +71,30 @@ export const THEMES: Record<ThemeKey, Theme> = {
     accentSoft: "rgba(192, 74, 99, 0.55)",
     bgTop: "#1C0C12",
     bgBottom: "#33101B",
+  },
+  sakura: {
+    key: "sakura",
+    label: "樱花粉",
+    accent: "#F9A8D4",
+    accentSoft: "rgba(249, 168, 212, 0.55)",
+    bgTop: "#1D0F16",
+    bgBottom: "#33141F",
+  },
+  olive: {
+    key: "olive",
+    label: "橄榄绿",
+    accent: "#A3B86B",
+    accentSoft: "rgba(163, 184, 107, 0.55)",
+    bgTop: "#12150C",
+    bgBottom: "#1E2410",
+  },
+  graphite: {
+    key: "graphite",
+    label: "石墨灰",
+    accent: "#9BA3AB",
+    accentSoft: "rgba(155, 163, 171, 0.55)",
+    bgTop: "#151517",
+    bgBottom: "#242428",
   },
 }
 

@@ -1,6 +1,6 @@
 // utils/common.ts — 通用小工具（与抖音下载器同源的稳健实现）
 
-export const VERSION = "1.6.2"
+export const VERSION = "1.7.0"
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
