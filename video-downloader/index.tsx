@@ -290,26 +290,28 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           const t = THEMES[k]
           const selected = k === themeKey
           return (
-            <HStack
+            <Button
               key={k}
-              spacing={10}
-              onTapGesture={() => {
+              buttonStyle="plain"
+              action={() => {
                 setThemeKeyLocal(k)
                 setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
               }}
             >
-              {/* 三色预览：底深 / 底浅 / 强调色 */}
-              <HStack spacing={3}>
-                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgTop} />
-                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgBottom} />
-                <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} />
+              <HStack spacing={10}>
+                {/* 三色预览：底深 / 底浅 / 强调色 */}
+                <HStack spacing={3}>
+                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgTop} />
+                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgBottom} />
+                  <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} />
+                </HStack>
+                <Text font="subheadline">{t.label}</Text>
+                <Spacer />
+                {selected ? (
+                  <Image systemName="checkmark.circle.fill" font={16} foregroundStyle={t.accent} />
+                ) : null}
               </HStack>
-              <Text font="subheadline">{t.label}</Text>
-              <Spacer />
-              {selected ? (
-                <Image systemName="checkmark.circle.fill" font={16} foregroundStyle={t.accent} />
-              ) : null}
-            </HStack>
+            </Button>
           )
         })}
       </Section>

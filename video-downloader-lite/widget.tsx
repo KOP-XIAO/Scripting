@@ -146,7 +146,9 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
             Video Downloader
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
+        <VStack padding={{ top: 10 }}>
+          <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
+        </VStack>
         <Spacer />
         <SecondRow item={snap?.second ?? null} />
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
@@ -176,7 +178,9 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
               Video Downloader
             </Text>
           </HStack>
-          <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
+          <VStack padding={{ top: 12 }}>
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
+          </VStack>
           <SecondRow item={snap?.second ?? null} />
           <Spacer />
           </VStack>
