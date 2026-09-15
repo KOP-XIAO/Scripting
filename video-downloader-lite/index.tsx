@@ -347,11 +347,11 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           const keys = Object.keys(THEMES) as ThemeKey[]
           const rows: ThemeKey[][] = [keys.slice(0, 5), keys.slice(5)]
           return rows.map((row, ri) => (
-            <HStack key={ri} spacing={12}>
-              {row.map((k) => {
+            <HStack key={ri} spacing={0}>
+              {row.flatMap((k, i) => {
                 const t = THEMES[k]
                 const selected = k === themeKey
-                return (
+                const chip = (
                   <Button
                     key={k}
                     buttonStyle="plain"
@@ -384,6 +384,8 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                     </ZStack>
                   </Button>
                 )
+                // 芯片之间用 Spacer 均分，让每行铺满整个宽度
+                return i === 0 ? [chip] : [<Spacer key={`sp-${k}`} />, chip]
               })}
             </HStack>
           ))
