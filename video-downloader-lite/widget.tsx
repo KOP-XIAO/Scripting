@@ -19,6 +19,13 @@ const RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME, { autopaste: "1" })
 const TEXT_PRIMARY = "#F0F3F6"
 const TEXT_SECONDARY = "#9BA3AB"
 
+const KIND_SHORT: Record<string, string> = {
+  "wx-channels": "视频号",
+  m3u8: "M3U8",
+  direct: "直链",
+  platform: "平台",
+}
+
 function LatestInfo({
   item,
   lines,
@@ -52,11 +59,9 @@ function LatestInfo({
         <Text font="caption" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
           {meta}
         </Text>
-        {item.note.includes("相册") ? (
-          <Text font="caption2" foregroundStyle={accent}>
-            已存相册
-          </Text>
-        ) : null}
+        <Text font="caption2" monospaced foregroundStyle={accent}>
+          {KIND_SHORT[item.kind] ?? item.kind}
+        </Text>
       </HStack>
     </VStack>
   )
@@ -190,16 +195,13 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <StatsRow snap={snap} accent={theme.accent} />
         </VStack>
         <Spacer />
-        {/* 超大添加按钮：独立 Link 目标，大图标大热区 */}
+        {/* 超大添加按钮：纯图标独占，热区拉满 */}
         <VStack>
           <Spacer />
           <Link url={RUN_URL}>
-            <HStack spacing={8} padding={{ leading: 22, trailing: 22, top: 16, bottom: 16 }}>
-              <Image systemName="plus.circle.fill" font={30} foregroundStyle={theme.accent} />
-              <Text font="title2" fontWeight="bold" foregroundStyle={theme.accent}>
-                下载
-              </Text>
-            </HStack>
+            <VStack padding={{ leading: 24, trailing: 24, top: 20, bottom: 20 }}>
+              <Image systemName="plus.circle.fill" font={58} foregroundStyle={theme.accent} />
+            </VStack>
           </Link>
           <Spacer />
         </VStack>

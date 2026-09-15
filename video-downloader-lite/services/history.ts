@@ -41,6 +41,7 @@ const MAX_RECORDS = 200 // 上限，防止 JSON 无限增长
 export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
 export type WidgetSnapshotItem = {
+  kind: string
   title: string
   fileName: string
   bytes: number
@@ -58,6 +59,7 @@ export type WidgetSnapshot = {
 
 function toSnapshotItem(r: HistoryRecord): WidgetSnapshotItem {
   return {
+    kind: r.kind,
     title: r.title,
     fileName: r.file_name,
     bytes: r.bytes_written,
@@ -70,11 +72,15 @@ function toSnapshotItem(r: HistoryRecord): WidgetSnapshotItem {
 export function writeWidgetSnapshot(list: HistoryRecord[]) {
   try {
     const sorted = sortDesc(list)
+    // 次数按来源链接去重（同一视频的多编码/重下只算一次）；
+    // 总大小按来源求和（同来源多文件取合计流量）
+    const bySource = new Map<string, number>()
+    for (const r of sorted) bySource.set(r.source_url, (bySource.get(r.source_url) ?? 0) + (r.bytes_written || 0))
     Storage.set(WIDGET_SNAPSHOT_KEY, {
       latest: sorted[0] ? toSnapshotItem(sorted[0]) : null,
       second: sorted[1] ? toSnapshotItem(sorted[1]) : null,
-      totalCount: sorted.length,
-      totalBytes: sorted.reduce((s, r) => s + (r.bytes_written || 0), 0),
+      totalCount: bySource.size,
+      totalBytes: [...bySource.values()].reduce((a, b) => a + b, 0),
     } satisfies WidgetSnapshot)
   } catch {}
 }

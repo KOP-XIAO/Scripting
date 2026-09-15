@@ -2,7 +2,7 @@
   "name": "Video Downloader",
   "icon": "arrow.down.circle.fill",
   "color": "rgba(88, 86, 214, 1)",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "entry": "index.tsx",
   "runInApp": true,
   "permissions": null,

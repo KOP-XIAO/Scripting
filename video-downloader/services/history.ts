@@ -39,6 +39,7 @@ let db: SQLiteDatabase | null = null
 export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
 export type WidgetSnapshotItem = {
+  kind: string
   title: string
   fileName: string
   bytes: number
@@ -82,15 +83,18 @@ export async function syncWidgetSnapshot() {
   try {
     const database = await getDatabase()
     const top = await database.fetchAll<HistoryRecord>(
-      `SELECT title, file_name, bytes_written, duration_sec, created_at, note
+      `SELECT kind, title, file_name, bytes_written, duration_sec, created_at, note
        FROM downloads ORDER BY datetime(created_at) DESC LIMIT 2`,
     )
+    // 次数按来源链接去重，总大小按来源合计
     const agg = await database.fetchAll<{ n: number; total: number | null }>(
-      `SELECT COUNT(*) AS n, SUM(bytes_written) AS total FROM downloads`,
+      `SELECT COUNT(*) AS n, SUM(bytes) AS total
+       FROM (SELECT source_url, SUM(bytes_written) AS bytes FROM downloads GROUP BY source_url)`,
     )
     const toItem = (r: HistoryRecord | undefined): WidgetSnapshotItem | null =>
       r
         ? {
+            kind: r.kind,
             title: r.title,
             fileName: r.file_name,
             bytes: r.bytes_written,
