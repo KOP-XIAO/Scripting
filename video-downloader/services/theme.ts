@@ -11,6 +11,7 @@ export type ThemeKey =
   | "sakura"
   | "olive"
   | "graphite"
+  | "champagne"
 
 export type Theme = {
   key: ThemeKey
@@ -95,6 +96,14 @@ export const THEMES: Record<ThemeKey, Theme> = {
     accentSoft: "rgba(155, 163, 171, 0.55)",
     bgTop: "#151517",
     bgBottom: "#242428",
+  },
+  champagne: {
+    key: "champagne",
+    label: "香槟金",
+    accent: "#D4AF6A",
+    accentSoft: "rgba(212, 175, 106, 0.55)",
+    bgTop: "#171309",
+    bgBottom: "#241B0E",
   },
 }
 
