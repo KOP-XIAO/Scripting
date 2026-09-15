@@ -9,9 +9,10 @@ import { sanitizeFileName, todayStr } from "../utils/common"
 import type { Preferences } from "./preferences"
 import { getYuanbaoCookie } from "./preferences"
 import { resolveWxChannels } from "./wxchannels"
+import { isDouyinUrl, resolveDouyin } from "./douyin"
 import { appendDebug } from "./debug"
 
-export type VideoKind = "wx-channels" | "m3u8" | "direct" | "platform"
+export type VideoKind = "wx-channels" | "douyin" | "m3u8" | "direct" | "platform"
 
 export type ResolvedVideo = { label: string; url: string; ext: string }
 
@@ -40,6 +41,7 @@ const WX_RE = /^https?:\/\/([a-z0-9-]+\.)?weixin\.qq\.com\/sph\//i
 
 export const KIND_LABELS: Record<VideoKind, string> = {
   "wx-channels": "微信视频号",
+  douyin: "抖音（无水印）",
   m3u8: "m3u8 直播/点播流",
   direct: "视频直链",
   platform: "平台链接（需解析实例）",
@@ -50,6 +52,7 @@ export const KIND_LABELS: Record<VideoKind, string> = {
 // -------------------------------------------------------------
 export function detectKind(url: string): VideoKind {
   if (WX_RE.test(url)) return "wx-channels"
+  if (isDouyinUrl(url)) return "douyin"
   if (/\.m3u8(\?|#|$)/i.test(url)) return "m3u8"
   if (DIRECT_EXT_RE.test(url)) return "direct"
   return "platform"
@@ -251,6 +254,11 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     title = r.title
     targets = filterWxCodec(r.videos, opts.prefs.wxCodec)
     log(`视频号: ${title}（保存 ${targets.map((t) => t.label).join("/")}，通道 ${r.route}）`)
+  } else if (kind === "douyin") {
+    const r = await resolveDouyin(url)
+    title = r.title
+    targets = r.videos.slice(0, 1) // 默认 1080p；备份清晰度不重复下载
+    log(`抖音: ${title}（无水印直链，aweme ${r.awemeId}）`)
   } else if (kind === "platform") {
     const api = opts.prefs.cobaltApi.trim()
     if (!api) {

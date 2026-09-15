@@ -21,6 +21,7 @@ const TEXT_SECONDARY = "#9BA3AB"
 
 const KIND_SHORT: Record<string, string> = {
   "wx-channels": "视频号",
+  douyin: "抖音",
   m3u8: "M3U8",
   direct: "直链",
   platform: "平台",

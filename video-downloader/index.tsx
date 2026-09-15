@@ -741,7 +741,7 @@ function View() {
           header={<Text>下载链接</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              支持：微信视频号分享链接 / m3u8 / mp4 直链 / 平台链接（需解析实例）。
+              支持：微信视频号分享链接 / 抖音（无水印）/ m3u8 / mp4 直链 / 平台链接（需解析实例）。
               当前识别：{kindHint}
             </Text>
           }
