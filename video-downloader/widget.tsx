@@ -173,36 +173,36 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
   return (
     <ZStack alignment="bottomLeading">
       <BackgroundLayer family="medium" />
-      <HStack spacing={10} padding>
-        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
-          <HStack spacing={6}>
-            <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
-            <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
-              Video Downloader
-            </Text>
-          </HStack>
-          <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
-          </VStack>
-          <VStack padding={{ top: 6 }}>
-          <VStack padding={{ top: 6 }}>
-            <SecondRow item={snap?.second ?? null} />
-          </VStack>
+      {/* 信息列：占满整宽（右侧大 + 号是悬浮层，不挤占布局） */}
+      <VStack
+        alignment="leading"
+        spacing={6}
+        padding
+        frame={{ maxWidth: "infinity" } as never}
+        widgetURL={RUN_URL}
+      >
+        <HStack spacing={6}>
+          <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
+          <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
+            Video Downloader
+          </Text>
+        </HStack>
+        <VStack padding={{ top: 12 }}>
+          <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         </VStack>
-          <Spacer />
-          </VStack>
+        <VStack padding={{ top: 6 }}>
+          <SecondRow item={snap?.second ?? null} />
+        </VStack>
         <Spacer />
-        {/* 超大添加按钮：纯图标独占，热区拉满 */}
-        <VStack>
-          <Spacer />
+      </VStack>
+      {/* 超大 + 号：右中悬浮，不占布局、不压标题（透明设计互不干扰） */}
+      <ZStack alignment="trailing" frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        <VStack padding={{ trailing: 16 }}>
           <Link url={RUN_URL}>
-            <VStack padding={{ leading: 4, trailing: 4, top: 10, bottom: 10 }}>
-              <Image systemName="plus.circle.fill" font={48} foregroundStyle={theme.accent} />
-            </VStack>
+            <Image systemName="plus.circle.fill" font={72} foregroundStyle={theme.accent} />
           </Link>
-          <Spacer />
         </VStack>
-      </HStack>
+      </ZStack>
       {/* 左下角刷新：信息区下方空白角 */}
       <RefreshButton offsetX={3} offsetY={-3} color={theme.accentSoft} />
     </ZStack>
