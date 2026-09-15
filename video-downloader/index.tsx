@@ -110,6 +110,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
       {/* 摘要行：编号 + 标题 + 元信息 + 展开指示 */}
       <HStack
         spacing={8}
+        frame={{ maxWidth: "infinity" } as never}
         onTapGesture={() => setExpanded(!expanded)}
       >
         <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
@@ -298,7 +299,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                 setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
               }}
             >
-              <HStack spacing={10}>
+              <HStack spacing={10} frame={{ maxWidth: "infinity" } as never}>
                 {/* 三色预览：底深 / 底浅 / 强调色 */}
                 <HStack spacing={3}>
                   <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.bgTop} />
