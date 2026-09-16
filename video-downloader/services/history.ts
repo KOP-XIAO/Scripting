@@ -73,10 +73,10 @@ export function getWidgetSnapshot(): WidgetSnapshot | null {
   }
 }
 
-// 老版本升级迁移：历史已有数据但还没有快照时，回填一次
+// 每次打开 App 都重算快照（旧版快照缺新字段时也能自愈）
 export async function ensureWidgetSnapshot() {
   try {
-    if (!getWidgetSnapshot()) await syncWidgetSnapshot()
+    await syncWidgetSnapshot()
   } catch {}
 }
 

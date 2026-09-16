@@ -285,11 +285,11 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
               {item.source_url}
             </Text>
           </VStack>
-          {/* 操作行：全部压缩为一行（两字紧凑标签），删除靠右红色隔离 */}
-          <HStack spacing={6}>
+          {/* 操作区：每行一个全标签按钮（横排小按钮热区会串扰，纵向排列才可靠） */}
+          <VStack alignment="leading" spacing={6}>
             {fileExists && canSaveToPhotos(item.file_name) ? (
               <Button
-                title="相册"
+                title="保存到相册"
                 action={() =>
                   run(async () => {
                     await saveFilePathToPhotos(item.file_path, item.file_name)
@@ -299,16 +299,15 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
               />
             ) : null}
             {fileExists ? (
-              <Button title="导出" action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))} />
+              <Button title="导出到文件" action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))} />
             ) : null}
             {fileExists ? (
-              <Button title="分享" action={() => run(() => shareFile(item.file_path))} />
+              <Button title="分享文件" action={() => run(() => shareFile(item.file_path))} />
             ) : null}
-            <Button title="打开" action={() => run(() => Safari.openURL(item.source_url))} />
-            <Button title="复制" action={() => run(() => Pasteboard.setString(item.source_url))} />
-            <Spacer />
+            <Button title="打开原始链接" action={() => run(() => Safari.openURL(item.source_url))} />
+            <Button title="复制原始链接" action={() => run(() => Pasteboard.setString(item.source_url))} />
             <Button
-              title="删除"
+              title="删除记录"
               role="destructive"
               action={() =>
                 run(async () => {
@@ -322,7 +321,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
                 })
               }
             />
-          </HStack>
+          </VStack>
         </VStack>
       ) : null}
     </VStack>
