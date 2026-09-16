@@ -10,6 +10,7 @@ import type { Preferences } from "./preferences"
 import { getYuanbaoCookie } from "./preferences"
 import { resolveWxChannels } from "./wxchannels"
 import { isDouyinUrl, resolveDouyin } from "./douyin"
+import { sniffPageForVideo } from "./pagesniff"
 import { appendDebug } from "./debug"
 
 export type VideoKind = "wx-channels" | "douyin" | "m3u8" | "direct" | "platform"
@@ -260,12 +261,25 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     targets = r.videos.slice(0, 1) // 默认 1080p；备份清晰度不重复下载
     log(`抖音: ${title}（无水印直链，aweme ${r.awemeId}）`)
   } else if (kind === "platform") {
-    const api = opts.prefs.cobaltApi.trim()
-    if (!api) {
-      throw new Error("该平台链接需要解析实例：请在「设置」里填写 cobalt 兼容 API 地址后重试")
+    // 先尝试页面嗅探（腾讯云点播嵌入 / og:video / 内嵌 video_url / 裸直链），
+    // 失败再回退 cobalt 解析实例
+    try {
+      const r = await sniffPageForVideo(url)
+      title = r.title
+      targets = r.videos.slice(0, 1) // 只下最优一路
+      log(`页面嗅探命中（${r.route}）: ${title}`)
+    } catch (e) {
+      appendDebug(`页面嗅探未命中: ${e}`)
+      const api = opts.prefs.cobaltApi.trim()
+      if (!api) {
+        throw new Error(
+          `页面嗅探未命中（${e instanceof Error ? e.message : e}），且未配置解析实例：` +
+            "请在「设置 → 平台解析」里填写 cobalt 兼容 API 地址后重试",
+        )
+      }
+      targets = [await resolveViaCobalt(api, url)]
+      log(`解析成功: ${targets[0].url.slice(0, 100)}…`)
     }
-    targets = [await resolveViaCobalt(api, url)]
-    log(`解析成功: ${targets[0].url.slice(0, 100)}…`)
   } else {
     title = sanitizeFileName(url.split("/").pop()?.split("?")[0] ?? "video").replace(/\.[a-z0-9]{2,4}$/i, "")
   }
