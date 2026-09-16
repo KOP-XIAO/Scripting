@@ -196,26 +196,50 @@ function ConfettiOverlay() {
 }
 
 // -------------------------------------------------------------
-// 历史记录：摘要行（点击展开详情）+ 详情卡（纯信息展示）
-// 操作按钮不放行内——该运行时中嵌套在自定义容器里的 Button 热区会串扰；
-// 它们由父级 renderHistoryActionRows 作为 Section 直属行渲染（与设置页按钮同级，实证可靠）
+// 历史记录行：编号 + 标题 + 元信息，点按弹操作面板（Dialog.actionSheet——
+// 本运行时实证可靠的交互；自定义容器内嵌 Button 的 flatMap/嵌套方案均已否决）
 // -------------------------------------------------------------
-function HistoryRow(props: {
-  item: HistoryRecord
-  index: number
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const { item, index, expanded } = props
-  const [fileExists, setFileExists] = useState<boolean | null>(null)
+function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () => Promise<void> }) {
+  const { item, index, onChanged } = props
 
-  useEffect(() => {
-    if (expanded && fileExists === null) {
-      void FileManager.exists(item.file_path).then(setFileExists).catch(() => setFileExists(false))
+  const openActions = async () => {
+    const exists = await FileManager.exists(item.file_path)
+    const inPhotos = item.note.includes("相册")
+    const actions = [
+      ...(exists && canSaveToPhotos(item.file_name) ? [{ label: "保存到相册" }] : []),
+      ...(exists ? [{ label: "导出到文件" }, { label: "分享文件" }] : []),
+      { label: "打开原始链接" },
+      { label: "复制原始链接" },
+      { label: exists ? "删除记录和文件" : "删除记录", destructive: true },
+    ]
+    const result = await Dialog.actionSheet({
+      title: item.title || item.file_name,
+      message: `${formatDate(item.created_at)} · ${formatBytes(item.bytes_written)}${
+        item.duration_sec ? ` · ${formatDuration(item.duration_sec)}` : ""
+      }${inPhotos ? " · 已存入相册" : exists ? "" : " · 文件已不存在"}`,
+      actions,
+      cancelButton: true,
+    })
+    if (result == null || result < 0) return
+    try {
+      const label = actions[result].label
+      if (label === "保存到相册") {
+        await saveFilePathToPhotos(item.file_path, item.file_name)
+        await updateHistoryNote(item.id, "已存入相册")
+      }
+      if (label === "导出到文件") await exportFilePathToFiles(item.file_path, item.file_name)
+      if (label === "分享文件") await shareFile(item.file_path)
+      if (label === "打开原始链接") await Safari.openURL(item.source_url)
+      if (label === "复制原始链接") await Pasteboard.setString(item.source_url)
+      if (label === "删除记录") await deleteHistoryRecord(item.id)
+      if (label === "删除记录和文件") await deleteHistoryRecord(item.id, true)
+      await onChanged()
+    } catch (e) {
+      await Dialog.alert({ title: "操作失败", message: String(e) })
     }
-  }, [expanded])
+  }
 
-  const inPhotos = item.note.includes("相册")
+  // 来源显示：优先 note 里的来源标签（腾讯云点播 等），否则 kind+站点名
   const noteSource = item.note.split("·").filter((x) => x && !x.includes("相册")).join("·")
   const sourceText =
     noteSource ||
@@ -227,123 +251,29 @@ function HistoryRow(props: {
     .join(" · ")
 
   return (
-    <VStack alignment="leading" spacing={6}>
-      {/* 摘要行：编号 + 标题 + 元信息 + 展开指示 */}
-      <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={props.onToggle}>
-        <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
-          {`#${String(index + 1).padStart(2, "0")}`}
+    <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
+      <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
+        {`#${String(index + 1).padStart(2, "0")}`}
+      </Text>
+      <VStack alignment="leading" spacing={3}>
+        <Text font="subheadline" fontWeight="medium" lineLimit={1}>
+          {item.title || item.file_name}
         </Text>
-        <VStack alignment="leading" spacing={3}>
-          <Text font="subheadline" fontWeight="medium" lineLimit={1}>
-            {item.title || item.file_name}
+        <HStack spacing={6}>
+          <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
+            {meta}
           </Text>
-          <HStack spacing={6}>
-            <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
-              {meta}
+          {item.note.includes("相册") ? (
+            <Text font="caption2" foregroundStyle="systemGreen">
+              已存相册
             </Text>
-            {inPhotos ? (
-              <Text font="caption2" foregroundStyle="systemGreen">
-                已存相册
-              </Text>
-            ) : null}
-          </HStack>
-        </VStack>
-        <Spacer />
-        <Image
-          systemName={expanded ? "chevron.up" : "chevron.down"}
-          font={10}
-          foregroundStyle="tertiaryLabel"
-        />
-      </HStack>
-
-      {/* 详情卡：纯信息（按钮在 Section 直属行） */}
-      {expanded ? (
-        <VStack alignment="leading" spacing={3} padding={{ leading: 26 }}>
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {`来源 ${sourceText} · 大小 ${formatBytes(item.bytes_written)}${
-              item.duration_sec ? ` · 时长 ${formatDuration(item.duration_sec)}` : ""
-            } · ${formatDate(item.created_at)}`}
-          </Text>
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {`状态 ${inPhotos ? "已存入相册（本地副本已移除）" : fileExists ? "文件在本地" : "文件已不存在"}`}
-          </Text>
-          <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
-            {item.source_url}
-          </Text>
-        </VStack>
-      ) : null}
-    </VStack>
+          ) : null}
+        </HStack>
+      </VStack>
+      <Spacer />
+      <Image systemName="ellipsis.circle" font={12} foregroundStyle="tertiaryLabel" />
+    </HStack>
   )
-}
-
-// 展开项的操作按钮：Section 直属行（与设置页按钮同层级，热区可靠）
-function renderHistoryActionRows(
-  item: HistoryRecord,
-  fileExistsHint: boolean,
-  onChanged: () => Promise<void>,
-) {
-  const run = async (fn: () => Promise<unknown>) => {
-    try {
-      await fn()
-      await onChanged()
-    } catch (e) {
-      await Dialog.alert({ title: "操作失败", message: String(e) })
-    }
-  }
-  const rows = []
-  if (fileExistsHint && canSaveToPhotos(item.file_name)) {
-    rows.push(
-      <Button
-        key={`${item.id}-photos`}
-        title="保存到相册"
-        action={() =>
-          run(async () => {
-            await saveFilePathToPhotos(item.file_path, item.file_name)
-            await updateHistoryNote(item.id, "已存入相册")
-          })
-        }
-      />,
-    )
-  }
-  if (fileExistsHint) {
-    rows.push(
-      <Button
-        key={`${item.id}-export`}
-        title="导出到文件"
-        action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))}
-      />,
-      <Button key={`${item.id}-share`} title="分享文件" action={() => run(() => shareFile(item.file_path))} />,
-    )
-  }
-  rows.push(
-    <Button
-      key={`${item.id}-open`}
-      title="打开原始链接"
-      action={() => run(() => Safari.openURL(item.source_url))}
-    />,
-    <Button
-      key={`${item.id}-copy`}
-      title="复制原始链接"
-      action={() => run(() => Pasteboard.setString(item.source_url))}
-    />,
-    <Button
-      key={`${item.id}-del`}
-      title="删除记录"
-      role="destructive"
-      action={() =>
-        run(async () => {
-          const ok = await Dialog.confirm({
-            title: "删除记录",
-            message: fileExistsHint ? "将同时删除已下载的文件。" : "删除这条历史记录？",
-            confirmLabel: fileExistsHint ? "删除文件和记录" : "删除",
-            cancelLabel: "取消",
-          })
-          if (ok) await deleteHistoryRecord(item.id, !!fileExistsHint)
-        })
-      }
-    />,
-  )
-  return rows
 }
 
 // -------------------------------------------------------------
@@ -351,43 +281,18 @@ function renderHistoryActionRows(
 // -------------------------------------------------------------
 function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise<void> }) {
   const { history, onChanged } = props
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [expandedFileExists, setExpandedFileExists] = useState(false)
-
-  const toggleExpand = async (item: HistoryRecord) => {
-    if (expandedId === item.id) {
-      setExpandedId(null)
-      return
-    }
-    setExpandedId(item.id)
-    setExpandedFileExists(await FileManager.exists(item.file_path))
-  }
-
   return (
     <List navigationTitle="全部下载历史" navigationBarTitleDisplayMode="inline">
       <Section
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            点按记录展开详情与操作；共 {history.length} 条。
+            点按记录打开操作面板；共 {history.length} 条。
           </Text>
         }
       >
-        {history.flatMap((item, i) => {
-          const expanded = expandedId === item.id
-          const rows = [
-            <HistoryRow
-              key={item.id}
-              item={item}
-              index={i}
-              expanded={expanded}
-              onToggle={() => void toggleExpand(item)}
-            />,
-          ]
-          if (expanded) {
-            rows.push(...renderHistoryActionRows(item, expandedFileExists, onChanged))
-          }
-          return rows
-        })}
+        {history.map((item, i) => (
+          <HistoryRow key={item.id} item={item} index={i} onChanged={onChanged} />
+        ))}
       </Section>
     </List>
   )
@@ -407,17 +312,6 @@ function View() {
   const [history, setHistory] = useState<HistoryRecord[]>([])
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [expandedFileExists, setExpandedFileExists] = useState(false)
-
-  const toggleExpand = async (item: HistoryRecord) => {
-    if (expandedId === item.id) {
-      setExpandedId(null)
-      return
-    }
-    setExpandedId(item.id)
-    setExpandedFileExists(await FileManager.exists(item.file_path))
-  }
 
   const fireConfetti = () => {
     setCelebrate(true)
@@ -694,22 +588,9 @@ function View() {
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
-            history.slice(0, 5).flatMap((item, i) => {
-              const expanded = expandedId === item.id
-              const rows = [
-                <HistoryRow
-                  key={item.id}
-                  item={item}
-                  index={i}
-                  expanded={expanded}
-                  onToggle={() => void toggleExpand(item)}
-                />,
-              ]
-              if (expanded) {
-                rows.push(...renderHistoryActionRows(item, expandedFileExists, refreshHistory))
-              }
-              return rows
-            })
+            history.slice(0, 5).map((item, i) => (
+              <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
+            ))
           )}
           {history.length > 5 ? (
             <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
