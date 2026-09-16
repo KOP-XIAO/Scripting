@@ -51,7 +51,13 @@ function LatestInfo({
   const line1 = [formatBytes(item.bytes), formatDuration(item.durationSec)].filter(Boolean).join(" · ")
   return (
     <VStack alignment="leading" spacing={3}>
-      <Text font="subheadline" fontWeight="semibold" lineLimit={lines} foregroundStyle={TEXT_PRIMARY}>
+      {/* reservesSpace:true 才会真的保住两行高度——裸 lineLimit 只是上限，布局一压就回到一行 */}
+      <Text
+        font="subheadline"
+        fontWeight="semibold"
+        lineLimit={{ min: 2, max: 2, reservesSpace: true }}
+        foregroundStyle={TEXT_PRIMARY}
+      >
         {item.title || item.fileName}
       </Text>
       <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
