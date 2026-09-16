@@ -54,7 +54,7 @@ function LatestInfo({
     item.resolution ? `${item.resolution} ${item.format ?? ""}`.trim() : "",
   ]
     .filter(Boolean)
-    .join(" · ")
+    .join(" | ")
   return (
     <VStack alignment="leading" spacing={3}>
       {/* reservesSpace:true 才会真的保住两行高度——裸 lineLimit 只是上限，布局一压就回到一行 */}
@@ -72,6 +72,9 @@ function LatestInfo({
       <HStack spacing={4}>
         <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
           {formatDate(item.createdAt).slice(5)}
+        </Text>
+        <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY}>
+          |
         </Text>
         <Text font="caption2" monospaced foregroundStyle={accent} lineLimit={1}>
           {item.kind === "platform" && item.host
