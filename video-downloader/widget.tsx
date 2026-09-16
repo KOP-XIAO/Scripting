@@ -48,7 +48,13 @@ function LatestInfo({
       </VStack>
     )
   }
-  const line1 = [formatBytes(item.bytes), formatDuration(item.durationSec)].filter(Boolean).join(" · ")
+  const line1 = [
+    formatBytes(item.bytes),
+    formatDuration(item.durationSec),
+    item.resolution ? `${item.resolution} ${item.format ?? ""}`.trim() : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
   return (
     <VStack alignment="leading" spacing={3}>
       {/* reservesSpace:true 才会真的保住两行高度——裸 lineLimit 只是上限，布局一压就回到一行 */}
@@ -72,11 +78,6 @@ function LatestInfo({
             ? prettySource(`https://${item.host}`)
             : KIND_SHORT[item.kind] ?? item.kind}
         </Text>
-        {item.resolution ? (
-          <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
-            {item.resolution}
-          </Text>
-        ) : null}
       </HStack>
     </VStack>
   )
