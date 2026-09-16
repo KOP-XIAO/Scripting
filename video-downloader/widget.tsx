@@ -62,7 +62,7 @@ function LatestInfo({
           {formatDate(item.createdAt).slice(5)}
         </Text>
         <Text font="caption2" monospaced foregroundStyle={accent} lineLimit={1}>
-          {item.kind === "platform"
+          {item.kind === "platform" && item.host
             ? prettySource(`https://${item.host}`)
             : KIND_SHORT[item.kind] ?? item.kind}
         </Text>
