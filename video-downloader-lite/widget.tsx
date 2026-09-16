@@ -144,7 +144,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
       <BackgroundLayer family="small" />
       <VStack alignment="leading" spacing={6} padding widgetURL={RUN_URL}>
         <HStack spacing={6}>
-          <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
+          <Image systemName="play.rectangle.fill" font={14} foregroundStyle={theme.accent} />
           <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
             Video Downloader
           </Text>
@@ -179,7 +179,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
-            <Image systemName="arrow.down.circle.fill" font={14} foregroundStyle={theme.accent} />
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={theme.accent} />
             <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
               Video Downloader
             </Text>

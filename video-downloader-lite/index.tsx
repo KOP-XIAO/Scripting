@@ -258,7 +258,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
         {`#${String(index + 1).padStart(2, "0")}`}
       </Text>
       <VStack alignment="leading" spacing={3}>
-        <Text font="subheadline" fontWeight="medium" lineLimit={1}>
+        <Text font="subheadline" fontWeight="medium" lineLimit={2}>
           {item.title || item.file_name}
         </Text>
         <HStack spacing={6}>
