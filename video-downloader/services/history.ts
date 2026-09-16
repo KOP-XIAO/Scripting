@@ -81,8 +81,11 @@ export function getWidgetSnapshot(): WidgetSnapshot | null {
 }
 
 // 老记录回填：缺时长/清晰度且文件还在本地的，逐条探测补上
+export const LAST_BACKFILL_KEY = "vdl.lastBackfill"
+
 export async function backfillMediaInfo(): Promise<number> {
   let fixed = 0
+  let skippedNoFile = 0
   try {
     const database = await getDatabase()
     const rows = await database.fetchAll<HistoryRecord>(
@@ -90,7 +93,10 @@ export async function backfillMediaInfo(): Promise<number> {
        WHERE (duration_sec = 0 OR resolution = '') LIMIT 30`,
     )
     for (const r of rows) {
-      if (!(await FileManager.exists(r.file_path))) continue
+      if (!(await FileManager.exists(r.file_path))) {
+        skippedNoFile++
+        continue
+      }
       const m = await probeMedia(r.file_path)
       const res = m.height > 0 ? resolutionLabel(m.width, m.height) : ""
       const fmt = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
@@ -101,6 +107,14 @@ export async function backfillMediaInfo(): Promise<number> {
       fixed++
     }
     if (fixed) await syncWidgetSnapshot()
+    try {
+      Storage.set(LAST_BACKFILL_KEY, {
+        at: new Date().toISOString(),
+        need: rows.length,
+        fixed,
+        skippedNoFile,
+      })
+    } catch {}
   } catch {}
   return fixed
 }

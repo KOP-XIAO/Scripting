@@ -577,6 +577,22 @@ function DiagnosticsPage() {
             {logs.length}
           </Text>
         </HStack>
+        {(() => {
+          const bf = Storage.get<{ at: string; need: number; fixed: number; skippedNoFile: number }>(
+            "vdl.lastBackfill",
+          )
+          return (
+            <HStack>
+              <Text>上次回填</Text>
+              <Spacer />
+              <Text monospaced foregroundStyle="secondaryLabel">
+                {bf
+                  ? `需补 ${bf.need} · 已补 ${bf.fixed} · 无本地文件 ${bf.skippedNoFile}`
+                  : "未运行过（本次打开后会自动执行）"}
+              </Text>
+            </HStack>
+          )
+        })()}
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
           下载目录：{FileManager.documentsDirectory}/Video/Downloads
         </Text>

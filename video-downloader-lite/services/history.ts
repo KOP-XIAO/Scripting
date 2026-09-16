@@ -206,13 +206,19 @@ export async function updateHistoryNote(id: string, note: string) {
 }
 
 // 老记录回填：缺时长/清晰度且文件还在本地的，逐条探测补上（每次最多 30 条，防启动卡顿）
+export const LAST_BACKFILL_KEY = "vdl.lastBackfill"
+
 export async function backfillMediaInfo(): Promise<number> {
   let fixed = 0
+  let skippedNoFile = 0
   try {
     const all = await readAll()
     const need = all.filter((r) => (!r.duration_sec || !r.resolution) && r.file_path)
     for (const r of need.slice(0, 30)) {
-      if (!(await FileManager.exists(r.file_path))) continue
+      if (!(await FileManager.exists(r.file_path))) {
+        skippedNoFile++
+        continue
+      }
       const m = await probeMedia(r.file_path)
       if (m.durationSec > 0) r.duration_sec = m.durationSec
       if (m.height > 0) {
@@ -225,6 +231,14 @@ export async function backfillMediaInfo(): Promise<number> {
       await writeAll(all)
       writeWidgetSnapshot(all)
     }
+    try {
+      Storage.set(LAST_BACKFILL_KEY, {
+        at: new Date().toISOString(),
+        need: need.length,
+        fixed,
+        skippedNoFile,
+      })
+    } catch {}
   } catch {}
   return fixed
 }
