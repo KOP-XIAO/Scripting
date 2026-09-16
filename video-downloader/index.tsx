@@ -715,6 +715,23 @@ function View() {
     else await Dialog.alert({ message: "剪贴板里没有找到 http(s) 链接" })
   }
 
+  // 底部按钮：剪贴板有链接 → 填入并开始；否则用输入框已有内容；都没有才提示
+  const pasteAndDownload = async () => {
+    if (loading) return
+    const text = await Pasteboard.getString()
+    const found = text ? extractFirstURL(text) : null
+    if (found) {
+      setInputURL(found)
+      void handleDownload(found)
+      return
+    }
+    if (extractFirstURL(inputURL)) {
+      void handleDownload()
+      return
+    }
+    await Dialog.alert({ message: "剪贴板和输入框里都没有 http(s) 链接" })
+  }
+
   const handleDownload = async (directUrl?: string) => {
     if (loading) return
     const url = directUrl ?? extractFirstURL(inputURL) ?? ""
@@ -823,9 +840,9 @@ function View() {
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
             <Button
-              title={loading ? "下载中…" : "⬇  开始下载"}
+              title={loading ? "下载中…" : "⬇  粘贴并下载"}
               disabled={loading}
-              action={() => void handleDownload()}
+              action={() => void pasteAndDownload()}
             />
           ),
         }}
