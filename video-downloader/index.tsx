@@ -858,7 +858,7 @@ function View() {
     <NavigationStack>
       <ZStack>
       <List
-        navigationTitle="视频下载器"
+        navigationTitle={`视频下载器 · v${VERSION}`}
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
