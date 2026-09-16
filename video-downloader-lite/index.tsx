@@ -196,11 +196,17 @@ function ConfettiOverlay() {
 }
 
 // -------------------------------------------------------------
-// 历史记录行：编号 + 单行摘要，点击展开详情卡（信息 + 内联操作按钮）
+// 历史记录：摘要行（点击展开详情）+ 详情卡（纯信息展示）
+// 操作按钮不放行内——该运行时中嵌套在自定义容器里的 Button 热区会串扰；
+// 它们由父级 renderHistoryActionRows 作为 Section 直属行渲染（与设置页按钮同级，实证可靠）
 // -------------------------------------------------------------
-function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () => Promise<void> }) {
-  const { item, index, onChanged } = props
-  const [expanded, setExpanded] = useState(false)
+function HistoryRow(props: {
+  item: HistoryRecord
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const { item, index, expanded } = props
   const [fileExists, setFileExists] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -210,39 +216,20 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
   }, [expanded])
 
   const inPhotos = item.note.includes("相册")
-  // 来源显示：优先取 note 里的来源标签（腾讯云点播 等），否则 kind+站点名
   const noteSource = item.note.split("·").filter((x) => x && !x.includes("相册")).join("·")
   const sourceText =
     noteSource ||
     (item.kind === "platform"
       ? `平台·${prettySource(item.source_url)}`
       : KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind)
-  const meta = [
-    sourceText,
-    formatBytes(item.bytes_written),
-    formatDuration(item.duration_sec ?? 0),
-    formatDate(item.created_at),
-  ]
+  const meta = [sourceText, formatBytes(item.bytes_written), formatDuration(item.duration_sec ?? 0), formatDate(item.created_at)]
     .filter(Boolean)
     .join(" · ")
-
-  const run = async (fn: () => Promise<unknown>) => {
-    try {
-      await fn()
-      await onChanged()
-    } catch (e) {
-      await Dialog.alert({ title: "操作失败", message: String(e) })
-    }
-  }
 
   return (
     <VStack alignment="leading" spacing={6}>
       {/* 摘要行：编号 + 标题 + 元信息 + 展开指示 */}
-      <HStack
-        spacing={8}
-        frame={{ maxWidth: "infinity" } as never}
-        onTapGesture={() => setExpanded(!expanded)}
-      >
+      <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={props.onToggle}>
         <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
@@ -269,412 +256,94 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
         />
       </HStack>
 
-      {/* 展开的详情卡 */}
+      {/* 详情卡：纯信息（按钮在 Section 直属行） */}
       {expanded ? (
-        <VStack alignment="leading" spacing={8} padding={{ leading: 26 }}>
-          <VStack alignment="leading" spacing={3}>
-            <Text font="caption" foregroundStyle="secondaryLabel">
-              {`来源 ${sourceText} · 大小 ${formatBytes(item.bytes_written)}${
-                item.duration_sec ? ` · 时长 ${formatDuration(item.duration_sec)}` : ""
-              } · ${formatDate(item.created_at)}`}
-            </Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">
-              {`状态 ${inPhotos ? "已存入相册（本地副本已移除）" : fileExists ? "文件在本地" : "文件已不存在"}`}
-            </Text>
-            <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
-              {item.source_url}
-            </Text>
-          </VStack>
-          {/* 操作区：每行一个全标签按钮（横排小按钮热区会串扰，纵向排列才可靠） */}
-          <VStack alignment="leading" spacing={6}>
-            {fileExists && canSaveToPhotos(item.file_name) ? (
-              <Button
-                title="保存到相册"
-                action={() =>
-                  run(async () => {
-                    await saveFilePathToPhotos(item.file_path, item.file_name)
-                    await updateHistoryNote(item.id, "已存入相册")
-                  })
-                }
-              />
-            ) : null}
-            {fileExists ? (
-              <Button title="导出到文件" action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))} />
-            ) : null}
-            {fileExists ? (
-              <Button title="分享文件" action={() => run(() => shareFile(item.file_path))} />
-            ) : null}
-            <Button title="打开原始链接" action={() => run(() => Safari.openURL(item.source_url))} />
-            <Button title="复制原始链接" action={() => run(() => Pasteboard.setString(item.source_url))} />
-            <Button
-              title="删除记录"
-              role="destructive"
-              action={() =>
-                run(async () => {
-                  const ok = await Dialog.confirm({
-                    title: "删除记录",
-                    message: fileExists ? "将同时删除已下载的文件。" : "删除这条历史记录？",
-                    confirmLabel: fileExists ? "删除文件和记录" : "删除",
-                    cancelLabel: "取消",
-                  })
-                  if (ok) await deleteHistoryRecord(item.id, !!fileExists)
-                })
-              }
-            />
-          </VStack>
+        <VStack alignment="leading" spacing={3} padding={{ leading: 26 }}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            {`来源 ${sourceText} · 大小 ${formatBytes(item.bytes_written)}${
+              item.duration_sec ? ` · 时长 ${formatDuration(item.duration_sec)}` : ""
+            } · ${formatDate(item.created_at)}`}
+          </Text>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            {`状态 ${inPhotos ? "已存入相册（本地副本已移除）" : fileExists ? "文件在本地" : "文件已不存在"}`}
+          </Text>
+          <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
+            {item.source_url}
+          </Text>
         </VStack>
       ) : null}
     </VStack>
   )
 }
 
-// -------------------------------------------------------------
-// 设置页
-// -------------------------------------------------------------
-function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => void }) {
-  const { prefs, onSave } = props
-  const [draft, setDraft] = useState<Preferences>({ ...prefs })
-  const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
-  const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
-
-  return (
-    <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="bubble.left.and.bubble.right" font={11} foregroundStyle="secondaryLabel" />
-            <Text>视频号解析</Text>
-          </HStack>
-        }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            上游在线解析服务已停服。填入元宝 Cookie 后改用本地两步解析（不走第三方服务）：
-            电脑浏览器登录 yuanbao.tencent.com → 开发者工具 → Network 任选一个请求 →
-            复制其 Cookie 请求头整串粘贴到这里。Cookie 保存在系统钥匙串，仅本机使用。
-          </Text>
-        }
-      >
-        <TextField
-          title="元宝 Cookie"
-          value={cookieDraft}
-          onChanged={(v) => {
-            setCookieDraft(v)
-            setYuanbaoCookie(v)
-          }}
-          prompt="pgv_pvid=...; hy_token=...（可留空尝试在线服务）"
-        />
-        <HStack>
-          <Text font="caption" foregroundStyle={cookieDraft.trim() ? "systemGreen" : "secondaryLabel"}>
-            {cookieDraft.trim() ? "✓ 已配置，视频号将走本地解析" : "未配置：视频号走在线服务（可能不可用）"}
-          </Text>
-          <Spacer />
-          {cookieDraft.trim() ? (
-            <Button
-              title="清除"
-              role="destructive"
-              action={() => {
-                setCookieDraft("")
-                setYuanbaoCookie("")
-              }}
-            />
-          ) : null}
-        </HStack>
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="globe" font={11} foregroundStyle="secondaryLabel" />
-            <Text>平台解析</Text>
-          </HStack>
-        }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            用于 YouTube、Instagram、B站、X、抖音等平台链接。填自建或信任的 cobalt 兼容实例地址，
-            脚本向其 POST 换取直链（自动兼容新版 / 与旧版 /api/json 端点）。留空则平台链接不可用。
-          </Text>
-        }
-      >
-        <TextField
-          title="解析实例"
-          value={draft.cobaltApi}
-          onChanged={(v) => update({ cobaltApi: v })}
-          prompt="https://cobalt.example.com"
-        />
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="paintpalette" font={11} foregroundStyle="secondaryLabel" />
-            <Text>外观主题</Text>
-          </HStack>
-        }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            影响小组件背景与按钮配色、日志终端的点缀色；切换后小组件立即换肤。
-          </Text>
-        }
-      >
-        {(() => {
-          // 色板网格：点色块即选中，点击区域=视觉区域，无热区歧义
-          const keys = Object.keys(THEMES) as ThemeKey[]
-          const rows: ThemeKey[][] = [keys.slice(0, 5), keys.slice(5)]
-          return rows.map((row, ri) => (
-            <HStack key={ri} spacing={0}>
-              {row.flatMap((k, i) => {
-                const t = THEMES[k]
-                const selected = k === themeKey
-                const chip = (
-                  <Button
-                    key={k}
-                    buttonStyle="plain"
-                    action={() => {
-                      setThemeKeyLocal(k)
-                      setThemeKey(k) // 内部会 Widget.reloadAll()，小组件立即换肤
-                    }}
-                  >
-                    <ZStack frame={{ width: 44, height: 44 }}>
-                      {/* 底层：主题背景色（渐变浅端） */}
-                      <RoundedRectangle frame={{ width: 44, height: 44 }} cornerRadius={10} fill={t.bgBottom} />
-                      {/* 中层：渐变深端的小角块，示意渐变方向 */}
-                      <RoundedRectangle
-                        frame={{ width: 22, height: 22 }}
-                        cornerRadius={7}
-                        fill={t.bgTop}
-                        offset={{ x: -8, y: -8 }}
-                      />
-                      {/* 前景：强调色圆点 */}
-                      <RoundedRectangle frame={{ width: 16, height: 16 }} cornerRadius={8} fill={t.accent} offset={{ x: 6, y: 6 }} />
-                      {/* 选中态：右上角主题色勾 */}
-                      {selected ? (
-                        <Image
-                          systemName="checkmark.circle.fill"
-                          font={14}
-                          foregroundStyle={t.accent}
-                          offset={{ x: 16, y: -16 }}
-                        />
-                      ) : null}
-                    </ZStack>
-                  </Button>
-                )
-                // 芯片之间用 Spacer 均分，让每行铺满整个宽度
-                return i === 0 ? [chip] : [<Spacer key={`sp-${k}`} />, chip]
-              })}
-            </HStack>
-          ))
-        })()}
-        <HStack spacing={6}>
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            当前主题
-          </Text>
-          <RoundedRectangle frame={{ width: 10, height: 10 }} cornerRadius={5} fill={THEMES[themeKey].accent} />
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {THEMES[themeKey].label}
-          </Text>
-        </HStack>
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="arrow.down.to.line" font={11} foregroundStyle="secondaryLabel" />
-            <Text>下载行为</Text>
-          </HStack>
-        }
-      >
-        <Button title={`默认动作：${SAVE_MODE_LABELS[draft.defaultSaveMode]}`} action={() => void chooseSaveMode()} />
-        <Button title={`视频号编码：${WX_CODEC_LABELS[draft.wxCodec]}`} action={() => void chooseWxCodec()} />
-        <Toggle
-          title="m3u8 下载后转码为 mp4（Pro 专属，免费版自动保留 .ts）"
-          value={draft.transcodeTsToMp4}
-          onChanged={(v) => update({ transcodeTsToMp4: v })}
-        />
-        <Toggle
-          title="小组件进入后自动开始下载"
-          value={draft.autoStartOnEntry}
-          onChanged={(v) => update({ autoStartOnEntry: v })}
-        />
-        <Toggle
-          title="历史去重（同链接跳过下载）"
-          value={draft.dedupe}
-          onChanged={(v) => update({ dedupe: v })}
-        />
-        <TextField
-          title="大小上限 MB（0 = 不限）"
-          value={String(draft.maxMB)}
-          onChanged={(v) => update({ maxMB: Math.max(0, Number(v) || 0) })}
-        />
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="stethoscope" font={11} foregroundStyle="secondaryLabel" />
-            <Text>诊断</Text>
-          </HStack>
-        }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            开启后下载过程会写入诊断日志，可在首页「诊断中心」查看与导出。
-          </Text>
-        }
-      >
-        <Toggle title="记录诊断日志" value={draft.debugLog} onChanged={(v) => update({ debugLog: v })} />
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="info.circle" font={11} foregroundStyle="secondaryLabel" />
-            <Text>关于</Text>
-          </HStack>
-        }
-      >
-        <HStack>
-          <Text>版本</Text>
-          <Spacer />
-          <Text foregroundStyle="secondaryLabel" monospaced>
-            v{VERSION}
-          </Text>
-        </HStack>
-        <Link url="https://github.com/KOP-XIAO/Scripting">
-          <HStack spacing={4}>
-            <Text>源码仓库</Text>
-            <Image systemName="arrow.up.right" font={10} foregroundStyle="secondaryLabel" />
-          </HStack>
-        </Link>
-        <Text font="caption" foregroundStyle="secondaryLabel">
-          视频号本地解析移植自 ltaoo/wx_channels_download；平台解析兼容 cobalt API。
-        </Text>
-      </Section>
-    </List>
-  )
-}
-
-// -------------------------------------------------------------
-// 诊断中心（终端风日志 + 范围导出）
-// -------------------------------------------------------------
-function DiagnosticsPage() {
-  const [logs, setLogs] = useState<string[]>(getDebugLog())
-  const [historyCount, setHistoryCount] = useState(0)
-
-  useEffect(() => {
-    void countHistory().then(setHistoryCount).catch(() => {})
-  }, [])
-
-  const doExport = async () => {
-    // 范围选择：全部 / 最近 50 / 最近 20 / 仅错误
-    const idx = await Dialog.actionSheet({
-      title: "导出范围",
-      message: `当前共 ${logs.length} 条诊断日志`,
-      actions: [
-        { label: `全部日志（${logs.length} 条）` },
-        { label: "最近 50 条" },
-        { label: "最近 20 条" },
-        { label: "仅错误与失败" },
-      ],
-      cancelButton: true,
-    })
-    if (idx == null || idx < 0) return
-    const picked: { logs: string[]; label: string } =
-      idx === 0
-        ? { logs, label: `全部（${logs.length} 条）` }
-        : idx === 1
-          ? { logs: logs.slice(-50), label: "最近 50 条" }
-          : idx === 2
-            ? { logs: logs.slice(-20), label: "最近 20 条" }
-            : { logs: logs.filter((l) => ERROR_LINE_RE.test(l)), label: "仅错误与失败" }
+// 展开项的操作按钮：Section 直属行（与设置页按钮同层级，热区可靠）
+function renderHistoryActionRows(
+  item: HistoryRecord,
+  fileExistsHint: boolean,
+  onChanged: () => Promise<void>,
+) {
+  const run = async (fn: () => Promise<unknown>) => {
     try {
-      const path = await exportDebugPackage({ historyCount }, picked)
-      await ShareSheet.present([path])
+      await fn()
+      await onChanged()
     } catch (e) {
-      await Dialog.alert({ title: "导出失败", message: String(e) })
+      await Dialog.alert({ title: "操作失败", message: String(e) })
     }
   }
-
-  const shown = logs.slice(-40).reverse()
-
-  return (
-    <List navigationTitle="诊断中心" navigationBarTitleDisplayMode="inline">
-      <Section title="概览">
-        <HStack>
-          <Text>版本</Text>
-          <Spacer />
-          <Text monospaced foregroundStyle="secondaryLabel">
-            v{VERSION}
-          </Text>
-        </HStack>
-        <HStack>
-          <Text>历史记录</Text>
-          <Spacer />
-          <Text monospaced foregroundStyle="secondaryLabel">
-            {historyCount}
-          </Text>
-        </HStack>
-        <HStack>
-          <Text>诊断日志</Text>
-          <Spacer />
-          <Text monospaced foregroundStyle="secondaryLabel">
-            {logs.length}
-          </Text>
-        </HStack>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
-          下载目录：{FileManager.documentsDirectory}/Video/Downloads
-        </Text>
-      </Section>
-
-      <Section title="操作">
-        <Button title="导出诊断包（可选范围）" action={() => void doExport()} />
-        <Button
-          title="清空诊断日志"
-          role="destructive"
-          action={() => {
-            clearDebugLog()
-            setLogs([])
-          }}
-        />
-      </Section>
-
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
-            <Text>日志终端</Text>
-          </HStack>
+  const rows = []
+  if (fileExistsHint && canSaveToPhotos(item.file_name)) {
+    rows.push(
+      <Button
+        key={`${item.id}-photos`}
+        title="保存到相册"
+        action={() =>
+          run(async () => {
+            await saveFilePathToPhotos(item.file_path, item.file_name)
+            await updateHistoryNote(item.id, "已存入相册")
+          })
         }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            红色为错误/失败行；导出时可只选这部分。此处显示最近 40 条。
-          </Text>
-        }
-      >
-        {shown.length === 0 ? (
-          <Text foregroundStyle="secondaryLabel">暂无日志。</Text>
-        ) : (
-          <ZStack>
-            <RoundedRectangle cornerRadius={10} fill="#0D1117" />
-            <VStack alignment="leading" spacing={3} padding={10}>
-              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                vdl@ios:~$ diag --tail 40
-              </Text>
-              {shown.map((l, i) => (
-                <Text
-                  key={i}
-                  font="caption2"
-                  monospaced
-                  foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
-                  lineLimit={2}
-                >
-                  {l}
-                </Text>
-              ))}
-            </VStack>
-          </ZStack>
-        )}
-      </Section>
-    </List>
+      />,
+    )
+  }
+  if (fileExistsHint) {
+    rows.push(
+      <Button
+        key={`${item.id}-export`}
+        title="导出到文件"
+        action={() => run(() => exportFilePathToFiles(item.file_path, item.file_name))}
+      />,
+      <Button key={`${item.id}-share`} title="分享文件" action={() => run(() => shareFile(item.file_path))} />,
+    )
+  }
+  rows.push(
+    <Button
+      key={`${item.id}-open`}
+      title="打开原始链接"
+      action={() => run(() => Safari.openURL(item.source_url))}
+    />,
+    <Button
+      key={`${item.id}-copy`}
+      title="复制原始链接"
+      action={() => run(() => Pasteboard.setString(item.source_url))}
+    />,
+    <Button
+      key={`${item.id}-del`}
+      title="删除记录"
+      role="destructive"
+      action={() =>
+        run(async () => {
+          const ok = await Dialog.confirm({
+            title: "删除记录",
+            message: fileExistsHint ? "将同时删除已下载的文件。" : "删除这条历史记录？",
+            confirmLabel: fileExistsHint ? "删除文件和记录" : "删除",
+            cancelLabel: "取消",
+          })
+          if (ok) await deleteHistoryRecord(item.id, !!fileExistsHint)
+        })
+      }
+    />,
   )
+  return rows
 }
 
 // -------------------------------------------------------------
@@ -682,6 +351,18 @@ function DiagnosticsPage() {
 // -------------------------------------------------------------
 function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise<void> }) {
   const { history, onChanged } = props
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedFileExists, setExpandedFileExists] = useState(false)
+
+  const toggleExpand = async (item: HistoryRecord) => {
+    if (expandedId === item.id) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(item.id)
+    setExpandedFileExists(await FileManager.exists(item.file_path))
+  }
+
   return (
     <List navigationTitle="全部下载历史" navigationBarTitleDisplayMode="inline">
       <Section
@@ -691,9 +372,22 @@ function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise
           </Text>
         }
       >
-        {history.map((item, i) => (
-          <HistoryRow key={item.id} item={item} index={i} onChanged={onChanged} />
-        ))}
+        {history.flatMap((item, i) => {
+          const expanded = expandedId === item.id
+          const rows = [
+            <HistoryRow
+              key={item.id}
+              item={item}
+              index={i}
+              expanded={expanded}
+              onToggle={() => void toggleExpand(item)}
+            />,
+          ]
+          if (expanded) {
+            rows.push(...renderHistoryActionRows(item, expandedFileExists, onChanged))
+          }
+          return rows
+        })}
       </Section>
     </List>
   )
@@ -713,6 +407,17 @@ function View() {
   const [history, setHistory] = useState<HistoryRecord[]>([])
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedFileExists, setExpandedFileExists] = useState(false)
+
+  const toggleExpand = async (item: HistoryRecord) => {
+    if (expandedId === item.id) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(item.id)
+    setExpandedFileExists(await FileManager.exists(item.file_path))
+  }
 
   const fireConfetti = () => {
     setCelebrate(true)
@@ -989,9 +694,22 @@ function View() {
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
-            history.slice(0, 5).map((item, i) => (
-              <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
-            ))
+            history.slice(0, 5).flatMap((item, i) => {
+              const expanded = expandedId === item.id
+              const rows = [
+                <HistoryRow
+                  key={item.id}
+                  item={item}
+                  index={i}
+                  expanded={expanded}
+                  onToggle={() => void toggleExpand(item)}
+                />,
+              ]
+              if (expanded) {
+                rows.push(...renderHistoryActionRows(item, expandedFileExists, refreshHistory))
+              }
+              return rows
+            })
           )}
           {history.length > 5 ? (
             <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
