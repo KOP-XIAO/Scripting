@@ -8,7 +8,7 @@
 import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
 import { getTheme } from "./services/theme"
-import { formatBytes, formatDate, formatDuration } from "./utils/common"
+import { formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
 import { ReloadWidgetIntent } from "./app_intents"
 
 const SCRIPT_NAME = "Video Downloader"
@@ -62,7 +62,9 @@ function LatestInfo({
           {formatDate(item.createdAt).slice(5)}
         </Text>
         <Text font="caption2" monospaced foregroundStyle={accent} lineLimit={1}>
-          {KIND_SHORT[item.kind] ?? item.kind}
+          {item.kind === "platform"
+            ? prettySource(`https://${item.host}`)
+            : KIND_SHORT[item.kind] ?? item.kind}
         </Text>
       </HStack>
     </VStack>

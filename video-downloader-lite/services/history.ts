@@ -3,7 +3,7 @@
 // FileManager 为全局对象，禁止从 scripting 导入。
 
 import { Path } from "scripting"
-import { newId } from "../utils/common"
+import { newId, hostOf } from "../utils/common"
 
 export type HistoryRecord = {
   id: string
@@ -42,6 +42,7 @@ export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
 export type WidgetSnapshotItem = {
   kind: string
+  host: string
   title: string
   fileName: string
   bytes: number
@@ -60,6 +61,7 @@ export type WidgetSnapshot = {
 function toSnapshotItem(r: HistoryRecord): WidgetSnapshotItem {
   return {
     kind: r.kind,
+    host: hostOf(r.source_url),
     title: r.title,
     fileName: r.file_name,
     bytes: r.bytes_written,
@@ -185,7 +187,8 @@ export async function updateHistoryNote(id: string, note: string) {
   const all = await readAll()
   const target = all.find((r) => r.id === id)
   if (target) {
-    target.note = note
+    // 追加而非覆盖：保留来源标签（腾讯云点播 等），重复则不追加
+    target.note = target.note ? (target.note.includes(note) ? target.note : `${target.note}·${note}`) : note
     await writeAll(all)
     writeWidgetSnapshot(all)
   }

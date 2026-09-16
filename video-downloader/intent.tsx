@@ -102,6 +102,7 @@ async function run() {
         fileName: f.name,
         bytesWritten: f.bytes,
         durationSec: f.durationSec,
+        note: outcome.sourceLabel,
       })
       inserted.push(rec.id)
     }

@@ -24,6 +24,7 @@ export type DownloadOutcome = {
   title: string
   dir: string
   files: DownloadedFile[]
+  sourceLabel?: string // 具体来源（腾讯云点播/抖音H5/cobalt…），用于历史展示
 }
 
 export type RunOptions = {
@@ -248,17 +249,21 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
   // 解析出直链清单
   let title = "video"
   let targets: ResolvedVideo[] = []
+  let sourceLabel = ""
+  
   if (kind === "wx-channels") {
     const cookie = getYuanbaoCookie()
     log(cookie ? "视频号解析：本地元宝通道" : "视频号解析：在线服务（未配置元宝 Cookie）")
     const r = await resolveWxChannels(url, cookie)
     title = r.title
     targets = filterWxCodec(r.videos, opts.prefs.wxCodec)
+    sourceLabel = r.route === "yuanbao-local" ? "视频号·本地解析" : "视频号·在线服务"
     log(`视频号: ${title}（保存 ${targets.map((t) => t.label).join("/")}，通道 ${r.route}）`)
   } else if (kind === "douyin") {
     const r = await resolveDouyin(url)
     title = r.title
     targets = r.videos.slice(0, 1) // 默认 1080p；备份清晰度不重复下载
+    sourceLabel = "抖音·无水印"
     log(`抖音: ${title}（无水印直链，aweme ${r.awemeId}）`)
   } else if (kind === "platform") {
     // 先尝试页面嗅探（腾讯云点播嵌入 / og:video / 内嵌 video_url / 裸直链），
@@ -267,6 +272,7 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
       const r = await sniffPageForVideo(url)
       title = r.title
       targets = r.videos.slice(0, 1) // 只下最优一路
+      sourceLabel = r.route === "tencent-vod" ? "腾讯云点播" : "网页嗅探"
       log(`页面嗅探命中（${r.route}）: ${title}`)
     } catch (e) {
       appendDebug(`页面嗅探未命中: ${e}`)
@@ -277,6 +283,7 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
             "请在「设置 → 平台解析」里填写 cobalt 兼容 API 地址后重试",
         )
       }
+      sourceLabel = "cobalt 解析"
       targets = [await resolveViaCobalt(api, url)]
       log(`解析成功: ${targets[0].url.slice(0, 100)}…`)
     }
@@ -330,5 +337,5 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
   ].join("\n")
   await FileManager.writeAsString(Path.join(dir, "download-report.md"), report)
 
-  return { kind, title, dir, files }
+  return { kind, title, dir, files, sourceLabel }
 }

@@ -2,7 +2,7 @@
 // FileManager / SQLite 为全局对象，禁止从 scripting 导入
 
 import { Path } from "scripting"
-import { newId } from "../utils/common"
+import { newId, hostOf } from "../utils/common"
 
 export type HistoryRecord = {
   id: string
@@ -40,6 +40,7 @@ export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 
 export type WidgetSnapshotItem = {
   kind: string
+  host: string
   title: string
   fileName: string
   bytes: number
@@ -83,7 +84,7 @@ export async function syncWidgetSnapshot() {
   try {
     const database = await getDatabase()
     const top = await database.fetchAll<HistoryRecord>(
-      `SELECT kind, title, file_name, bytes_written, duration_sec, created_at, note
+      `SELECT kind, title, file_name, bytes_written, duration_sec, created_at, note, source_url
        FROM downloads ORDER BY datetime(created_at) DESC LIMIT 2`,
     )
     // 次数按来源链接去重，总大小按来源合计
@@ -95,6 +96,7 @@ export async function syncWidgetSnapshot() {
       r
         ? {
             kind: r.kind,
+            host: hostOf(r.source_url),
             title: r.title,
             fileName: r.file_name,
             bytes: r.bytes_written,
@@ -230,7 +232,13 @@ export async function deleteHistoryRecord(id: string, deleteFile = false) {
 
 export async function updateHistoryNote(id: string, note: string) {
   const database = await getDatabase()
-  await database.execute(`UPDATE downloads SET note = ? WHERE id = ?`, [note, id])
+  await database.execute(
+      `UPDATE downloads SET note = CASE
+         WHEN note = '' OR instr(note, ?) > 0 THEN note
+         ELSE note || '·' || ?
+       END WHERE id = ?`,
+      [note, note, id],
+    )
   await syncWidgetSnapshot()
 }
 

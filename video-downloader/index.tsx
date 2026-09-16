@@ -67,7 +67,7 @@ import {
   shareFile,
   canSaveToPhotos,
 } from "./services/file-actions"
-import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration } from "./utils/common"
+import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
 import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
 
 // Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
@@ -210,8 +210,15 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
   }, [expanded])
 
   const inPhotos = item.note.includes("相册")
+  // 来源显示：优先取 note 里的来源标签（腾讯云点播 等），否则 kind+站点名
+  const noteSource = item.note.split("·").filter((x) => x && !x.includes("相册")).join("·")
+  const sourceText =
+    noteSource ||
+    (item.kind === "platform"
+      ? `平台·${prettySource(item.source_url)}`
+      : KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind)
   const meta = [
-    KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind,
+    sourceText,
     formatBytes(item.bytes_written),
     formatDuration(item.duration_sec ?? 0),
     formatDate(item.created_at),
@@ -267,7 +274,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
         <VStack alignment="leading" spacing={8} padding={{ leading: 26 }}>
           <VStack alignment="leading" spacing={3}>
             <Text font="caption" foregroundStyle="secondaryLabel">
-              {`类型 ${item.kind} · 大小 ${formatBytes(item.bytes_written)}${
+              {`来源 ${sourceText} · 大小 ${formatBytes(item.bytes_written)}${
                 item.duration_sec ? ` · 时长 ${formatDuration(item.duration_sec)}` : ""
               } · ${formatDate(item.created_at)}`}
             </Text>
@@ -812,6 +819,7 @@ function View() {
           fileName: f.name,
           bytesWritten: f.bytes,
           durationSec: f.durationSec,
+          note: outcome.sourceLabel,
         })
         inserted.push(rec.id)
       }

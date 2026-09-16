@@ -1,6 +1,6 @@
 // utils/common.ts — 通用小工具（与抖音下载器同源的稳健实现）
 
-export const VERSION = "1.11.0"
+export const VERSION = "1.11.1"
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -80,4 +80,33 @@ export function safeJSONParse(text: string | null | undefined): unknown | null {
 
 export function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+// 取短域名（去 www./m. 前缀）
+export function hostOf(url: string): string {
+  return (url.match(/^https?:\/\/([^/]+)/i)?.[1] ?? "").replace(/^(www|m)\./, "")
+}
+
+const KNOWN_HOSTS: Record<string, string> = {
+  "zhibo8.com": "直播吧",
+  "youtube.com": "YouTube",
+  "youtu.be": "YouTube",
+  "bilibili.com": "Bilibili",
+  "b23.tv": "Bilibili",
+  "x.com": "X",
+  "twitter.com": "X",
+  "instagram.com": "Instagram",
+  "tiktok.com": "TikTok",
+  "douyin.com": "抖音",
+  "iesdouyin.com": "抖音",
+  "xiaohongshu.com": "小红书",
+  "xhslink.com": "小红书",
+  "vimeo.com": "Vimeo",
+  "weixin.qq.com": "视频号",
+}
+
+// 链接 → 人类可读来源名（已知平台映射 + 短域名兜底）
+export function prettySource(url: string): string {
+  const host = hostOf(url)
+  return KNOWN_HOSTS[host] ?? host
 }
