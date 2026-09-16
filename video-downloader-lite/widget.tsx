@@ -139,29 +139,23 @@ function BackgroundLayer({ family }: { family: "small" | "medium" }) {
 
 function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
   const theme = getTheme()
+  // 高度预算（158pt）：padding 24 + 抬头 16 + 标题两行 32 + 元信息两行 30 + 入口 30 ≈ 132 + 间距
   return (
     <ZStack alignment="topTrailing">
       <BackgroundLayer family="small" />
-      <VStack alignment="leading" spacing={6} padding widgetURL={RUN_URL}>
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
-          <Image systemName="play.rectangle.fill" font={14} foregroundStyle={theme.accent} />
-          <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={theme.accent} />
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
             Video Downloader
           </Text>
         </HStack>
-        <VStack padding={{ top: 6 }}>
-          <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
-        </VStack>
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
-        {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
-        <HStack spacing={8}>
-          <Image systemName="plus.circle.fill" font={34} foregroundStyle={theme.accent} />
-          <Text font="headline" foregroundStyle={theme.accent} fontWeight="bold">
-            粘贴链接下载
-          </Text>
-        </HStack>
+        {/* 入口：纯图标（文字会让高度爆预算，标题两行优先） */}
+        <Image systemName="plus.circle.fill" font={30} foregroundStyle={theme.accent} />
       </VStack>
-      {/* 右上角刷新，避开底部入口行 */}
+      {/* 右上角刷新 */}
       <RefreshButton offsetX={-3} offsetY={3} color={theme.accentSoft} />
     </ZStack>
   )
