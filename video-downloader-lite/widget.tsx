@@ -149,13 +149,10 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
             Video Downloader
           </Text>
         </HStack>
-        <VStack padding={{ top: 10 }}>
+        <VStack padding={{ top: 6 }}>
           <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         </VStack>
         <Spacer />
-        <VStack padding={{ top: 6 }}>
-          <SecondRow item={snap?.second ?? null} />
-        </VStack>
         {/* 大按钮入口：整个 small 组件可点，这里做大是视觉引导 */}
         <HStack spacing={8}>
           <Image systemName="plus.circle.fill" font={34} foregroundStyle={theme.accent} />
