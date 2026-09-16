@@ -72,6 +72,11 @@ function LatestInfo({
             ? prettySource(`https://${item.host}`)
             : KIND_SHORT[item.kind] ?? item.kind}
         </Text>
+        {item.resolution ? (
+          <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+            {item.resolution}
+          </Text>
+        ) : null}
       </HStack>
     </VStack>
   )

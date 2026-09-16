@@ -17,7 +17,15 @@ export type VideoKind = "wx-channels" | "douyin" | "m3u8" | "direct" | "platform
 
 export type ResolvedVideo = { label: string; url: string; ext: string }
 
-export type DownloadedFile = { path: string; name: string; bytes: number; durationSec?: number }
+export type DownloadedFile = {
+  path: string
+  name: string
+  bytes: number
+  durationSec?: number
+  width?: number
+  height?: number
+  format?: string // 文件封装格式（mp4/ts…）
+}
 
 export type DownloadOutcome = {
   kind: VideoKind
@@ -101,17 +109,27 @@ function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
   return out
 }
 
-// 探测视频时长（秒）。AVAsset 是免费全局对象；不可用时静默返回 0
-async function probeDuration(path: string): Promise<number> {
+// 探测视频媒体信息（时长/分辨率/格式）。AVAsset 是免费全局对象；失败静默
+async function probeMedia(path: string): Promise<{ durationSec: number; width: number; height: number }> {
   try {
-    if (typeof AVAsset === "undefined") return 0
+    if (typeof AVAsset === "undefined") return { durationSec: 0, width: 0, height: 0 }
     const asset = new AVAsset(path)
     const d = await asset.loadDuration()
+    let w = 0
+    let h = 0
+    try {
+      const tracks = await asset.loadTracks("video")
+      if (tracks.length) {
+        const size = await tracks[0].loadNaturalSize()
+        w = size?.width ?? 0
+        h = size?.height ?? 0
+      }
+    } catch {}
     asset.dispose()
-    const s = d?.seconds ?? 0
-    return isFinite(s) && s > 0 ? s : 0
+    const sec = d?.seconds ?? 0
+    return { durationSec: isFinite(sec) && sec > 0 ? sec : 0, width: w, height: h }
   } catch {
-    return 0
+    return { durationSec: 0, width: 0, height: 0 }
   }
 }
 
@@ -316,9 +334,13 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     }
   }
 
-  // 探测时长（AVAsset 为免费全局对象；失败静默返回 0）
+  // 探测媒体信息（时长/分辨率/格式；失败静默）
   for (const f of files) {
-    f.durationSec = await probeDuration(f.path)
+    const m = await probeMedia(f.path)
+    f.durationSec = m.durationSec
+    f.width = m.width
+    f.height = m.height
+    f.format = f.name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
   }
 
   // 下载报告，对齐桌面版 download-report.md
@@ -331,7 +353,7 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     `- 文件:`,
     ...files.map(
       (f) =>
-        `  - ${f.name}（${(f.bytes / 1048576).toFixed(1)} MB${f.durationSec ? `，${Math.round(f.durationSec)}s` : ""}）`,
+        `  - ${f.name}（${(f.bytes / 1048576).toFixed(1)} MB${f.durationSec ? `，${Math.round(f.durationSec)}s` : ""}${f.height ? `，${Math.min(f.width, f.height)}p ${f.format}` : ""}）`,
     ),
     ``,
   ].join("\n")

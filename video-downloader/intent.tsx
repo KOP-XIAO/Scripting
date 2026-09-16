@@ -102,6 +102,8 @@ async function run() {
         fileName: f.name,
         bytesWritten: f.bytes,
         durationSec: f.durationSec,
+        resolution: f.height ? `${Math.min(f.width ?? 0, f.height)}p` : "",
+        format: f.format ?? "",
         note: outcome.sourceLabel,
       })
       inserted.push(rec.id)

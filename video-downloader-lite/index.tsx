@@ -246,9 +246,13 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
     (item.kind === "platform"
       ? `平台·${prettySource(item.source_url)}`
       : KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind)
-  // 元信息拆两行：第一行 来源·大小（+徽章），第二行 时长·日期时间——不再单行截断
-  const metaLine1 = [sourceText, formatBytes(item.bytes_written)].filter(Boolean).join(" · ")
-  const metaLine2 = [formatDuration(item.duration_sec ?? 0), formatDate(item.created_at)]
+  // 两行元信息：第一行 来源 | 日期时间（竖隔线分隔），第二行 大小·时长·清晰度·格式
+  const metaLine1 = [sourceText, formatDate(item.created_at)].filter(Boolean).join("  |  ")
+  const metaLine2 = [
+    formatBytes(item.bytes_written),
+    formatDuration(item.duration_sec ?? 0),
+    item.resolution ? `${item.resolution} ${item.format ?? ""}`.trim() : "",
+  ]
     .filter(Boolean)
     .join(" · ")
 
@@ -788,6 +792,8 @@ function View() {
           fileName: f.name,
           bytesWritten: f.bytes,
           durationSec: f.durationSec,
+          resolution: f.height ? `${Math.min(f.width ?? 0, f.height)}p` : "",
+          format: f.format ?? "",
           note: outcome.sourceLabel,
         })
         inserted.push(rec.id)

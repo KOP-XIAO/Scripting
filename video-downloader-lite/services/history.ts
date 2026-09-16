@@ -14,6 +14,8 @@ export type HistoryRecord = {
   file_name: string
   bytes_written: number
   duration_sec?: number
+  resolution?: string // 如 "1080p"（短边），无则为空
+  format?: string // 如 "MP4"
   created_at: string
   note: string
 }
@@ -26,6 +28,8 @@ export type NewHistoryItem = {
   fileName: string
   bytesWritten: number
   durationSec?: number
+  resolution?: string
+  format?: string
   note?: string
 }
 
@@ -43,6 +47,8 @@ export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 export type WidgetSnapshotItem = {
   kind: string
   host: string
+  resolution: string
+  format: string
   title: string
   fileName: string
   bytes: number
@@ -62,6 +68,8 @@ function toSnapshotItem(r: HistoryRecord): WidgetSnapshotItem {
   return {
     kind: r.kind,
     host: hostOf(r.source_url),
+    resolution: r.resolution ?? "",
+    format: r.format ?? "",
     title: r.title,
     fileName: r.file_name,
     bytes: r.bytes_written,
@@ -160,6 +168,8 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     file_name: item.fileName,
     bytes_written: item.bytesWritten,
     duration_sec: item.durationSec ?? 0,
+    resolution: item.resolution ?? "",
+    format: item.format ?? "",
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }

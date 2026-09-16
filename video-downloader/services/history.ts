@@ -13,6 +13,8 @@ export type HistoryRecord = {
   file_name: string
   bytes_written: number
   duration_sec?: number
+  resolution?: string
+  format?: string
   created_at: string
   note: string
 }
@@ -25,6 +27,8 @@ export type NewHistoryItem = {
   fileName: string
   bytesWritten: number
   durationSec?: number
+  resolution?: string
+  format?: string
   note?: string
 }
 
@@ -41,6 +45,8 @@ export const WIDGET_SNAPSHOT_KEY = "vdl.widget.latest"
 export type WidgetSnapshotItem = {
   kind: string
   host: string
+  resolution: string
+  format: string
   title: string
   fileName: string
   bytes: number
@@ -84,7 +90,7 @@ export async function syncWidgetSnapshot() {
   try {
     const database = await getDatabase()
     const top = await database.fetchAll<HistoryRecord>(
-      `SELECT kind, title, file_name, bytes_written, duration_sec, created_at, note, source_url
+      `SELECT kind, title, file_name, bytes_written, duration_sec, resolution, format, created_at, note, source_url
        FROM downloads ORDER BY datetime(created_at) DESC LIMIT 2`,
     )
     // 次数按来源链接去重，总大小按来源合计
@@ -97,6 +103,8 @@ export async function syncWidgetSnapshot() {
         ? {
             kind: r.kind,
             host: hostOf(r.source_url),
+            resolution: r.resolution ?? "",
+            format: r.format ?? "",
             title: r.title,
             fileName: r.file_name,
             bytes: r.bytes_written,
@@ -149,12 +157,16 @@ export async function initDatabase() {
   try {
     await database.execute(`ALTER TABLE downloads ADD COLUMN duration_sec REAL NOT NULL DEFAULT 0`)
   } catch {}
+  try {
+    await database.execute(`ALTER TABLE downloads ADD COLUMN resolution TEXT NOT NULL DEFAULT ''`)
+    await database.execute(`ALTER TABLE downloads ADD COLUMN format TEXT NOT NULL DEFAULT ''`)
+  } catch {}
 }
 
 export async function listHistory(limit?: number): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   const sql = `
-    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note
+    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note
     FROM downloads
     ORDER BY datetime(created_at) DESC
     ${limit ? `LIMIT ${Math.floor(limit)}` : ""}
@@ -171,7 +183,7 @@ export async function countHistory(): Promise<number> {
 export async function findBySourceURL(url: string): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   return database.fetchAll<HistoryRecord>(
-    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note
+    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note
      FROM downloads WHERE source_url = ? ORDER BY datetime(created_at) DESC`,
     [url],
   )
@@ -188,13 +200,15 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     file_name: item.fileName,
     bytes_written: item.bytesWritten,
     duration_sec: item.durationSec ?? 0,
+    resolution: item.resolution ?? "",
+    format: item.format ?? "",
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }
   await database.execute(
     `INSERT OR REPLACE INTO downloads
-      (id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, created_at, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.id,
       record.source_url,
@@ -204,6 +218,8 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
       record.file_name,
       record.bytes_written,
       record.duration_sec ?? 0,
+      record.resolution ?? "",
+      record.format ?? "",
       record.created_at,
       record.note,
     ],
