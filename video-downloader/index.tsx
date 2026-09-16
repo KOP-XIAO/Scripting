@@ -246,7 +246,9 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
     (item.kind === "platform"
       ? `平台·${prettySource(item.source_url)}`
       : KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind)
-  const meta = [sourceText, formatBytes(item.bytes_written), formatDuration(item.duration_sec ?? 0), formatDate(item.created_at)]
+  // 元信息拆两行：第一行 来源·大小（+徽章），第二行 时长·日期时间——不再单行截断
+  const metaLine1 = [sourceText, formatBytes(item.bytes_written)].filter(Boolean).join(" · ")
+  const metaLine2 = [formatDuration(item.duration_sec ?? 0), formatDate(item.created_at)]
     .filter(Boolean)
     .join(" · ")
 
@@ -261,7 +263,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
         </Text>
         <HStack spacing={6}>
           <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
-            {meta}
+            {metaLine1}
           </Text>
           {item.note.includes("相册") ? (
             <Text font="caption2" foregroundStyle="systemGreen">
@@ -269,6 +271,9 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             </Text>
           ) : null}
         </HStack>
+        <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
+          {metaLine2}
+        </Text>
       </VStack>
       <Spacer />
       <Image systemName="ellipsis.circle" font={12} foregroundStyle="tertiaryLabel" />
