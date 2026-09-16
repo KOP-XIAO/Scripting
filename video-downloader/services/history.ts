@@ -3,6 +3,7 @@
 
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
+import { probeMedia, resolutionLabel } from "./media-probe"
 
 export type HistoryRecord = {
   id: string
@@ -77,6 +78,31 @@ export function getWidgetSnapshot(): WidgetSnapshot | null {
   } catch {
     return null
   }
+}
+
+// 老记录回填：缺时长/清晰度且文件还在本地的，逐条探测补上
+export async function backfillMediaInfo(): Promise<number> {
+  let fixed = 0
+  try {
+    const database = await getDatabase()
+    const rows = await database.fetchAll<HistoryRecord>(
+      `SELECT id, file_path, file_name FROM downloads
+       WHERE (duration_sec = 0 OR resolution = '') LIMIT 30`,
+    )
+    for (const r of rows) {
+      if (!(await FileManager.exists(r.file_path))) continue
+      const m = await probeMedia(r.file_path)
+      const res = m.height > 0 ? resolutionLabel(m.width, m.height) : ""
+      const fmt = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+      await database.execute(
+        `UPDATE downloads SET duration_sec = ?, resolution = ?, format = ? WHERE id = ?`,
+        [m.durationSec || 0, res, fmt, r.id],
+      )
+      fixed++
+    }
+    if (fixed) await syncWidgetSnapshot()
+  } catch {}
+  return fixed
 }
 
 // 每次打开 App 都重算快照（旧版快照缺新字段时也能自愈）

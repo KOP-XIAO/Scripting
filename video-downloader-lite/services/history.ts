@@ -4,6 +4,7 @@
 
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
+import { probeMedia, resolutionLabel } from "./media-probe"
 
 export type HistoryRecord = {
   id: string
@@ -202,6 +203,30 @@ export async function updateHistoryNote(id: string, note: string) {
     await writeAll(all)
     writeWidgetSnapshot(all)
   }
+}
+
+// 老记录回填：缺时长/清晰度且文件还在本地的，逐条探测补上（每次最多 30 条，防启动卡顿）
+export async function backfillMediaInfo(): Promise<number> {
+  let fixed = 0
+  try {
+    const all = await readAll()
+    const need = all.filter((r) => (!r.duration_sec || !r.resolution) && r.file_path)
+    for (const r of need.slice(0, 30)) {
+      if (!(await FileManager.exists(r.file_path))) continue
+      const m = await probeMedia(r.file_path)
+      if (m.durationSec > 0) r.duration_sec = m.durationSec
+      if (m.height > 0) {
+        r.resolution = resolutionLabel(m.width, m.height)
+        r.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+      }
+      fixed++
+    }
+    if (fixed) {
+      await writeAll(all)
+      writeWidgetSnapshot(all)
+    }
+  } catch {}
+  return fixed
 }
 
 // 每次打开 App 都重算快照（旧版快照缺新字段时也能自愈）

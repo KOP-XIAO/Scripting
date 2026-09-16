@@ -11,6 +11,7 @@ import { getYuanbaoCookie } from "./preferences"
 import { resolveWxChannels } from "./wxchannels"
 import { isDouyinUrl, resolveDouyin } from "./douyin"
 import { sniffPageForVideo } from "./pagesniff"
+import { probeMedia, resolutionLabel } from "./media-probe"
 import { appendDebug } from "./debug"
 
 export type VideoKind = "wx-channels" | "douyin" | "m3u8" | "direct" | "platform"
@@ -107,30 +108,6 @@ function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
     offset += c.length
   }
   return out
-}
-
-// 探测视频媒体信息（时长/分辨率/格式）。AVAsset 是免费全局对象；失败静默
-async function probeMedia(path: string): Promise<{ durationSec: number; width: number; height: number }> {
-  try {
-    if (typeof AVAsset === "undefined") return { durationSec: 0, width: 0, height: 0 }
-    const asset = new AVAsset(path)
-    const d = await asset.loadDuration()
-    let w = 0
-    let h = 0
-    try {
-      const tracks = await asset.loadTracks("video")
-      if (tracks.length) {
-        const size = await tracks[0].loadNaturalSize()
-        w = size?.width ?? 0
-        h = size?.height ?? 0
-      }
-    } catch {}
-    asset.dispose()
-    const sec = d?.seconds ?? 0
-    return { durationSec: isFinite(sec) && sec > 0 ? sec : 0, width: w, height: h }
-  } catch {
-    return { durationSec: 0, width: 0, height: 0 }
-  }
 }
 
 // -------------------------------------------------------------

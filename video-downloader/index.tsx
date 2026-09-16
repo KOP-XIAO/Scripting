@@ -57,6 +57,7 @@ import {
   deleteHistoryRecord,
   clearHistoryRecords,
   ensureWidgetSnapshot,
+  backfillMediaInfo,
   type HistoryRecord,
 } from "./services/history"
 import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage, ERROR_LINE_RE } from "./services/debug"
@@ -686,8 +687,9 @@ function View() {
 
   useEffect(() => {
     void initDatabase()
+      .then(() => backfillMediaInfo()) // 老记录回填时长/清晰度（文件还在本地的话）
       .then(refreshHistory)
-      .then(() => ensureWidgetSnapshot()) // 老版本升级：回填小组件快照
+      .then(() => ensureWidgetSnapshot()) // 重算小组件快照
     // 小组件/快捷指令跳转进入时（scripting://run_single/<name>?autopaste=1）自动读剪贴板
     const qp = Script.queryParameters
     if (qp && String(qp.autopaste) === "1") {
