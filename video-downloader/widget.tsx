@@ -162,7 +162,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <HStack spacing={6}>
           <Image systemName="play.rectangle.fill" font={13} foregroundStyle={theme.accent} />
           <Text font="subheadline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
-            Video Downloader
+            VIDEO DOWNLOADER
           </Text>
         </HStack>
         <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
@@ -187,7 +187,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <HStack spacing={6}>
             <Image systemName="play.rectangle.fill" font={14} foregroundStyle={theme.accent} />
             <Text font="headline" fontWeight="bold" foregroundStyle={theme.accent} monospaced>
-              Video Downloader
+              VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
@@ -198,7 +198,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           </VStack>
           <Spacer />
         </VStack>
-        <VStack>
+        <VStack padding={{ top: 14 }}>
           <Spacer />
           <Link url={RUN_URL}>
             <Image systemName="plus.circle.fill" font={64} foregroundStyle={theme.accent} />

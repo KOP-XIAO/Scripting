@@ -1,13 +1,16 @@
 {
   "name": "Video Downloader",
-  "icon": "arrow.down.circle.fill",
+  "icon": "tray.and.arrow.down.fill",
   "color": "rgba(88, 86, 214, 1)",
-  "version": "1.13.5",
+  "version": "1.13.6",
   "entry": "index.tsx",
   "runInApp": true,
   "permissions": null,
   "contributors": [],
-  "intentInputTypes": ["URLs", "Text"],
+  "intentInputTypes": [
+    "URLs",
+    "Text"
+  ],
   "description": "视频下载器：支持微信视频号、m3u8、mp4 等直链下载；YouTube/B站等平台可对接 cobalt 兼容解析实例。含下载历史、诊断日志导出，可保存到相册或导出到文件。",
   "localizedNames": {
     "zh": "视频下载器",
