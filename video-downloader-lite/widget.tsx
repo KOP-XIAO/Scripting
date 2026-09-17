@@ -198,7 +198,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           </VStack>
           <Spacer />
         </VStack>
-        <VStack padding={{ top: 14 }}>
+        <VStack padding={{ top: 28 }}>
           <Spacer />
           <Link url={RUN_URL}>
             <Image systemName="plus.circle.fill" font={64} foregroundStyle={theme.accent} />
