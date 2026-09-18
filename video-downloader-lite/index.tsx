@@ -483,21 +483,36 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           value={draft.askQuality}
           onChanged={(v) => update({ askQuality: v })}
         />
-        <TextField
-          title="大小上限 MB（0 = 不限）"
-          value={String(draft.maxMB)}
-          onChanged={(v) => update({ maxMB: Math.max(0, Number(v) || 0) })}
-        />
-        <TextField
-          title="命名模板（{title} {label} {date}）"
-          value={draft.nameTemplate}
-          onChanged={(v) => update({ nameTemplate: v })}
-        />
-        <TextField
-          title="自动清理天数（0 = 不清理）"
-          value={String(draft.autoCleanDays)}
-          onChanged={(v) => update({ autoCleanDays: Math.max(0, Number(v) || 0) })}
-        />
+        <VStack alignment="leading" spacing={2}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            大小上限 MB（0 = 不限）
+          </Text>
+          <TextField
+            value={String(draft.maxMB)}
+            onChanged={(v) => update({ maxMB: Math.max(0, Number(v) || 0) })}
+            prompt="0"
+          />
+        </VStack>
+        <VStack alignment="leading" spacing={2}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            文件命名模板（可用 {"{title} {label} {date}"}）
+          </Text>
+          <TextField
+            value={draft.nameTemplate}
+            onChanged={(v) => update({ nameTemplate: v })}
+            prompt="{title}"
+          />
+        </VStack>
+        <VStack alignment="leading" spacing={2}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            自动清理多少天前的下载（0 = 不清理）
+          </Text>
+          <TextField
+            value={String(draft.autoCleanDays)}
+            onChanged={(v) => update({ autoCleanDays: Math.max(0, Number(v) || 0) })}
+            prompt="0"
+          />
+        </VStack>
       </Section>
 
       <Section
