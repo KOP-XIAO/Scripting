@@ -40,6 +40,8 @@ export type RunOptions = {
   prefs: Preferences
   onLog?: (line: string) => void
   onProgress?: (done: number, total: number) => void
+  // 多路清晰度时回调选择（App 内弹面板；intent 不传则自动第一路）
+  onChooseVariants?: (videos: ResolvedVideo[], title: string) => Promise<ResolvedVideo[]>
 }
 
 const UA =
@@ -100,6 +102,26 @@ async function fetchBytes(url: string, referer: string | undefined, maxMB: numbe
   return new Uint8Array(await resp.arrayBuffer())
 }
 
+// 同名防覆盖：已存在则自动加 -2/-3 后缀
+async function uniquePath(dir: string, name: string): Promise<string> {
+  const dot = name.lastIndexOf(".")
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ""
+  let candidate = Path.join(dir, name)
+  for (let i = 2; i < 100; i++) {
+    if (!(await FileManager.exists(candidate))) return candidate
+    candidate = Path.join(dir, `${stem}-${i}${ext}`)
+  }
+  return candidate
+}
+
+// 命名模板：{title} {label} {date} {resolution}（resolution 需探测后才知道，二次改名）
+function applyNameTemplate(tpl: string, vars: Record<string, string>): string {
+  let out = tpl || "{title}"
+  for (const [k, v] of Object.entries(vars)) out = out.split(`{${k}}`).join(v)
+  return sanitizeFileName(out.replace(/\{.*?\}/g, ""))
+}
+
 function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
   const out = new Uint8Array(total)
   let offset = 0
@@ -149,6 +171,86 @@ async function resolveViaCobalt(apiBase: string, url: string): Promise<ResolvedV
 }
 
 // -------------------------------------------------------------
+// 分块下载：HTTP Range 每 2MB 一块写 .part-N，支持中断后续传、
+// 进度百分比、速度与剩余时间。服务端不支持 Range 时退化为单发下载。
+// -------------------------------------------------------------
+const CHUNK = 2 * 1048576
+
+async function downloadChunked(
+  url: string,
+  destPath: string,
+  referer: string | undefined,
+  maxMB: number,
+  log: (l: string) => void,
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
+  const headers = { "User-Agent": UA, ...(referer ? { Referer: referer } : {}) }
+  // 探测 Range 支持与总大小
+  const probe = await fetch(url, { headers: { ...headers, Range: "bytes=0-0" } })
+  if (!probe.ok && probe.status !== 206) throw new Error(`HTTP ${probe.status} — ${url.slice(0, 120)}`)
+  const cr = probe.headers.get("content-range") ?? ""
+  const total = Number(cr.split("/")[1] ?? 0) || Number(probe.headers.get("content-length") ?? 0)
+  const supportsRange = probe.status === 206 && total > 0
+
+  if (!supportsRange) {
+    // 单发兜底
+    const resp = await fetch(url, { headers })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const len = Number(resp.headers.get("content-length") ?? 0)
+    if (maxMB > 0 && len > maxMB * 1048576) throw new Error(`文件超过上限 ${maxMB}MB`)
+    const bytes = new Uint8Array(await resp.arrayBuffer())
+    await FileManager.writeAsBytes(destPath, bytes)
+    return bytes.length
+  }
+  if (maxMB > 0 && total > maxMB * 1048576) throw new Error(`文件 ${(total / 1048576).toFixed(0)}MB 超过上限 ${maxMB}MB`)
+
+  const chunks = Math.ceil(total / CHUNK)
+  const t0 = Date.now()
+  let doneBytes = 0
+  for (let i = 0; i < chunks; i++) {
+    const partPath = `${destPath}.part-${String(i).padStart(4, "0")}`
+    if (await FileManager.exists(partPath)) {
+      // 续传：已完成的块直接跳过
+      const st = await FileManager.stat(partPath)
+      doneBytes += st.size
+      continue
+    }
+    const from = i * CHUNK
+    const to = Math.min(total - 1, from + CHUNK - 1)
+    let ok = false
+    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      try {
+        const resp = await fetch(url, { headers: { ...headers, Range: `bytes=${from}-${to}` } })
+        if (resp.status !== 206 && resp.status !== 200) throw new Error(`HTTP ${resp.status}`)
+        const b = new Uint8Array(await resp.arrayBuffer())
+        await FileManager.writeAsBytes(partPath, b)
+        doneBytes += b.length
+        ok = true
+      } catch (e) {
+        if (attempt === 2) throw new Error(`分块 ${i + 1}/${chunks} 三次重试失败（.part 已保留，重跑可续传）: ${e}`)
+      }
+    }
+    onProgress?.(i + 1, chunks)
+    const elapsed = (Date.now() - t0) / 1000
+    if (elapsed > 1 && i % 2 === 1) {
+      const speed = doneBytes / elapsed / 1048576
+      const eta = speed > 0 ? Math.round((total - doneBytes) / 1048576 / speed) : 0
+      log(`下载 ${(doneBytes / 1048576).toFixed(1)}/${(total / 1048576).toFixed(1)} MB（${speed.toFixed(1)} MB/s，约剩 ${eta}s）`)
+    }
+  }
+  // 合并分块
+  const parts: Uint8Array[] = []
+  for (let i = 0; i < chunks; i++) {
+    parts.push(await FileManager.readAsBytes(`${destPath}.part-${String(i).padStart(4, "0")}`))
+  }
+  await FileManager.writeAsBytes(destPath, concatBytes(parts, total))
+  for (let i = 0; i < chunks; i++) {
+    try { await FileManager.remove(`${destPath}.part-${String(i).padStart(4, "0")}`) } catch {}
+  }
+  return total
+}
+
+// -------------------------------------------------------------
 // m3u8：主列表选最高码率变体 → 逐分片下载 → 拼接 → 可选转码
 // -------------------------------------------------------------
 async function downloadM3U8(
@@ -177,12 +279,16 @@ async function downloadM3U8(
   }
 
   const mediaText = mediaUrl === url ? playlistText : new TextDecoder().decode(await fetchBytes(mediaUrl, undefined, 0))
+  if (mediaText.includes("#EXT-X-KEY")) {
+    throw new Error("该 m3u8 是 AES-128 加密流（#EXT-X-KEY），当前版本不支持解密下载")
+  }
   const segs = mediaText
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"))
     .map((s) => resolveUrl(mediaUrl, s))
   if (!segs.length) throw new Error("m3u8 播放列表里没有分片")
+  if (segs.length > 2000) throw new Error(`分片数 ${segs.length} 超过上限 2000（疑似直播流，请确认是点播内容）`)
 
   const isFmp4 = /\.(mp4|m4s|cmfv)(\?|#|$)/i.test(segs[0]) || mediaText.includes("#EXT-X-MAP")
   const ext = isFmp4 ? "mp4" : "ts"
@@ -286,6 +392,12 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     title = sanitizeFileName(url.split("/").pop()?.split("?")[0] ?? "video").replace(/\.[a-z0-9]{2,4}$/i, "")
   }
 
+  // 多路清晰度时交给调用方选择
+  if (targets.length > 1 && opts.onChooseVariants) {
+    targets = await opts.onChooseVariants(targets, title)
+    if (!targets.length) throw new Error("已取消下载")
+  }
+
   // 输出目录：与桌面版 skill 一致 Documents/Video/Downloads/日期-标题/
   const dir = Path.join(
     FileManager.documentsDirectory,
@@ -297,17 +409,26 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
 
   const files: DownloadedFile[] = []
   if (kind === "m3u8") {
-    files.push(await downloadM3U8(url, Path.join(dir, sanitizeFileName(title)), opts))
+    const baseName = applyNameTemplate(opts.prefs.nameTemplate ?? "{title}", {
+      title: sanitizeFileName(title),
+      label: "",
+      date: todayStr(),
+    })
+    files.push(await downloadM3U8(url, await uniquePath(dir, baseName), opts))
   } else {
     const list = targets.length ? targets : [{ label: "", url, ext: extOf(url, "mp4") }]
     for (const t of list) {
-      const name = `${sanitizeFileName(title)}${t.label ? `-${t.label}` : ""}.${t.ext}`
-      const path = Path.join(dir, name)
-      log(`开始下载 ${name}`)
-      const bytes = await fetchBytes(t.url, url, opts.prefs.maxMB)
-      await FileManager.writeAsBytes(path, bytes)
-      log(`完成 ${name}（${(bytes.length / 1048576).toFixed(1)} MB）`)
-      files.push({ path, name, bytes: bytes.length })
+      const name = `${applyNameTemplate(opts.prefs.nameTemplate ?? "{title}", {
+        title: sanitizeFileName(title),
+        label: t.label,
+        date: todayStr(),
+      })}.${t.ext}`
+      const path = await uniquePath(dir, name) // 同名防覆盖
+      const finalName = path.split("/").pop() ?? name
+      log(`开始下载 ${finalName}`)
+      const bytes = await downloadChunked(t.url, path, url, opts.prefs.maxMB, log, opts.onProgress)
+      log(`完成 ${finalName}（${(bytes / 1048576).toFixed(1)} MB）`)
+      files.push({ path, name: finalName, bytes })
     }
   }
 
@@ -337,4 +458,24 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
   await FileManager.writeAsString(Path.join(dir, "download-report.md"), report)
 
   return { kind, title, dir, files, sourceLabel }
+}
+
+// 测试 cobalt 实例连通性（用公开测试链接试解析，不下载）
+export async function testCobaltApi(apiBase: string): Promise<string> {
+  const base = apiBase.trim().replace(/\/+$/, "")
+  if (!base) return "未填写实例地址"
+  const body = JSON.stringify({ url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", downloadMode: "auto" })
+  const headers = { Accept: "application/json", "Content-Type": "application/json", "User-Agent": UA }
+  try {
+    let resp = await fetch(`${base}/`, { method: "POST", headers, body })
+    if (resp.status === 404 || resp.status === 405) {
+      resp = await fetch(`${base}/api/json`, { method: "POST", headers, body })
+    }
+    if (!resp.ok) return `❌ HTTP ${resp.status}（实例在线但拒绝请求，可能有访问控制）`
+    const data: any = await resp.json()
+    if (data?.status === "tunnel" || data?.status === "redirect" || data?.url) return "✅ 实例可用（解析测试通过）"
+    return `⚠️ 实例在线但响应异常：${data?.status ?? "unknown"} ${data?.error?.code ?? ""}`
+  } catch (e) {
+    return `❌ 连接失败：${e instanceof Error ? e.message : e}`
+  }
 }

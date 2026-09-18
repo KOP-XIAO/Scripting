@@ -192,3 +192,17 @@ export async function resolveWxChannels(shareUrl: string, cookieRaw?: string): P
   if (!videos.length) throw new Error("解析成功但没有可下载的视频地址")
   return { title, videos, route }
 }
+
+// 测试 Cookie 有效性：拿一个示例分享链接走第 1 步，看元宝是否放行
+export async function testYuanbaoCookie(cookieRaw: string): Promise<string> {
+  const cookie = normalizeCookie(cookieRaw)
+  if (!cookie) return "未配置 Cookie"
+  try {
+    await yuanbaoParseShareUrl("https://weixin.qq.com/sph/Axv548mzBF", cookie)
+    return "✅ Cookie 有效（元宝解析放行）"
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/Cookie 可能已过期|not login|登录/.test(msg)) return "❌ Cookie 已过期，请重新复制"
+    return `⚠️ ${msg.slice(0, 80)}（Cookie 可能有效，示例链接失效也会报这个）`
+  }
+}

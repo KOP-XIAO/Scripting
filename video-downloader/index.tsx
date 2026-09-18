@@ -32,6 +32,7 @@ import {
 import {
   runDownload,
   detectKind,
+  testCobaltApi,
   KIND_LABELS,
   type DownloadOutcome,
   type DownloadedFile,
@@ -61,6 +62,8 @@ import {
   type HistoryRecord,
 } from "./services/history"
 import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage, ERROR_LINE_RE } from "./services/debug"
+import { testYuanbaoCookie } from "./services/wxchannels"
+import { listDownloadDirs, clearDownloadDirs, formatDirSize } from "./services/storage-man"
 import {
   postDownloadAction,
   saveFilePathToPhotos,
@@ -336,6 +339,13 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               }}
             />
           ) : null}
+          <Button
+            title="测试"
+            action={async () => {
+              const r = await testYuanbaoCookie(cookieDraft)
+              await Dialog.alert({ title: "Cookie 测试", message: r })
+            }}
+          />
         </HStack>
       </Section>
 
@@ -359,6 +369,16 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           onChanged={(v) => update({ cobaltApi: v })}
           prompt="https://cobalt.example.com"
         />
+        <HStack>
+          <Spacer />
+          <Button
+            title="测试连接"
+            action={async () => {
+              const r = await testCobaltApi(draft.cobaltApi)
+              await Dialog.alert({ title: "实例测试", message: r })
+            }}
+          />
+        </HStack>
       </Section>
 
       <Section
@@ -458,10 +478,25 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           value={draft.dedupe}
           onChanged={(v) => update({ dedupe: v })}
         />
+        <Toggle
+          title="多路清晰度时让我选择"
+          value={draft.askQuality}
+          onChanged={(v) => update({ askQuality: v })}
+        />
         <TextField
           title="大小上限 MB（0 = 不限）"
           value={String(draft.maxMB)}
           onChanged={(v) => update({ maxMB: Math.max(0, Number(v) || 0) })}
+        />
+        <TextField
+          title="命名模板（{title} {label} {date}）"
+          value={draft.nameTemplate}
+          onChanged={(v) => update({ nameTemplate: v })}
+        />
+        <TextField
+          title="自动清理天数（0 = 不清理）"
+          value={String(draft.autoCleanDays)}
+          onChanged={(v) => update({ autoCleanDays: Math.max(0, Number(v) || 0) })}
         />
       </Section>
 
@@ -516,9 +551,18 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
 function DiagnosticsPage() {
   const [logs, setLogs] = useState<string[]>(getDebugLog())
   const [historyCount, setHistoryCount] = useState(0)
+  const [dirs, setDirs] = useState<{ name: string; bytes: number }[]>([])
+  const [totalBytes, setTotalBytes] = useState(0)
+
+  const reloadDirs = () =>
+    listDownloadDirs().then((r) => {
+      setDirs(r.dirs.map((d) => ({ name: d.name, bytes: d.bytes })))
+      setTotalBytes(r.totalBytes)
+    })
 
   useEffect(() => {
     void countHistory().then(setHistoryCount).catch(() => {})
+    void reloadDirs().catch(() => {})
   }, [])
 
   const doExport = async () => {
@@ -598,8 +642,66 @@ function DiagnosticsPage() {
         </Text>
       </Section>
 
+      <Section title="存储管理">
+        <HStack>
+          <Text>下载目录占用</Text>
+          <Spacer />
+          <Text monospaced foregroundStyle="secondaryLabel">
+            {formatBytes(totalBytes)}
+          </Text>
+        </HStack>
+        {dirs.slice(0, 5).map((d) => (
+          <HStack key={d.name}>
+            <Text font="caption" lineLimit={1}>
+              {d.name}
+            </Text>
+            <Spacer />
+            <Text font="caption" monospaced foregroundStyle="secondaryLabel">
+              {formatBytes(d.bytes)}
+            </Text>
+          </HStack>
+        ))}
+        <Button
+          title="清空下载目录"
+          role="destructive"
+          action={async () => {
+            const ok = await Dialog.confirm({
+              title: "清空下载目录",
+              message: "删除所有本地下载文件（历史记录保留，会显示文件已不存在）。",
+              confirmLabel: "清空",
+            })
+            if (ok) await clearDownloadDirs().then(() => reloadDirs())
+          }}
+        />
+      </Section>
+
       <Section title="操作">
         <Button title="导出诊断包（可选范围）" action={() => void doExport()} />
+        <Button
+          title="导出设置到剪贴板"
+          action={async () => {
+            const prefs = getPreferences()
+            const { cobaltApi, ...rest } = { ...prefs } as any
+            const out = { ...rest, cobaltApi: prefs.cobaltApi ? "<已配置>" : "" }
+            await Pasteboard.setString(JSON.stringify(out, null, 2))
+            await Dialog.alert({ message: "设置 JSON 已复制（不含 Cookie）。粘贴回任何文本处即可备份。" })
+          }}
+        />
+        <Button
+          title="从剪贴板导入设置"
+          action={async () => {
+            const text = (await Pasteboard.getString()) ?? ""
+            try {
+              const data = JSON.parse(text)
+              if (typeof data !== "object" || !data) throw new Error("not json")
+              const merged = { ...getPreferences(), ...data }
+              persistPreferences(merged)
+              await Dialog.alert({ message: "设置已导入。返回设置页查看生效。" })
+            } catch {
+              await Dialog.alert({ message: "剪贴板里不是有效的设置 JSON" })
+            }
+          }}
+        />
         <Button
           title="清空诊断日志"
           role="destructive"
@@ -656,16 +758,25 @@ function DiagnosticsPage() {
 // -------------------------------------------------------------
 function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise<void> }) {
   const { history, onChanged } = props
+  const [query, setQuery] = useState("")
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? history.filter((r) => (r.title + r.file_name + r.note + r.kind).toLowerCase().includes(q))
+    : history
+
   return (
     <List navigationTitle="全部下载历史" navigationBarTitleDisplayMode="inline">
+      <Section>
+        <TextField title="搜索（标题/来源/格式）" value={query} onChanged={setQuery} prompt="输入关键词过滤" />
+      </Section>
       <Section
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            点按记录打开操作面板；共 {history.length} 条。
+            点按记录打开操作面板；{q ? `筛选出 ${filtered.length} / ${history.length} 条` : `共 ${history.length} 条`}
           </Text>
         }
       >
-        {history.map((item, i) => (
+        {filtered.map((item, i) => (
           <HistoryRow key={item.id} item={item} index={i} onChanged={onChanged} />
         ))}
       </Section>
@@ -704,6 +815,14 @@ function View() {
   useEffect(() => {
     void initDatabase()
       .then(() => backfillMediaInfo()) // 老记录回填时长/清晰度（文件还在本地的话）
+      .then(async () => {
+        // 自动清理 N 天前的本地下载目录
+        const days = getPreferences().autoCleanDays
+        if (days > 0) {
+          const n = await autoCleanDownloads(days)
+          if (n > 0) appendDebug(`自动清理：删除 ${n} 个过期下载目录`)
+        }
+      })
       .then(refreshHistory)
       .then(() => ensureWidgetSnapshot()) // 重算小组件快照
     // 小组件/快捷指令跳转进入时（scripting://run_single/<name>?autopaste=1）自动读剪贴板
@@ -798,6 +917,17 @@ function View() {
         prefs,
         onLog: log,
         onProgress: (done, total) => setProgress({ done, total }),
+        onChooseVariants: prefs.askQuality
+          ? async (videos, title) => {
+              const idx = await Dialog.actionSheet({
+                title: "选择清晰度/编码",
+                message: title,
+                actions: videos.map((v) => ({ label: v.label || v.ext })),
+                cancelButton: true,
+              })
+              return idx == null || idx < 0 ? [] : [videos[idx]]
+            }
+          : undefined,
       })
 
       const inserted: string[] = []

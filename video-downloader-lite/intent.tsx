@@ -120,16 +120,21 @@ async function run() {
     const message = action.message
     appendDebug(`intent 完成: ${outcome.title} -> ${message}`)
 
-    Script.exit(
-      Intent.json({
-        ok: true,
-        kind: outcome.kind,
-        title: outcome.title,
-        files: outcome.files.map((f) => ({ path: f.path, name: f.name, bytes: f.bytes })),
-        message,
-        logs,
-      }),
-    )
+    if (outcome.files.length === 1) {
+      // 单文件：直接输出文件，快捷指令可以继续处理（移动/转存/分享）
+      Script.exit(Intent.file(outcome.files[0].path))
+    } else {
+      Script.exit(
+        Intent.json({
+          ok: true,
+          kind: outcome.kind,
+          title: outcome.title,
+          files: outcome.files.map((f) => ({ path: f.path, name: f.name, bytes: f.bytes })),
+          message,
+          logs,
+        }),
+      )
+    }
   } catch (error) {
     await handleError(error)
   }

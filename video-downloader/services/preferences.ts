@@ -12,6 +12,9 @@ export type Preferences = {
   maxMB: number // 直链大小上限，0 = 不限制
   debugLog: boolean // 是否记录诊断日志
   autoStartOnEntry: boolean // 小组件/URL scheme 带入链接后自动开始下载
+  askQuality: boolean // 多路清晰度/编码时弹出选择
+  autoCleanDays: number // 自动清理 N 天前的本地下载文件（0=关闭）
+  nameTemplate: string // 文件命名模板，支持 {title} {label} {date}
 }
 
 export const PREFS_KEY = "vdl.preferences"
@@ -25,6 +28,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   maxMB: 0,
   debugLog: true,
   autoStartOnEntry: true,
+  askQuality: false,
+  autoCleanDays: 0,
+  nameTemplate: "{title}",
 }
 
 export function getPreferences(): Preferences {
