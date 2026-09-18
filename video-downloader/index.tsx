@@ -474,6 +474,11 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           onChanged={(v) => update({ autoStartOnEntry: v })}
         />
         <Toggle
+          title="保存到相册时归入「Video Downloader」相簿"
+          value={draft.photoAlbum}
+          onChanged={(v) => update({ photoAlbum: v })}
+        />
+        <Toggle
           title="历史去重（同链接跳过下载）"
           value={draft.dedupe}
           onChanged={(v) => update({ dedupe: v })}
