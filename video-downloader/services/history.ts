@@ -162,6 +162,34 @@ export async function syncWidgetSnapshot() {
   } catch {}
 }
 
+// 上限从设置读（默认 200）
+function maxRecords(): number {
+  try {
+    const v = Storage.get<any>("vdl.preferences")
+    const n = v?.maxHistoryRecords
+    return typeof n === "number" && n > 0 ? Math.floor(n) : 200
+  } catch {
+    return 200
+  }
+}
+
+async function trimToLimit() {
+  const cap = maxRecords()
+  const database = await getDatabase()
+  const overflow = await database.fetchAll<HistoryRecord>(
+    `SELECT id, file_path FROM downloads ORDER BY datetime(created_at) DESC LIMIT -1 OFFSET ?`,
+    [cap],
+  )
+  for (const r of overflow) {
+    if (await FileManager.exists(r.file_path)) {
+      try {
+        await FileManager.remove(r.file_path)
+      } catch {}
+    }
+    await database.execute(`DELETE FROM downloads WHERE id = ?`, [r.id])
+  }
+}
+
 async function ensureRootDir() {
   if (!(await FileManager.exists(ROOT_DIR))) {
     await FileManager.createDirectory(ROOT_DIR, true)
@@ -265,6 +293,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     ],
   )
   await syncWidgetSnapshot()
+  await trimToLimit()
   return record
 }
 

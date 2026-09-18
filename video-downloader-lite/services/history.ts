@@ -36,7 +36,31 @@ export type NewHistoryItem = {
 
 const ROOT_DIR = Path.join(FileManager.documentsDirectory, "Video", "Downloader")
 const DB_PATH = Path.join(ROOT_DIR, "history.json")
-const MAX_RECORDS = 200 // 上限，防止 JSON 无限增长
+
+// 上限从设置读（默认 200）；超出部分连记录带本地文件一起删
+function maxRecords(): number {
+  try {
+    const v = Storage.get<number>("vdl.preferences")
+    const n = (v as any)?.maxHistoryRecords
+    return typeof n === "number" && n > 0 ? Math.floor(n) : 200
+  } catch {
+    return 200
+  }
+}
+
+async function trimToLimit(list: HistoryRecord[]): Promise<HistoryRecord[]> {
+  const cap = maxRecords()
+  if (list.length <= cap) return list
+  const overflow = list.slice(cap)
+  for (const r of overflow) {
+    if (await FileManager.exists(r.file_path)) {
+      try {
+        await FileManager.remove(r.file_path)
+      } catch {}
+    }
+  }
+  return list.slice(0, cap)
+}
 
 // -------------------------------------------------------------
 // 小组件快照：widget 扩展进程的 FileManager 目录与 App 不一致，
@@ -132,7 +156,7 @@ async function readAll(): Promise<HistoryRecord[]> {
 
 async function writeAll(list: HistoryRecord[]) {
   await ensureRootDir()
-  await FileManager.writeAsString(DB_PATH, JSON.stringify(list.slice(0, MAX_RECORDS)))
+  await FileManager.writeAsString(DB_PATH, JSON.stringify(list))
 }
 
 function sortDesc(list: HistoryRecord[]): HistoryRecord[] {
@@ -176,8 +200,9 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
   }
   const all = await readAll()
   all.unshift(record)
-  await writeAll(all)
-  writeWidgetSnapshot(all)
+  const trimmed = await trimToLimit(all)
+  await writeAll(trimmed)
+  writeWidgetSnapshot(trimmed)
   return record
 }
 

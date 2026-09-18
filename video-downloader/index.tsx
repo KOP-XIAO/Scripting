@@ -505,7 +505,17 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         </VStack>
         <VStack alignment="leading" spacing={2}>
           <Text font="caption" foregroundStyle="secondaryLabel">
-            自动清理多少天前的下载（0 = 不清理）
+            历史记录上限（超出连记录带本地文件一起删）
+          </Text>
+          <TextField
+            value={String(draft.maxHistoryRecords)}
+            onChanged={(v) => update({ maxHistoryRecords: Math.max(10, Number(v) || 200) })}
+            prompt="200"
+          />
+        </VStack>
+        <VStack alignment="leading" spacing={2}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            自动清理多少天前的本地下载文件（0 = 不清理；不动相册与历史记录）
           </Text>
           <TextField
             value={String(draft.autoCleanDays)}
