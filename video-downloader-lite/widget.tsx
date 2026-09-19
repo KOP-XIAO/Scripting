@@ -91,7 +91,7 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   if (!item) return null
   return (
     <HStack spacing={6}>
-      <Image systemName="clock" font={9} foregroundStyle={TEXT_SECONDARY} />
+      <Image systemName="clock" font={9} foregroundStyle={getTheme().accent} />
       <Text font="caption2" foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
         {`前一条：${item.title || item.fileName}`}
       </Text>

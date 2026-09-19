@@ -30,5 +30,5 @@ export async function probeMedia(path: string): Promise<MediaInfo> {
 // 分辨率 → 清晰度标签（短边 p：竖屏 1080×1920 与横屏 1920×1080 都是 1080p）
 export function resolutionLabel(width: number, height: number): string {
   if (!width || !height) return ""
-  return `${Math.min(width, height)}p`
+  return `${Math.round(Math.min(width, height))}p`
 }
