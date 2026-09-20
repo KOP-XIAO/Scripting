@@ -99,6 +99,16 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   )
 }
 
+// 下载徽章：主题色实心圆盘 + 白色箭头（组合式，比任何单个 SF Symbol 都有设计感）
+function DownloadBadge({ size, accent }: { size: number; accent: string }) {
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      <Image systemName="circle.fill" font={size} foregroundStyle={accent} />
+      <Image systemName="arrow.down" font={size * 0.44} fontWeight="bold" foregroundStyle="#FFFFFF" />
+    </ZStack>
+  )
+}
+
 // 角落悬浮刷新按钮：plain 无底色；图标内缩避开圆角裁切（cmhk 真机教训）
 function RefreshButton({ offsetX, offsetY, color }: { offsetX: number; offsetY: number; color: string }) {
   return (
@@ -168,7 +178,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
         {/* 入口：纯图标（文字会让高度爆预算，标题两行优先） */}
-        <Image systemName="arrow.down.circle.fill" font={30} foregroundStyle={theme.accent} />
+        <DownloadBadge size={30} accent={theme.accent} />
       </VStack>
       {/* 右上角刷新 */}
       <RefreshButton offsetX={-3} offsetY={3} color={theme.accentSoft} />
@@ -201,7 +211,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
         <VStack padding={{ top: 28 }}>
           <Spacer />
           <Link url={RUN_URL}>
-            <Image systemName="arrow.down.circle.fill" font={64} foregroundStyle={theme.accent} />
+            <DownloadBadge size={64} accent={theme.accent} />
           </Link>
           <Spacer />
         </VStack>
