@@ -99,13 +99,16 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   )
 }
 
-// 下载徽章：主题色实心圆盘 + 白色箭头（组合式，比任何单个 SF Symbol 都有设计感）
+// 下载徽章：烘焙 PNG（squircle + 主题渐变 + 白色箭头托盘），10 主题各一张
 function DownloadBadge({ size, accent }: { size: number; accent: string }) {
+  const theme = getTheme()
   return (
-    <ZStack frame={{ width: size, height: size }}>
-      <Image systemName="circle.fill" font={size} foregroundStyle={accent} />
-      <Image systemName="arrow.down" font={size * 0.44} fontWeight="bold" foregroundStyle="#FFFFFF" />
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-badge-${theme.key}.png`}
+      resizable={true}
+      scaleToFit={true}
+      frame={{ width: size, height: size }}
+    />
   )
 }
 
