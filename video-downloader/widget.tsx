@@ -7,7 +7,7 @@
 
 import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
-import { getTheme } from "./services/theme"
+import { getTheme, getBadgeGlyph } from "./services/theme"
 import { formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
 import { ReloadWidgetIntent } from "./app_intents"
 
@@ -99,12 +99,13 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   )
 }
 
-// 下载徽章：烘焙 PNG（squircle + 主题渐变 + 白色箭头托盘），10 主题各一张
+// 下载徽章：烘焙 PNG（squircle + 主题渐变 + 款式字形），设置里可切换款式
 function DownloadBadge({ size, accent }: { size: number; accent: string }) {
   const theme = getTheme()
+  const glyph = getBadgeGlyph()
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-badge-${theme.key}.png`}
+      filePath={`${Script.directory}/assets/widget-badge-${glyph}-${theme.key}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}

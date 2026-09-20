@@ -126,3 +126,35 @@ export function setThemeKey(key: ThemeKey) {
     Widget.reloadAll()
   } catch {}
 }
+
+// -------------------------------------------------------------
+// 小组件入口徽章款式（烘焙 PNG：assets/widget-badge-<款式>-<主题>.png）
+// -------------------------------------------------------------
+export const BADGE_GLYPH_KEY = "vdl.badgeGlyph"
+
+export const BADGE_GLYPHS = [
+  { key: "clapperboard", label: "场记板" },
+  { key: "popcorn", label: "爆米花" },
+  { key: "play", label: "播放键" },
+  { key: "film", label: "胶片" },
+  { key: "video", label: "摄像机" },
+  { key: "download", label: "下载箭头" },
+] as const
+
+export type BadgeGlyph = (typeof BADGE_GLYPHS)[number]["key"]
+
+export function getBadgeGlyph(): BadgeGlyph {
+  try {
+    const g = Storage.get<string>(BADGE_GLYPH_KEY)
+    const found = BADGE_GLYPHS.find((b) => b.key === g)
+    if (found) return found.key
+  } catch {}
+  return "clapperboard"
+}
+
+export function setBadgeGlyph(key: BadgeGlyph) {
+  Storage.set(BADGE_GLYPH_KEY, key)
+  try {
+    Widget.reloadAll()
+  } catch {}
+}

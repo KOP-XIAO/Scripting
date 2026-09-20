@@ -73,6 +73,7 @@ import {
 } from "./services/file-actions"
 import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
 import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
+import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./services/theme"
 
 // Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
 
@@ -297,6 +298,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
   const [draft, setDraft] = useState<Preferences>({ ...prefs })
   const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
+  const [badgeGlyph, setBadgeGlyphLocal] = useState<BadgeGlyph>(getBadgeGlyph())
 
   return (
     <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
@@ -385,7 +387,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         header={
           <HStack spacing={6}>
             <Image systemName="paintpalette" font={11} foregroundStyle="secondaryLabel" />
-            <Text>外观主题</Text>
+            <Text>外观主题与徽章</Text>
           </HStack>
         }
         footer={
@@ -438,6 +440,40 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                 )
                 // 芯片之间用 Spacer 均分，让每行铺满整个宽度
                 return i === 0 ? [chip] : [<Spacer key={`sp-${k}`} />, chip]
+              })}
+            </HStack>
+          ))
+        })()}
+        {/* 入口徽章款式：实物预览，点选即换 */}
+        {(() => {
+          const keys = BADGE_GLYPHS.map((b) => b.key)
+          const rows: BadgeGlyph[][] = [keys.slice(0, 3), keys.slice(3)]
+          return rows.map((row, ri) => (
+            <HStack key={ri} spacing={12}>
+              {row.map((g) => {
+                const selected = g === badgeGlyph
+                return (
+                  <Button
+                    key={g}
+                    buttonStyle="plain"
+                    action={() => {
+                      setBadgeGlyphLocal(g)
+                      setBadgeGlyph(g) // 内部会 Widget.reloadAll()
+                    }}
+                  >
+                    <VStack spacing={4}>
+                      <Image
+                        filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
+                        resizable={true}
+                        scaleToFit={true}
+                        frame={{ width: 44, height: 44 }}
+                      />
+                      <Text font="caption2" foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}>
+                        {BADGE_GLYPHS.find((b) => b.key === g)!.label}
+                      </Text>
+                    </VStack>
+                  </Button>
+                )
               })}
             </HStack>
           ))
