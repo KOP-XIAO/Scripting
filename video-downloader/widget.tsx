@@ -87,12 +87,16 @@ function LatestInfo({
 }
 
 // 次近一条（一行简报）
+// 「前一条」用一枚随机的鲜亮强调色（每次渲染随机，给深色底一点跳色）
+const SECOND_ROW_COLORS = ["#FF9F0A", "#FF6B9D", "#5AC8FA", "#BF5AF2", "#FFD60A", "#30D158", "#64D2FF", "#FF8A65"]
+
 function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   if (!item) return null
+  const accent2 = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
   return (
     <HStack spacing={6}>
-      <Image systemName="clock" font={9} foregroundStyle={getTheme().accent} />
-      <Text font="caption2" foregroundStyle={getTheme().accent} lineLimit={1}>
+      <Image systemName="clock" font={9} foregroundStyle={accent2} />
+      <Text font="caption2" foregroundStyle={accent2} lineLimit={1}>
         {`前一条：${item.title || item.fileName}`}
       </Text>
     </HStack>
