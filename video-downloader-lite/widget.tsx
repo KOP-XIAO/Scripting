@@ -92,7 +92,7 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   return (
     <HStack spacing={6}>
       <Image systemName="clock" font={9} foregroundStyle={getTheme().accent} />
-      <Text font="caption2" foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+      <Text font="caption2" foregroundStyle={getTheme().accent} lineLimit={1}>
         {`前一条：${item.title || item.fileName}`}
       </Text>
     </HStack>
@@ -168,7 +168,7 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <LatestInfo item={snap?.latest ?? null} lines={2} accent={theme.accent} />
         <Spacer />
         {/* 入口：纯图标（文字会让高度爆预算，标题两行优先） */}
-        <Image systemName="plus.circle.fill" font={30} foregroundStyle={theme.accent} />
+        <Image systemName="arrow.down.circle.fill" font={30} foregroundStyle={theme.accent} />
       </VStack>
       {/* 右上角刷新 */}
       <RefreshButton offsetX={-3} offsetY={3} color={theme.accentSoft} />
@@ -201,7 +201,7 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
         <VStack padding={{ top: 28 }}>
           <Spacer />
           <Link url={RUN_URL}>
-            <Image systemName="plus.circle.fill" font={64} foregroundStyle={theme.accent} />
+            <Image systemName="arrow.down.circle.fill" font={64} foregroundStyle={theme.accent} />
           </Link>
           <Spacer />
         </VStack>
