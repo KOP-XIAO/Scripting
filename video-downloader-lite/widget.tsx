@@ -212,11 +212,14 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           </VStack>
           <Spacer />
         </VStack>
-        <VStack padding={{ top: 28 }}>
+        <VStack padding={{ top: 28 }} spacing={4}>
           <Spacer />
           <Link url={RUN_URL}>
             <DownloadBadge size={64} accent={theme.accent} />
           </Link>
+          <Text font="caption2" foregroundStyle={theme.accentSoft}>
+            点击下载
+          </Text>
           <Spacer />
         </VStack>
       </HStack>

@@ -401,7 +401,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           const keys = Object.keys(THEMES) as ThemeKey[]
           const rows: ThemeKey[][] = [keys.slice(0, 5), keys.slice(5)]
           return rows.map((row, ri) => (
-            <HStack key={ri} spacing={0}>
+            <HStack key={`theme-${ri}`} spacing={0}>
               {row.flatMap((k, i) => {
                 const t = THEMES[k]
                 const selected = k === themeKey
@@ -449,7 +449,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           const keys = BADGE_GLYPHS.map((b) => b.key)
           const rows: BadgeGlyph[][] = [keys.slice(0, 3), keys.slice(3)]
           return rows.map((row, ri) => (
-            <HStack key={ri} spacing={0}>
+            <HStack key={`badge-${ri}`} spacing={0}>
               {row.map((g) => {
                 const selected = g === badgeGlyph
                 return (
