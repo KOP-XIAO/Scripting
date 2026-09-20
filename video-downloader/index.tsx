@@ -458,7 +458,8 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                       filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
                       resizable={true}
                       scaleToFit={true}
-                      frame={{ width: 48, height: 48 }}
+                      renderingMode="original"
+                      frame={{ width: 64, height: 64 }}
                     />
                     <Button
                       title={BADGE_GLYPHS.find((b) => b.key === g)!.label}
