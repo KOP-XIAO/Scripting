@@ -444,35 +444,40 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             </HStack>
           ))
         })()}
-        {/* 入口徽章款式：实物预览，点选即换 */}
+        {/* 入口徽章款式：图片裸放（进 Button 会被当模板图染色），名称按钮选择 */}
         {(() => {
           const keys = BADGE_GLYPHS.map((b) => b.key)
           const rows: BadgeGlyph[][] = [keys.slice(0, 3), keys.slice(3)]
           return rows.map((row, ri) => (
-            <HStack key={ri} spacing={12}>
+            <HStack key={ri} spacing={0}>
               {row.map((g) => {
                 const selected = g === badgeGlyph
                 return (
-                  <Button
-                    key={g}
-                    buttonStyle="plain"
-                    action={() => {
-                      setBadgeGlyphLocal(g)
-                      setBadgeGlyph(g) // 内部会 Widget.reloadAll()
-                    }}
-                  >
-                    <VStack spacing={4}>
-                      <Image
-                        filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
-                        resizable={true}
-                        scaleToFit={true}
-                        frame={{ width: 44, height: 44 }}
-                      />
-                      <Text font="caption2" foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}>
-                        {BADGE_GLYPHS.find((b) => b.key === g)!.label}
+                  <VStack key={g} spacing={2} frame={{ maxWidth: "infinity" } as never}>
+                    <Image
+                      filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
+                      resizable={true}
+                      scaleToFit={true}
+                      frame={{ width: 48, height: 48 }}
+                    />
+                    <Button
+                      title={BADGE_GLYPHS.find((b) => b.key === g)!.label}
+                      buttonStyle="plain"
+                      action={() => {
+                        setBadgeGlyphLocal(g)
+                        setBadgeGlyph(g) // 内部会 Widget.reloadAll()
+                      }}
+                    />
+                    {selected ? (
+                      <Text font="caption2" foregroundStyle={THEMES[themeKey].accent}>
+                        ● 使用中
                       </Text>
-                    </VStack>
-                  </Button>
+                    ) : (
+                      <Text font="caption2" foregroundStyle="tertiaryLabel">
+                        {" "}
+                      </Text>
+                    )}
+                  </VStack>
                 )
               })}
             </HStack>
