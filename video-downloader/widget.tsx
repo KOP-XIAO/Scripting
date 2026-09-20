@@ -103,17 +103,27 @@ function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
   )
 }
 
-// 下载徽章：烘焙 PNG（squircle + 主题渐变 + 款式字形），设置里可切换款式
+// 下载徽章：烘焙 PNG（squircle + 主题渐变 + 款式字形）+ 右上角随机色 + 角标
+// （角标是运行时叠加的 SF 符号，颜色每次渲染随机，与「前一条」共享色池）
 function DownloadBadge({ size, accent }: { size: number; accent: string }) {
   const theme = getTheme()
   const glyph = getBadgeGlyph()
+  const dotColor = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
   return (
-    <Image
-      filePath={`${Script.directory}/assets/widget-badge-${glyph}-${theme.key}.png`}
-      resizable={true}
-      scaleToFit={true}
-      frame={{ width: size, height: size }}
-    />
+    <ZStack frame={{ width: size, height: size }}>
+      <Image
+        filePath={`${Script.directory}/assets/widget-badge-${glyph}-${theme.key}.png`}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: size, height: size }}
+      />
+      <Image
+        systemName="plus.circle.fill"
+        font={size * 0.32}
+        foregroundStyle={dotColor}
+        offset={{ x: size * 0.36, y: -size * 0.36 }}
+      />
+    </ZStack>
   )
 }
 
