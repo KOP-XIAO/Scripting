@@ -70,7 +70,9 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
       <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth: lw } }} />
       {ratio != null && (
         <Circle
-          trim={{ from: 0, to: ratio }}
+          // v1.19.21 进度方向：改画"结束于 12 点"的那一段（from: 1-ratio → 1），
+          // 使彩弧从 12 点起**顺时针**展开；原先画 from 0 → ratio 是逆时针方向展开的。
+          trim={{ from: 1 - ratio, to: 1 }}
           stroke={{
             shapeStyle: { gradient: [...stops], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
             // v1.19.20：不加 lineCap（默认平头 butt）。此前设 round——圆头会让弧的两端各向外
