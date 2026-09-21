@@ -117,9 +117,17 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
         scaleToFit={true}
         frame={{ width: size, height: size }}
       />
+      {/* 白圆垫底 + 彩色加号压上（plus.circle.fill 的加号是镂空的，单用会透底发虚） */}
       <Image
-        systemName="plus.circle.fill"
+        systemName="circle.fill"
         font={size * 0.42}
+        foregroundStyle="#FFFFFF"
+        offset={{ x: size * 0.44, y: -size * 0.44 }}
+      />
+      <Image
+        systemName="plus"
+        font={size * 0.22}
+        fontWeight="bold"
         foregroundStyle={dotColor}
         offset={{ x: size * 0.44, y: -size * 0.44 }}
       />
