@@ -66,13 +66,17 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   const lw = Math.max(7, Math.round(size * 0.09))
   return (
     <ZStack frame={{ width: size, height: size }}>
-      <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth: lw, lineCap: "round" } }} />
+      {/* 轨道：完整圆环，无端点（cap 无影响） */}
+      <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth: lw } }} />
       {ratio != null && (
         <Circle
           trim={{ from: 0, to: ratio }}
           stroke={{
             shapeStyle: { gradient: [...stops], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
-            strokeStyle: { lineWidth: lw, lineCap: "round" },
+            // v1.19.20：不加 lineCap（默认平头 butt）。此前设 round——圆头会让弧的两端各向外
+            // 多凸出半个线宽：末端越过真实比例位置形成圆鼓，起始端（12 点逆时针方向）反过来
+            // 啃进"已用"那一段，看上去就像圆环上缺了一块。平头端点让分界线与半径对齐，干净准确。
+            strokeStyle: { lineWidth: lw },
           }}
           rotationEffect={-90}
         />
