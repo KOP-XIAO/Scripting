@@ -117,18 +117,18 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
         scaleToFit={true}
         frame={{ width: size, height: size }}
       />
-      {/* 白圆垫底 + 彩色加号压上（plus.circle.fill 的加号是镂空的，单用会透底发虚） */}
+      {/* 彩色实心圆盘 + 白色加号（经典徽章配色，不透底） */}
       <Image
         systemName="circle.fill"
         font={size * 0.42}
-        foregroundStyle="#FFFFFF"
+        foregroundStyle={dotColor}
         offset={{ x: size * 0.44, y: -size * 0.44 }}
       />
       <Image
         systemName="plus"
-        font={size * 0.22}
+        font={size * 0.2}
         fontWeight="bold"
-        foregroundStyle={dotColor}
+        foregroundStyle="#FFFFFF"
         offset={{ x: size * 0.44, y: -size * 0.44 }}
       />
     </ZStack>
