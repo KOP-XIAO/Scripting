@@ -119,9 +119,9 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
       />
       <Image
         systemName="plus.circle.fill"
-        font={size * 0.32}
+        font={size * 0.42}
         foregroundStyle={dotColor}
-        offset={{ x: size * 0.36, y: -size * 0.36 }}
+        offset={{ x: size * 0.44, y: -size * 0.44 }}
       />
     </ZStack>
   )
