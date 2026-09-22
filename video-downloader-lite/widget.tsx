@@ -122,7 +122,7 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
         systemName="hand.tap.fill"
         font={size * 0.42}
         foregroundStyle={dotColor}
-        offset={{ x: size * 0.42, y: -size * 0.42 }}
+        offset={{ x: size * 0.42, y: size * 0.42 }}
       />
     </ZStack>
   )

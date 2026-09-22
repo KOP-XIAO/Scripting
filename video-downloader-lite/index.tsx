@@ -462,13 +462,22 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                     }}
                   >
                     <VStack spacing={4}>
-                      <Image
-                        filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
-                        resizable={true}
-                        scaleToFit={true}
-                        renderingMode="original"
-                        frame={{ width: 64, height: 64 }}
-                      />
+                      <ZStack frame={{ width: 64, height: 64 }}>
+                        <Image
+                          filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
+                          resizable={true}
+                          scaleToFit={true}
+                          renderingMode="original"
+                          frame={{ width: 64, height: 64 }}
+                        />
+                        {/* 预览与实物一致：右下角标 */}
+                        <Image
+                          systemName="hand.tap.fill"
+                          font={18}
+                          foregroundStyle={THEMES[themeKey].accent}
+                          offset={{ x: 24, y: 24 }}
+                        />
+                      </ZStack>
                       <Text
                         font="caption2"
                         foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}
