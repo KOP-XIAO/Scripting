@@ -32,6 +32,11 @@ export const theme = {
 
   ringTrack: "rgba(255,255,255,0.10)",
 
+  // v1.19.22 已用段填充：暗 ember（danger 起点 #FF8A7A 降至 30% 不透明度）。
+  // 剩余=冷色亮渐变 / 已用=暖色暗填充，"剩多少、烧掉多少"一眼分明；
+  // 压暗到 30% 不与剩余段抢视觉，叠在深蓝底上呈柔和暖玫瑰灰。
+  ringUsed: "rgba(255,138,122,0.30)",
+
   textPrimary: "#FFFFFF",
   textSecondary: "rgba(255,255,255,0.72)",
   textTertiary: "rgba(255,255,255,0.45)",

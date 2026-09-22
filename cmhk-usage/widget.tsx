@@ -68,6 +68,16 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
     <ZStack frame={{ width: size, height: size }}>
       {/* 轨道：完整圆环，无端点（cap 无影响） */}
       <Circle stroke={{ shapeStyle: theme.ringTrack, strokeStyle: { lineWidth: lw } }} />
+      {/* v1.19.22 已用段：剩余弧的补集（trim 0 → 1-ratio）。与剩余弧同用 -90° 旋转、
+          平头端点，在 12 点与比例分界两处严丝合缝拼成完整圆环——用户提出"已用部分
+          也应用颜色填充"，此前已用段只是 10% 白轨道，深蓝底上几乎隐形。 */}
+      {ratio != null && (
+        <Circle
+          trim={{ from: 0, to: 1 - ratio }}
+          stroke={{ shapeStyle: theme.ringUsed, strokeStyle: { lineWidth: lw } }}
+          rotationEffect={-90}
+        />
+      )}
       {ratio != null && (
         <Circle
           // v1.19.21 进度方向：改画"结束于 12 点"的那一段（from: 1-ratio → 1），
