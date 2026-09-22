@@ -71,7 +71,8 @@ import {
   shareFile,
   canSaveToPhotos,
 } from "./services/file-actions"
-import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
+import { resolutionLabel } from "./services/media-probe"
+import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
 import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
 import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./services/theme"
 
@@ -256,7 +257,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
   const metaLine2 = [
     formatBytes(item.bytes_written),
     formatDuration(item.duration_sec ?? 0),
-    item.resolution ? `${item.resolution} ${item.format ?? ""}`.trim() : "",
+    item.resolution ? `${formatResolution(item.resolution)} ${item.format ?? ""}`.trim() : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -1022,7 +1023,7 @@ function View() {
           fileName: f.name,
           bytesWritten: f.bytes,
           durationSec: f.durationSec,
-          resolution: f.height ? `${Math.min(f.width ?? 0, f.height)}p` : "",
+          resolution: f.height ? resolutionLabel(f.width ?? 0, f.height) : "",
           format: f.format ?? "",
           note: outcome.sourceLabel,
         })

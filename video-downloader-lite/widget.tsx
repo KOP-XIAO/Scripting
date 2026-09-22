@@ -8,7 +8,7 @@
 import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
 import { getTheme, getBadgeGlyph } from "./services/theme"
-import { formatBytes, formatDate, formatDuration, prettySource } from "./utils/common"
+import { formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
 import { ReloadWidgetIntent } from "./app_intents"
 
 const SCRIPT_NAME = "Video Downloader Lite"
@@ -51,7 +51,7 @@ function LatestInfo({
   const line1 = [
     formatBytes(item.bytes),
     formatDuration(item.durationSec),
-    item.resolution ? `${item.resolution} ${item.format ?? ""}`.trim() : "",
+    item.resolution ? `${formatResolution(item.resolution)} ${item.format ?? ""}`.trim() : "",
   ]
     .filter(Boolean)
     .join(" | ")

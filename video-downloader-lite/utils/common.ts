@@ -1,6 +1,6 @@
 // utils/common.ts — 通用小工具（与抖音下载器同源的稳健实现）
 
-export const VERSION = "1.17.3"
+export const VERSION = "1.17.4"
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -109,4 +109,11 @@ const KNOWN_HOSTS: Record<string, string> = {
 export function prettySource(url: string): string {
   const host = hostOf(url)
   return KNOWN_HOSTS[host] ?? host
+}
+
+// 分辨率显示兜底：脏数据（"567.2323p" 这种）显示时取整
+export function formatResolution(res: string): string {
+  if (!res) return ""
+  const m = res.match(/([\d.]+)p/i)
+  return m ? `${Math.round(Number(m[1]))}p` : res
 }

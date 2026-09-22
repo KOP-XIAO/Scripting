@@ -9,6 +9,7 @@ import { getPreferences } from "./services/preferences"
 import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote } from "./services/history"
 import { appendDebug } from "./services/debug"
 import { postDownloadAction } from "./services/file-actions"
+import { resolutionLabel } from "./services/media-probe"
 import { extractFirstURL } from "./utils/common"
 
 function resolveInputURL(): string | null {
@@ -102,7 +103,7 @@ async function run() {
         fileName: f.name,
         bytesWritten: f.bytes,
         durationSec: f.durationSec,
-        resolution: f.height ? `${Math.min(f.width ?? 0, f.height)}p` : "",
+        resolution: f.height ? resolutionLabel(f.width ?? 0, f.height) : "",
         format: f.format ?? "",
         note: outcome.sourceLabel,
       })
