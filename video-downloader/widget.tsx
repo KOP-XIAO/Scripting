@@ -117,19 +117,12 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
         scaleToFit={true}
         frame={{ width: size, height: size }}
       />
-      {/* 彩色实心圆盘 + 白色加号（经典徽章配色，不透底） */}
+      {/* 手指点击手势角标（"点这里添加"的直觉暗示，随机强调色） */}
       <Image
-        systemName="circle.fill"
+        systemName="hand.tap.fill"
         font={size * 0.42}
         foregroundStyle={dotColor}
-        offset={{ x: size * 0.44, y: -size * 0.44 }}
-      />
-      <Image
-        systemName="plus"
-        font={size * 0.2}
-        fontWeight="bold"
-        foregroundStyle="#FFFFFF"
-        offset={{ x: size * 0.44, y: -size * 0.44 }}
+        offset={{ x: size * 0.42, y: -size * 0.42 }}
       />
     </ZStack>
   )
