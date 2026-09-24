@@ -226,6 +226,41 @@ function asciiBar(done: number, total: number, width = 40): string {
   return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${Math.round(ratio * 100)}%`
 }
 
+
+// 视频缩略图：AVAsset 抽首帧附近帧（本地文件才有）
+function VideoThumb({ path, durationSec }: { path: string; durationSec?: number }) {
+  const [img, setImg] = useState<any>(null)
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") return
+        if (!(await FileManager.exists(path))) return
+        const asset = new AVAsset(path)
+        const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
+        const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
+          maximumSize: { width: 320, height: 180 },
+        })
+        asset.dispose()
+        if (alive) setImg(r.image)
+      } catch {}
+    })()
+    return () => {
+      alive = false
+    }
+  }, [path])
+
+  if (img) {
+    return <Image image={img} resizable={true} scaleToFill={true} frame={{ width: 78, height: 50 }} />
+  }
+  return (
+    <ZStack frame={{ width: 78, height: 50 }}>
+      <RoundedRectangle cornerRadius={6} fill="#1C1C22" />
+      <Image systemName="play.rectangle" font={14} foregroundStyle="#3A3A44" />
+    </ZStack>
+  )
+}
+
 // -------------------------------------------------------------
 // 历史记录行：编号 + 标题 + 元信息，点按弹操作面板（Dialog.actionSheet——
 // 本运行时实证可靠的交互；自定义容器内嵌 Button 的 flatMap/嵌套方案均已否决）
@@ -289,9 +324,12 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
 
   return (
     <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
-      <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
-        {`#${String(index + 1).padStart(2, "0")}`}
-      </Text>
+      <VStack alignment="leading" spacing={2}>
+        <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
+          {`#${String(index + 1).padStart(2, "0")}`}
+        </Text>
+        <VideoThumb path={item.file_path} durationSec={item.duration_sec} />
+      </VStack>
       <VStack alignment="leading" spacing={3}>
         <Text font="subheadline" fontWeight="medium" lineLimit={2}>
           {item.title || item.file_name}
@@ -957,12 +995,6 @@ function View() {
     persistPreferences(p)
   }
 
-  const pasteFromClipboard = async () => {
-    const text = await Pasteboard.getString()
-    const found = text ? extractFirstURL(text) : null
-    if (found) setInputURL(found)
-    else await Dialog.alert({ message: "剪贴板里没有找到 http(s) 链接" })
-  }
 
   // 底部按钮：剪贴板有链接 → 填入并开始；否则用输入框已有内容；都没有才提示
   const pasteAndDownload = async () => {
@@ -1113,8 +1145,8 @@ function View() {
           header={<Text>下载链接</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              支持：微信视频号分享链接 / 抖音（无水印）/ m3u8 / mp4 直链 / 平台链接（需解析实例）。
-              当前识别：{kindHint}　·　v{VERSION}
+              支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接。复制链接后点底部「粘贴并下载」一键开始；
+              在其它 App 里也可直接分享到本脚本。当前识别：{kindHint}　·　v{VERSION}
             </Text>
           }
         >
@@ -1122,9 +1154,8 @@ function View() {
             title="视频链接"
             value={inputURL}
             onChanged={setInputURL}
-            prompt="粘贴或输入链接"
+            prompt="粘贴或输入链接（也可手动编辑）"
           />
-          <Button title="从剪贴板粘贴" action={() => void pasteFromClipboard()} />
         </Section>
 
         <Section title="状态">

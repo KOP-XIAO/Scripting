@@ -2,7 +2,7 @@
   "name": "Video Downloader Lite",
   "icon": "tray.and.arrow.down.fill",
   "color": "rgba(52, 199, 89, 1)",
-  "version": "1.17.7",
+  "version": "1.18.0",
   "entry": "index.tsx",
   "runInApp": true,
   "permissions": null,
