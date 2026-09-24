@@ -227,7 +227,7 @@ function asciiBar(done: number, total: number, width = 40): string {
 }
 
 
-// 视频缩略图：AVAsset 抽首帧附近帧（本地文件才有）
+// 视频缩略图：AVAsset 抽帧 → UIImage.croppedTo 中心裁切到 72:46 → 填满框
 function VideoThumb({ path, durationSec }: { path: string; durationSec?: number }) {
   const [img, setImg] = useState<any>(null)
   useEffect(() => {
@@ -239,10 +239,23 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
         const asset = new AVAsset(path)
         const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
         const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
-          maximumSize: { width: 320, height: 180 },
+          maximumSize: { width: 320, height: 320 },
         })
         asset.dispose()
-        if (alive) setImg(r.image)
+        // 中心裁切到目标宽高比（竖屏视频不再变成细条）
+        let image = r.image
+        const scale = image.scale || 1
+        const pw = image.size.width * scale
+        const ph = image.size.height * scale
+        const ratio = 72 / 46
+        if (pw / ph > ratio) {
+          const nw = Math.round(ph * ratio)
+          image = image.croppedTo({ x: Math.round((pw - nw) / 2), y: 0, width: nw, height: ph }) ?? image
+        } else {
+          const nh = Math.round(pw / ratio)
+          image = image.croppedTo({ x: 0, y: Math.round((ph - nh) / 2), width: pw, height: nh }) ?? image
+        }
+        if (alive) setImg(image)
       } catch {}
     })()
     return () => {
@@ -251,13 +264,11 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
   }, [path])
 
   if (img) {
-    // scaleToFill 在本运行时会无视 frame 撑满父容器（截图实证），
-    // 用 scaleToFit 约束进 72×46 并圆角裁切
     return (
       <Image
         image={img}
         resizable={true}
-        scaleToFit={true}
+        scaleToFill={true}
         frame={{ width: 72, height: 46 }}
         cornerRadius={6}
       />
