@@ -251,10 +251,10 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
   }, [path])
 
   if (img) {
-    return <Image image={img} resizable={true} scaleToFill={true} frame={{ width: 78, height: 50 }} />
+    return <Image image={img} resizable={true} scaleToFill={true} frame={{ width: 72, height: 46 }} />
   }
   return (
-    <ZStack frame={{ width: 78, height: 50 }}>
+    <ZStack frame={{ width: 72, height: 46 }}>
       <RoundedRectangle cornerRadius={6} fill="#1C1C22" />
       <Image systemName="play.rectangle" font={14} foregroundStyle="#3A3A44" />
     </ZStack>
@@ -324,7 +324,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
 
   return (
     <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
-      <VStack alignment="leading" spacing={2}>
+      <VStack alignment="leading" spacing={2} padding={{ top: 2, bottom: 2 }}>
         <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
