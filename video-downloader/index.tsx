@@ -227,23 +227,34 @@ function asciiBar(done: number, total: number, width = 40): string {
 }
 
 
-// 视频缩略图：AVAsset 抽帧 → UIImage.croppedTo 中心裁切到 72:46 → 填满框
+// 视频缩略图：AVAsset 抽帧 → UIImage.croppedTo 中心裁切到 72:46
+// 全链路 appendDebug 留痕（诊断中心可查哪一环断了）
 function VideoThumb({ path, durationSec }: { path: string; durationSec?: number }) {
   const [img, setImg] = useState<any>(null)
   useEffect(() => {
     let alive = true
     void (async () => {
+      const tag = `thumb(${path.split("/").pop()})`
       try {
-        if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") return
-        if (!(await FileManager.exists(path))) return
+        if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
+          appendDebug(`${tag}: AVAsset/MediaTime 不可用`)
+          return
+        }
+        if (!(await FileManager.exists(path))) {
+          appendDebug(`${tag}: 本地文件不存在`)
+          return
+        }
         const asset = new AVAsset(path)
         const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
         const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
           maximumSize: { width: 320, height: 320 },
         })
         asset.dispose()
-        // 中心裁切到目标宽高比（竖屏视频不再变成细条）
-        // UIImage 的尺寸是 width/height 点属性（不是 size.width）
+        if (!r?.image) {
+          appendDebug(`${tag}: generateImage 无返回图像`)
+          return
+        }
+        // 中心裁切到目标宽高比（UIImage 尺寸是 width/height 点属性）
         let image = r.image
         const pw = image.width
         const ph = image.height
@@ -255,8 +266,11 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
           const nh = Math.round(pw / ratio)
           image = image.croppedTo({ x: 0, y: Math.round((ph - nh) / 2), width: pw, height: nh }) ?? image
         }
+        appendDebug(`${tag}: 抽帧成功 ${pw}x${ph}`)
         if (alive) setImg(image)
-      } catch {}
+      } catch (e) {
+        appendDebug(`${tag}: 失败 ${e}`)
+      }
     })()
     return () => {
       alive = false
@@ -269,17 +283,14 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
         image={img}
         resizable={true}
         scaleToFill={true}
+        renderingMode="original"
         frame={{ width: 72, height: 46 }}
         cornerRadius={6}
       />
     )
   }
-  return (
-    <ZStack frame={{ width: 72, height: 46 }}>
-      <RoundedRectangle cornerRadius={6} fill="#1C1C22" />
-      <Image systemName="play.rectangle" font={14} foregroundStyle="#3A3A44" />
-    </ZStack>
-  )
+  // 占位块：单层圆角矩形，不嵌套（嵌套层数多是本运行时的雷区）
+  return <RoundedRectangle cornerRadius={6} fill="#2A2A32" frame={{ width: 72, height: 46 }} />
 }
 
 // -------------------------------------------------------------
@@ -980,18 +991,22 @@ function View() {
   }
 
   useEffect(() => {
-    void initDatabase()
-      .then(() => backfillMediaInfo()) // 老记录回填时长/清晰度（文件还在本地的话）
-      .then(async () => {
-        // 自动清理 N 天前的本地下载目录
-        const days = getPreferences().autoCleanDays
-        if (days > 0) {
-          const n = await autoCleanDownloads(days)
-          if (n > 0) appendDebug(`自动清理：删除 ${n} 个过期下载目录`)
-        }
-      })
-      .then(refreshHistory)
-      .then(() => ensureWidgetSnapshot()) // 重算小组件快照
+    void (async () => {
+      await initDatabase()
+      await refreshHistory() // 先显示历史（此前被回填阻塞到下载完才出现）
+      ensureWidgetSnapshot() // 重算小组件快照（不阻塞）
+      // 后台慢活：老记录回填 + 自动清理
+      const fixed = await backfillMediaInfo()
+      if (fixed > 0) {
+        await refreshHistory()
+        appendDebug(`回填媒体信息 ${fixed} 条`)
+      }
+      const days = getPreferences().autoCleanDays
+      if (days > 0) {
+        const n = await autoCleanDownloads(days)
+        if (n > 0) appendDebug(`自动清理：删除 ${n} 个过期下载目录`)
+      }
+    })()
     // 小组件/快捷指令跳转进入时（scripting://run_single/<name>?autopaste=1）自动读剪贴板
     const qp = Script.queryParameters
     if (qp && String(qp.autopaste) === "1") {
