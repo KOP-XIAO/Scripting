@@ -235,6 +235,7 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
     let alive = true
     void (async () => {
       const tag = `thumb(${path.split("/").pop()})`
+      appendDebug(`${tag}: 组件挂载，开始抽帧`)
       try {
         if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
           appendDebug(`${tag}: AVAsset/MediaTime 不可用`)
@@ -994,6 +995,12 @@ function View() {
     void (async () => {
       await initDatabase()
       await refreshHistory() // 先显示历史（此前被回填阻塞到下载完才出现）
+      try {
+        const list = await listHistory(50)
+        appendDebug(`启动：历史库读取 ${list.length} 条，界面显示 ${list.slice(0, 5).length} 条`)
+      } catch (e) {
+        appendDebug(`启动：历史库读取失败 ${e}`)
+      }
       ensureWidgetSnapshot() // 重算小组件快照（不阻塞）
       // 后台慢活：老记录回填 + 自动清理
       const fixed = await backfillMediaInfo()
