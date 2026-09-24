@@ -108,9 +108,67 @@ function newConfettiPieces(): ConfettiPiece[] {
   }))
 }
 
-// 统一单实现撒花：卡片与粒子同一套节拍（此前双路径导致卡片生硬）
+// Animation 与 Storage/Dialog 一样是全局对象（文档全部裸用、从不 import）。
+// 运行时探测：有 → 原生 60fps 插值；没有 → JS 驱动兜底（30fps）。
+declare const Animation: any
+const NativeAnim: any = typeof globalThis !== "undefined" ? (globalThis as any).Animation : undefined
+
+// ---- 原生路径（60fps，SwiftUI 插值）----
+function ConfettiNative() {
+  const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
+  const [go, setGo] = useState(false)
+  const [fade, setFade] = useState(1)
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setGo(true), 40)
+    const t2 = setTimeout(() => setFade(0), 1350)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [])
+
+  return (
+    <ZStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+      opacity={fade}
+      animation={{ animation: NativeAnim.easeOut(0.45), value: fade }}
+    >
+      <VStack
+        spacing={8}
+        offset={{ x: 0, y: go ? 0 : 30 }}
+        animation={{ animation: NativeAnim.spring({ duration: 0.45, bounce: 0.4 }), value: go }}
+      >
+        <Text font={54}>🎉</Text>
+        <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
+          下载完成
+        </Text>
+      </VStack>
+      {pieces.map((p2, i) => (
+        <Text
+          key={i}
+          font={p2.size}
+          offset={{ x: go ? p2.x + p2.drift : p2.x, y: go ? p2.y1 : p2.y0 }}
+          animation={{ animation: NativeAnim.easeIn(p2.dur), value: go }}
+        >
+          {p2.emoji}
+        </Text>
+      ))}
+    </ZStack>
+  )
+}
+
+// 终端风 ASCII 进度条
+function asciiBar(done: number, total: number, width = 24): string {
+  const ratio = Math.max(0, Math.min(1, total > 0 ? done / total : 0))
+  const filled = Math.round(ratio * width)
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${Math.round(ratio * 100)}%`
+}
+
+// 撒花分发：有全局 Animation 走原生 60fps，否则 JS 统一实现兜底
+
 // 卡片 easeOutCubic 升起 + 与粒子同源的正弦轻摆；文字延迟淡入
-function ConfettiOverlay() {
+function ConfettiJS() {
   const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
   const [tick, setTick] = useState(0)
 
@@ -154,6 +212,10 @@ function ConfettiOverlay() {
       })}
     </ZStack>
   )
+}
+
+function ConfettiOverlay() {
+  return NativeAnim ? <ConfettiNative /> : <ConfettiJS />
 }
 
 // -------------------------------------------------------------
@@ -1059,10 +1121,13 @@ function View() {
 
         <Section title="状态">
           {loading && progress ? (
-            <VStack alignment="leading" spacing={8}>
-              <ProgressView value={progress.done / Math.max(progress.total, 1)} total={1} />
-              <Text font="caption">
-                分片 {progress.done}/{progress.total}
+            <VStack alignment="leading" spacing={4}>
+              {/* 终端风 ASCII 进度条：[██████░░░░] 63% */}
+              <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
+                {asciiBar(progress.done, progress.total)}
+              </Text>
+              <Text font="caption2" monospaced foregroundStyle="secondaryLabel">
+                {`分片 ${progress.done}/${progress.total}`}
               </Text>
             </VStack>
           ) : (
