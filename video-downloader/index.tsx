@@ -251,7 +251,17 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
   }, [path])
 
   if (img) {
-    return <Image image={img} resizable={true} scaleToFill={true} frame={{ width: 72, height: 46 }} />
+    // scaleToFill 在本运行时会无视 frame 撑满父容器（截图实证），
+    // 用 scaleToFit 约束进 72×46 并圆角裁切
+    return (
+      <Image
+        image={img}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: 72, height: 46 }}
+        cornerRadius={6}
+      />
+    )
   }
   return (
     <ZStack frame={{ width: 72, height: 46 }}>
