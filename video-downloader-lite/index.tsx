@@ -243,10 +243,10 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
         })
         asset.dispose()
         // 中心裁切到目标宽高比（竖屏视频不再变成细条）
+        // UIImage 的尺寸是 width/height 点属性（不是 size.width）
         let image = r.image
-        const scale = image.scale || 1
-        const pw = image.size.width * scale
-        const ph = image.size.height * scale
+        const pw = image.width
+        const ph = image.height
         const ratio = 72 / 46
         if (pw / ph > ratio) {
           const nw = Math.round(ph * ratio)
