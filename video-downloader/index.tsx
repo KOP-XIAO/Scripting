@@ -118,13 +118,16 @@ function ConfettiNative() {
   const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
   const [go, setGo] = useState(false)
   const [fade, setFade] = useState(1)
+  const [textIn, setTextIn] = useState(false)
 
   useEffect(() => {
     const t1 = setTimeout(() => setGo(true), 40)
-    const t2 = setTimeout(() => setFade(0), 1350)
+    const t2 = setTimeout(() => setTextIn(true), 400) // 文字延迟淡入
+    const t3 = setTimeout(() => setFade(0), 1400)
     return () => {
       clearTimeout(t1)
       clearTimeout(t2)
+      clearTimeout(t3)
     }
   }, [])
 
@@ -134,13 +137,21 @@ function ConfettiNative() {
       opacity={fade}
       animation={{ animation: NativeAnim.easeOut(0.45), value: fade }}
     >
+      {/* 中央卡片：spring 升起 + 整体渐入，不再生硬瞬移 */}
       <VStack
         spacing={8}
-        offset={{ x: 0, y: go ? 0 : 30 }}
-        animation={{ animation: NativeAnim.spring({ duration: 0.45, bounce: 0.4 }), value: go }}
+        offset={{ x: 0, y: go ? 0 : 36 }}
+        opacity={go ? 1 : 0}
+        animation={{ animation: NativeAnim.spring({ duration: 0.5, bounce: 0.45 }), value: go }}
       >
         <Text font={54}>🎉</Text>
-        <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6">
+        <Text
+          font="title3"
+          fontWeight="bold"
+          foregroundStyle="#F0F3F6"
+          opacity={textIn ? 1 : 0}
+          animation={{ animation: NativeAnim.easeOut(0.35), value: textIn }}
+        >
           下载完成
         </Text>
       </VStack>
@@ -158,16 +169,6 @@ function ConfettiNative() {
   )
 }
 
-// 终端风 ASCII 进度条
-function asciiBar(done: number, total: number, width = 24): string {
-  const ratio = Math.max(0, Math.min(1, total > 0 ? done / total : 0))
-  const filled = Math.round(ratio * width)
-  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${Math.round(ratio * 100)}%`
-}
-
-// 撒花分发：有全局 Animation 走原生 60fps，否则 JS 统一实现兜底
-
-// 卡片 easeOutCubic 升起 + 与粒子同源的正弦轻摆；文字延迟淡入
 function ConfettiJS() {
   const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
   const [tick, setTick] = useState(0)
@@ -216,6 +217,13 @@ function ConfettiJS() {
 
 function ConfettiOverlay() {
   return NativeAnim ? <ConfettiNative /> : <ConfettiJS />
+}
+
+// 终端风 ASCII 进度条
+function asciiBar(done: number, total: number, width = 40): string {
+  const ratio = Math.max(0, Math.min(1, total > 0 ? done / total : 0))
+  const filled = Math.round(ratio * width)
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${Math.round(ratio * 100)}%`
 }
 
 // -------------------------------------------------------------
