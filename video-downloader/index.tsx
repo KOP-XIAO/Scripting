@@ -230,15 +230,14 @@ function asciiBar(done: number, total: number, width = 40): string {
 // 视频缩略图：纯 filePath 渲染（下载时已生成落盘，行内零 hooks 零异步——可靠）
 function VideoThumb({ path }: { path?: string }) {
   if (path) {
+    // 圆角靠容器裁切（modifiers().cornerRadius 对容器可靠，直接挂 Image 不裁）
     return (
-      <Image
-        filePath={path}
-        resizable={true}
-        scaleToFill={true}
-        renderingMode="original"
+      <VStack
         frame={{ width: 72, height: 46 }}
         {...(typeof modifiers === "function" ? { modifiers: modifiers().cornerRadius(6) } : {})}
-      />
+      >
+        <Image filePath={path} resizable={true} scaleToFill={true} renderingMode="original" />
+      </VStack>
     )
   }
   // 占位块：单层圆角矩形（嵌套层数多是本运行时的雷区）
@@ -917,7 +916,7 @@ function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise
 // -------------------------------------------------------------
 // 主页面
 // -------------------------------------------------------------
-function View() {
+function View(props: { initialHistory: HistoryRecord[] }) {
   const dismiss = Navigation.useDismiss()
   const [prefs, setPrefs] = useState<Preferences>(getPreferences())
   const [inputURL, setInputURL] = useState("")
@@ -925,7 +924,7 @@ function View() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [status, setStatus] = useState("就绪")
-  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [history, setHistory] = useState<HistoryRecord[]>(props.initialHistory)
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
 
@@ -1287,7 +1286,13 @@ function View() {
 }
 
 async function run() {
-  await Navigation.present({ element: <View /> })
+  // 先读历史再渲染：挂载早期的状态更新会被运行时吞掉（真机实证"下载完才显示"），
+  // 第一帧就带数据，从根上消灭空列表窗口
+  let initialHistory: HistoryRecord[] = []
+  try {
+    initialHistory = await listHistory(50)
+  } catch {}
+  await Navigation.present({ element: <View initialHistory={initialHistory} /> })
   Script.exit()
 }
 

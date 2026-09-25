@@ -23,11 +23,6 @@ const ALBUM_ID_KEY = "vdl.photos.albumId"
 // 找/建「Video Downloader」相簿（id 缓存进 Storage）
 async function ensureAlbum(): Promise<any> {
   try {
-    const cached = Storage.get<string>(ALBUM_ID_KEY)
-    if (cached) {
-      const a = await Photos.fetchAlbum(cached)
-      if (a) return a
-    }
     const found = (await Photos.fetchAlbums({ type: "album" })).find((a: any) => a.title === ALBUM_NAME)
     const album = found ?? (await Photos.createAlbum(ALBUM_NAME))
     if (album) Storage.set(ALBUM_ID_KEY, album.localIdentifier)
@@ -58,7 +53,13 @@ export async function saveFilePathToPhotos(filePath: string, fileName: string) {
           appendDebug("相簿：没取到最新视频资源")
         } else {
           const okAdd = await album.addAssets(latest[0])
-          appendDebug(`相簿：归入「Video Downloader」${okAdd ? "成功" : "失败"}`)
+          // 读回验证：addAssets 可能谎报成功
+          try {
+            const inAlbum = await album.fetchAssets({ mediaType: "video" })
+            appendDebug(`相簿：归入${okAdd ? "成功" : "失败"}，读回相簿内视频数=${inAlbum.length}`)
+          } catch {
+            appendDebug(`相簿：归入${okAdd ? "成功" : "失败"}（读回失败）`)
+          }
         }
       }
     } catch (e) {
