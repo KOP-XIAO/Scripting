@@ -60,18 +60,32 @@ export async function generateThumbFile(videoPath: string, durationSec?: number)
       appendDebug(`${tag}: generateImage 返回空`)
       return ""
     }
+    // 中心裁切：renderedIn（文档里 croppedTo 是画饼，运行时不存在——真机日志实证）
+    // 裁切失败绝不丢缩略图：回退用原图
     let image = r.image
     const pw = image.width
     const ph = image.height
-    if (pw > 0 && ph > 0) {
+    if (pw > 0 && ph > 0 && typeof image.renderedIn === "function") {
       const ratio = 72 / 46
+      let sx = 0
+      let sy = 0
+      let sw = pw
+      let sh = ph
       if (pw / ph > ratio) {
-        const nw = Math.round(ph * ratio)
-        image = image.croppedTo({ x: Math.round((pw - nw) / 2), y: 0, width: nw, height: ph }) ?? image
+        sw = Math.round(ph * ratio)
+        sx = Math.round((pw - sw) / 2)
       } else {
-        const nh = Math.round(pw / ratio)
-        image = image.croppedTo({ x: 0, y: Math.round((ph - nh) / 2), width: pw, height: nh }) ?? image
+        sh = Math.round(pw / ratio)
+        sy = Math.round((ph - sh) / 2)
       }
+      const cropped = image.renderedIn(
+        { width: 216, height: 138 },
+        { position: { x: sx, y: sy }, size: { width: sw, height: sh } },
+      )
+      if (cropped) image = cropped
+      else appendDebug(`${tag}: renderedIn 返回空，用原图`)
+    } else if (typeof image.renderedIn !== "function") {
+      appendDebug(`${tag}: renderedIn 不存在，用原图`)
     }
     const data = image.toJPEGData ? image.toJPEGData(0.75) : null
     if (!data) {
