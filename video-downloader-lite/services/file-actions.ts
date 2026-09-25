@@ -2,6 +2,7 @@
 // 全局对象（禁止从 scripting 导入）：Photos、Data、DocumentPicker、ShareSheet、Dialog
 
 import { getPreferences, type SaveMode } from "./preferences"
+import { appendDebug } from "./debug"
 import type { DownloadedFile } from "./downloader"
 
 const PHOTOS_OK_RE = /\.(mp4|mov|m4v)$/i
@@ -47,12 +48,22 @@ export async function saveFilePathToPhotos(filePath: string, fileName: string) {
   if (getPreferences().photoAlbum) {
     try {
       const album = await ensureAlbum()
-      if (album) {
-        // saveVideo 不返回 asset id，取最新一条视频加入相簿
+      if (!album) {
+        appendDebug("相簿：创建/查找失败")
+      } else {
+        // saveVideo 不返回 asset id；相册写入是异步的，等 800ms 再取最新一条
+        await new Promise((r) => setTimeout(r, 800))
         const latest = await Photos.fetchAssets({ mediaType: "video", sortBy: "creationDate", ascending: false, limit: 1 })
-        if (latest.length) await album.addAssets(latest[0])
+        if (!latest.length) {
+          appendDebug("相簿：没取到最新视频资源")
+        } else {
+          const okAdd = await album.addAssets(latest[0])
+          appendDebug(`相簿：归入「Video Downloader」${okAdd ? "成功" : "失败"}`)
+        }
       }
-    } catch {}
+    } catch (e) {
+      appendDebug(`相簿：异常 ${e}`)
+    }
   }
 }
 

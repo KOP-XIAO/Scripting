@@ -237,7 +237,7 @@ function VideoThumb({ path }: { path?: string }) {
         scaleToFill={true}
         renderingMode="original"
         frame={{ width: 72, height: 46 }}
-        cornerRadius={6}
+        {...(typeof modifiers === "function" ? { modifiers: modifiers().cornerRadius(6) } : {})}
       />
     )
   }
@@ -1124,6 +1124,7 @@ function View() {
     <NavigationStack>
       <ZStack>
       <List
+        onAppear={() => void refreshHistory()}
         navigationTitle={`视频下载器 | v${VERSION}`}
         navigationBarTitleDisplayMode="inline"
         toolbar={{
