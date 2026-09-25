@@ -1,3 +1,4 @@
+import { appendDebug } from "./debug"
 // services/media-probe.ts — 本地视频媒体信息探测（时长/分辨率）
 // 独立成模块供 downloader 与 history 共同使用（避免 widget 进程拖入下载依赖链）。
 // AVAsset 是免费全局对象；失败静默返回零值。
@@ -36,16 +37,29 @@ export function resolutionLabel(width: number, height: number): string {
 // 抽帧 → 中心裁切到 72:46 → JPEG 落盘，返回缩略图路径（失败返回 ""）
 // 在下载时调用，历史行只渲染这个文件（不做实时抽帧，hooks 在嵌套组件里不可靠）
 export async function generateThumbFile(videoPath: string, durationSec?: number): Promise<string> {
+  const tag = `thumbGen(${videoPath.split("/").pop()})`
   try {
-    if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") return ""
+    if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
+      appendDebug(`${tag}: AVAsset=${typeof AVAsset} MediaTime=${typeof MediaTime}`)
+      return ""
+    }
     const asset = new AVAsset(videoPath)
     const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
-    const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
-      maximumSize: { width: 320, height: 320 },
-    })
+    let r: any
+    try {
+      r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
+        maximumSize: { width: 320, height: 320 },
+      })
+    } catch (e) {
+      appendDebug(`${tag}: generateImage 抛错 ${e}`)
+      asset.dispose()
+      return ""
+    }
     asset.dispose()
-    if (!r?.image) return ""
-    // 中心裁切到 72:46（width/height 为像素，croppedTo 同空间）
+    if (!r?.image) {
+      appendDebug(`${tag}: generateImage 返回空`)
+      return ""
+    }
     let image = r.image
     const pw = image.width
     const ph = image.height
@@ -60,11 +74,16 @@ export async function generateThumbFile(videoPath: string, durationSec?: number)
       }
     }
     const data = image.toJPEGData ? image.toJPEGData(0.75) : null
-    if (!data) return ""
+    if (!data) {
+      appendDebug(`${tag}: toJPEGData 失败（type=${typeof image.toJPEGData}）`)
+      return ""
+    }
     const thumbPath = `${videoPath}.thumb.jpg`
     await FileManager.writeAsData(thumbPath, data)
+    appendDebug(`${tag}: 成功 ${pw}x${ph}`)
     return thumbPath
-  } catch {
+  } catch (e) {
+    appendDebug(`${tag}: 异常 ${e}`)
     return ""
   }
 }
