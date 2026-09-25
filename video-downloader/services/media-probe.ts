@@ -32,3 +32,39 @@ export function resolutionLabel(width: number, height: number): string {
   if (!width || !height) return ""
   return `${Math.round(Math.min(width, height))}p`
 }
+
+// 抽帧 → 中心裁切到 72:46 → JPEG 落盘，返回缩略图路径（失败返回 ""）
+// 在下载时调用，历史行只渲染这个文件（不做实时抽帧，hooks 在嵌套组件里不可靠）
+export async function generateThumbFile(videoPath: string, durationSec?: number): Promise<string> {
+  try {
+    if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") return ""
+    const asset = new AVAsset(videoPath)
+    const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
+    const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
+      maximumSize: { width: 320, height: 320 },
+    })
+    asset.dispose()
+    if (!r?.image) return ""
+    // 中心裁切到 72:46（width/height 为像素，croppedTo 同空间）
+    let image = r.image
+    const pw = image.width
+    const ph = image.height
+    if (pw > 0 && ph > 0) {
+      const ratio = 72 / 46
+      if (pw / ph > ratio) {
+        const nw = Math.round(ph * ratio)
+        image = image.croppedTo({ x: Math.round((pw - nw) / 2), y: 0, width: nw, height: ph }) ?? image
+      } else {
+        const nh = Math.round(pw / ratio)
+        image = image.croppedTo({ x: 0, y: Math.round((ph - nh) / 2), width: pw, height: nh }) ?? image
+      }
+    }
+    const data = image.toJPEGData ? image.toJPEGData(0.75) : null
+    if (!data) return ""
+    const thumbPath = `${videoPath}.thumb.jpg`
+    await FileManager.writeAsData(thumbPath, data)
+    return thumbPath
+  } catch {
+    return ""
+  }
+}

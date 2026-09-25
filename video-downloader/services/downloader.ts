@@ -11,7 +11,7 @@ import { getYuanbaoCookie } from "./preferences"
 import { resolveWxChannels } from "./wxchannels"
 import { isDouyinUrl, resolveDouyin } from "./douyin"
 import { sniffPageForVideo } from "./pagesniff"
-import { probeMedia, resolutionLabel } from "./media-probe"
+import { probeMedia, resolutionLabel, generateThumbFile } from "./media-probe"
 import { appendDebug } from "./debug"
 
 export type VideoKind = "wx-channels" | "douyin" | "m3u8" | "direct" | "platform"
@@ -26,6 +26,7 @@ export type DownloadedFile = {
   width?: number
   height?: number
   format?: string // 文件封装格式（mp4/ts…）
+  thumbPath?: string // 缩略图文件（下载时生成）
 }
 
 export type DownloadOutcome = {
@@ -432,13 +433,14 @@ export async function runDownload(inputUrl: string, opts: RunOptions): Promise<D
     }
   }
 
-  // 探测媒体信息（时长/分辨率/格式；失败静默）
+  // 探测媒体信息 + 生成缩略图文件（失败静默）
   for (const f of files) {
     const m = await probeMedia(f.path)
     f.durationSec = m.durationSec
     f.width = m.width
     f.height = m.height
     f.format = f.name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+    f.thumbPath = await generateThumbFile(f.path, f.durationSec)
   }
 
   // 下载报告，对齐桌面版 download-report.md

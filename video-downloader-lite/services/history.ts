@@ -4,7 +4,7 @@
 
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
-import { probeMedia, resolutionLabel } from "./media-probe"
+import { probeMedia, resolutionLabel, generateThumbFile } from "./media-probe"
 
 export type HistoryRecord = {
   id: string
@@ -17,6 +17,7 @@ export type HistoryRecord = {
   duration_sec?: number
   resolution?: string // 如 "1080p"（短边），无则为空
   format?: string // 如 "MP4"
+  thumb_path?: string // 缩略图文件路径（下载时生成）
   created_at: string
   note: string
 }
@@ -31,6 +32,7 @@ export type NewHistoryItem = {
   durationSec?: number
   resolution?: string
   format?: string
+  thumbPath?: string
   note?: string
 }
 
@@ -195,6 +197,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     duration_sec: item.durationSec ?? 0,
     resolution: item.resolution ?? "",
     format: item.format ?? "",
+    thumb_path: item.thumbPath ?? "",
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }
@@ -249,6 +252,9 @@ export async function backfillMediaInfo(): Promise<number> {
       if (m.height > 0) {
         r.resolution = resolutionLabel(m.width, m.height)
         r.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+      }
+      if (!r.thumb_path) {
+        r.thumb_path = await generateThumbFile(r.file_path, r.duration_sec)
       }
       fixed++
     }

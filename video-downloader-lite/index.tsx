@@ -227,61 +227,12 @@ function asciiBar(done: number, total: number, width = 40): string {
 }
 
 
-// 视频缩略图：AVAsset 抽帧 → UIImage.croppedTo 中心裁切到 72:46
-// 全链路 appendDebug 留痕（诊断中心可查哪一环断了）
-function VideoThumb({ path, durationSec }: { path: string; durationSec?: number }) {
-  const [img, setImg] = useState<any>(null)
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      const tag = `thumb(${path.split("/").pop()})`
-      appendDebug(`${tag}: 组件挂载，开始抽帧`)
-      try {
-        if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
-          appendDebug(`${tag}: AVAsset/MediaTime 不可用`)
-          return
-        }
-        if (!(await FileManager.exists(path))) {
-          appendDebug(`${tag}: 本地文件不存在`)
-          return
-        }
-        const asset = new AVAsset(path)
-        const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
-        const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
-          maximumSize: { width: 320, height: 320 },
-        })
-        asset.dispose()
-        if (!r?.image) {
-          appendDebug(`${tag}: generateImage 无返回图像`)
-          return
-        }
-        // 中心裁切到目标宽高比（UIImage 尺寸是 width/height 点属性）
-        let image = r.image
-        const pw = image.width
-        const ph = image.height
-        const ratio = 72 / 46
-        if (pw / ph > ratio) {
-          const nw = Math.round(ph * ratio)
-          image = image.croppedTo({ x: Math.round((pw - nw) / 2), y: 0, width: nw, height: ph }) ?? image
-        } else {
-          const nh = Math.round(pw / ratio)
-          image = image.croppedTo({ x: 0, y: Math.round((ph - nh) / 2), width: pw, height: nh }) ?? image
-        }
-        appendDebug(`${tag}: 抽帧成功 ${pw}x${ph}`)
-        if (alive) setImg(image)
-      } catch (e) {
-        appendDebug(`${tag}: 失败 ${e}`)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [path])
-
-  if (img) {
+// 视频缩略图：纯 filePath 渲染（下载时已生成落盘，行内零 hooks 零异步——可靠）
+function VideoThumb({ path }: { path?: string }) {
+  if (path) {
     return (
       <Image
-        image={img}
+        filePath={path}
         resizable={true}
         scaleToFill={true}
         renderingMode="original"
@@ -290,7 +241,7 @@ function VideoThumb({ path, durationSec }: { path: string; durationSec?: number 
       />
     )
   }
-  // 占位块：单层圆角矩形，不嵌套（嵌套层数多是本运行时的雷区）
+  // 占位块：单层圆角矩形（嵌套层数多是本运行时的雷区）
   return <RoundedRectangle cornerRadius={6} fill="#2A2A32" frame={{ width: 72, height: 46 }} />
 }
 
@@ -361,7 +312,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
         <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
-        <VideoThumb path={item.file_path} durationSec={item.duration_sec} />
+        <VideoThumb path={item.thumb_path} />
       </VStack>
       <VStack alignment="leading" spacing={3}>
         <Text font="subheadline" fontWeight="medium" lineLimit={2}>
@@ -993,8 +944,9 @@ function View() {
 
   useEffect(() => {
     void (async () => {
+      await refreshHistory() // 先直接读库显示（listHistory 不依赖 initDatabase）
+      setTimeout(() => void refreshHistory(), 600) // 兜底二次刷新
       await initDatabase()
-      await refreshHistory() // 先显示历史（此前被回填阻塞到下载完才出现）
       try {
         const list = await listHistory(50)
         appendDebug(`启动：历史库读取 ${list.length} 条，界面显示 ${list.slice(0, 5).length} 条`)
@@ -1125,6 +1077,7 @@ function View() {
           durationSec: f.durationSec,
           resolution: f.height ? resolutionLabel(f.width ?? 0, f.height) : "",
           format: f.format ?? "",
+          thumbPath: f.thumbPath ?? "",
           note: outcome.sourceLabel,
         })
         inserted.push(rec.id)

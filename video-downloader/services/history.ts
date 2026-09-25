@@ -3,7 +3,7 @@
 
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
-import { probeMedia, resolutionLabel } from "./media-probe"
+import { probeMedia, resolutionLabel, generateThumbFile } from "./media-probe"
 
 export type HistoryRecord = {
   id: string
@@ -16,6 +16,7 @@ export type HistoryRecord = {
   duration_sec?: number
   resolution?: string
   format?: string
+  thumb_path?: string
   created_at: string
   note: string
 }
@@ -30,6 +31,7 @@ export type NewHistoryItem = {
   durationSec?: number
   resolution?: string
   format?: string
+  thumbPath?: string
   note?: string
 }
 
@@ -100,9 +102,10 @@ export async function backfillMediaInfo(): Promise<number> {
       const m = await probeMedia(r.file_path)
       const res = m.height > 0 ? resolutionLabel(m.width, m.height) : ""
       const fmt = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+      const thumb = r.thumb_path || (await generateThumbFile(r.file_path, m.durationSec))
       await database.execute(
-        `UPDATE downloads SET duration_sec = ?, resolution = ?, format = ? WHERE id = ?`,
-        [m.durationSec || 0, res, fmt, r.id],
+        `UPDATE downloads SET duration_sec = ?, resolution = ?, format = ?, thumb_path = ? WHERE id = ?`,
+        [m.durationSec || 0, res, fmt, thumb, r.id],
       )
       fixed++
     }
@@ -229,12 +232,15 @@ export async function initDatabase() {
     await database.execute(`ALTER TABLE downloads ADD COLUMN resolution TEXT NOT NULL DEFAULT ''`)
     await database.execute(`ALTER TABLE downloads ADD COLUMN format TEXT NOT NULL DEFAULT ''`)
   } catch {}
+  try {
+    await database.execute(`ALTER TABLE downloads ADD COLUMN thumb_path TEXT NOT NULL DEFAULT ''`)
+  } catch {}
 }
 
 export async function listHistory(limit?: number): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   const sql = `
-    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note
+    SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, thumb_path, created_at, note
     FROM downloads
     ORDER BY datetime(created_at) DESC
     ${limit ? `LIMIT ${Math.floor(limit)}` : ""}
@@ -251,7 +257,7 @@ export async function countHistory(): Promise<number> {
 export async function findBySourceURL(url: string): Promise<HistoryRecord[]> {
   const database = await getDatabase()
   return database.fetchAll<HistoryRecord>(
-    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note
+    `SELECT id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, thumb_path, created_at, note
      FROM downloads WHERE source_url = ? ORDER BY datetime(created_at) DESC`,
     [url],
   )
@@ -270,13 +276,14 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
     duration_sec: item.durationSec ?? 0,
     resolution: item.resolution ?? "",
     format: item.format ?? "",
+    thumb_path: item.thumbPath ?? "",
     created_at: new Date().toISOString(),
     note: item.note ?? "",
   }
   await database.execute(
     `INSERT OR REPLACE INTO downloads
-      (id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, created_at, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, source_url, kind, title, file_path, file_name, bytes_written, duration_sec, resolution, format, thumb_path, created_at, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.id,
       record.source_url,
@@ -288,6 +295,7 @@ export async function insertHistory(item: NewHistoryItem): Promise<HistoryRecord
       record.duration_sec ?? 0,
       record.resolution ?? "",
       record.format ?? "",
+      record.thumb_path ?? "",
       record.created_at,
       record.note,
     ],

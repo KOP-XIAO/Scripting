@@ -105,6 +105,7 @@ async function run() {
         durationSec: f.durationSec,
         resolution: f.height ? resolutionLabel(f.width ?? 0, f.height) : "",
         format: f.format ?? "",
+        thumbPath: f.thumbPath ?? "",
         note: outcome.sourceLabel,
       })
       inserted.push(rec.id)
