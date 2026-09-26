@@ -230,14 +230,15 @@ function asciiBar(done: number, total: number, width = 40): string {
 // 视频缩略图：纯 filePath 渲染（下载时已生成落盘，行内零 hooks 零异步——可靠）
 function VideoThumb({ path }: { path?: string }) {
   if (path) {
-    // 圆角靠容器裁切（modifiers().cornerRadius 对容器可靠，直接挂 Image 不裁）
     return (
-      <VStack
+      <Image
+        filePath={path}
+        resizable={true}
+        scaleToFill={true}
+        renderingMode="original"
         frame={{ width: 72, height: 46 }}
-        {...(typeof modifiers === "function" ? { modifiers: modifiers().cornerRadius(6) } : {})}
-      >
-        <Image filePath={path} resizable={true} scaleToFill={true} renderingMode="original" />
-      </VStack>
+        clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
+      />
     )
   }
   // 占位块：单层圆角矩形（嵌套层数多是本运行时的雷区）
@@ -571,11 +572,6 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
           title="小组件进入后自动开始下载"
           value={draft.autoStartOnEntry}
           onChanged={(v) => update({ autoStartOnEntry: v })}
-        />
-        <Toggle
-          title="保存到相册时归入「Video Downloader」相簿"
-          value={draft.photoAlbum}
-          onChanged={(v) => update({ photoAlbum: v })}
         />
         <Toggle
           title="历史去重（同链接跳过下载）"

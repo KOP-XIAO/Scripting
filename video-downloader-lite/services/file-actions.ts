@@ -17,21 +17,6 @@ export type ActionResult = {
   movedPaths: string[]
 }
 
-const ALBUM_NAME = "Video Downloader"
-const ALBUM_ID_KEY = "vdl.photos.albumId"
-
-// 找/建「Video Downloader」相簿（id 缓存进 Storage）
-async function ensureAlbum(): Promise<any> {
-  try {
-    const found = (await Photos.fetchAlbums({ type: "album" })).find((a: any) => a.title === ALBUM_NAME)
-    const album = found ?? (await Photos.createAlbum(ALBUM_NAME))
-    if (album) Storage.set(ALBUM_ID_KEY, album.localIdentifier)
-    return album
-  } catch {
-    return null
-  }
-}
-
 // 存相册用 shouldMoveFile: true —— 成功后本地副本被移走，不再重复占空间；
 // 开启相簿开关时把刚存的视频归入「Video Downloader」相簿
 export async function saveFilePathToPhotos(filePath: string, fileName: string) {
@@ -40,32 +25,7 @@ export async function saveFilePathToPhotos(filePath: string, fileName: string) {
   }
   const ok = await Photos.saveVideo(filePath, { fileName, shouldMoveFile: true })
   if (!ok) throw new Error("保存到相册失败（请检查相册权限）")
-  if (getPreferences().photoAlbum) {
-    try {
-      const album = await ensureAlbum()
-      if (!album) {
-        appendDebug("相簿：创建/查找失败")
-      } else {
-        // saveVideo 不返回 asset id；相册写入是异步的，等 800ms 再取最新一条
-        await new Promise((r) => setTimeout(r, 800))
-        const latest = await Photos.fetchAssets({ mediaType: "video", sortBy: "creationDate", ascending: false, limit: 1 })
-        if (!latest.length) {
-          appendDebug("相簿：没取到最新视频资源")
-        } else {
-          const okAdd = await album.addAssets(latest[0])
-          // 读回验证：addAssets 可能谎报成功
-          try {
-            const inAlbum = await album.fetchAssets({ mediaType: "video" })
-            appendDebug(`相簿：归入${okAdd ? "成功" : "失败"}，读回相簿内视频数=${inAlbum.length}`)
-          } catch {
-            appendDebug(`相簿：归入${okAdd ? "成功" : "失败"}（读回失败）`)
-          }
-        }
-      }
-    } catch (e) {
-      appendDebug(`相簿：异常 ${e}`)
-    }
-  }
+  // 注：相簿归入功能已下线——addAssets 在本运行时会谎报成功（读回=0 实锤）
 }
 
 export async function exportFilePathToFiles(filePath: string, fileName: string) {
