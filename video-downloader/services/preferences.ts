@@ -16,6 +16,7 @@ export type Preferences = {
   autoCleanDays: number // 自动清理 N 天前的本地下载文件（0=关闭）
   nameTemplate: string // 文件命名模板，支持 {title} {label} {date}
   maxHistoryRecords: number // 历史记录上限，超出连记录带本地文件一起删
+  photoAlbum: boolean // 保存到相册时归入「Video Downloader」相簿（v2 侦察版）
 }
 
 export const PREFS_KEY = "vdl.preferences"
@@ -33,6 +34,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoCleanDays: 0,
   nameTemplate: "{title}",
   maxHistoryRecords: 200,
+  photoAlbum: true,
 }
 
 export function getPreferences(): Preferences {

@@ -25,7 +25,8 @@ export async function saveFilePathToPhotos(filePath: string, fileName: string) {
   }
   const ok = await Photos.saveVideo(filePath, { fileName, shouldMoveFile: true })
   if (!ok) throw new Error("保存到相册失败（请检查相册权限）")
-  // 注：相簿归入功能已下线——addAssets 在本运行时会谎报成功（读回=0 实锤）
+  if (getPreferences().photoAlbum) await addLatestVideoToAlbum(fileName)
+  // 相簿归入在 postDownloadAction 之后由调用方触发（addLatestVideoToAlbum）
 }
 
 export async function exportFilePathToFiles(filePath: string, fileName: string) {
@@ -38,6 +39,63 @@ export async function exportFilePathToFiles(filePath: string, fileName: string) 
 
 export async function shareFile(filePath: string) {
   await ShareSheet.present([filePath])
+}
+
+// -------------------------------------------------------------
+// 相簿归入 v2（带全侦察）：addAssets 曾谎报成功（读回=0），
+// 这版每一步都留痕：同名相簿数量、创建/复用、添加、双通道读回。
+// -------------------------------------------------------------
+const ALBUM_NAME = "Video Downloader"
+
+async function ensureAlbumV2(): Promise<any> {
+  const all: any[] = await Photos.fetchAlbums({ type: "album" })
+  const sameName = all.filter((a) => a.title === ALBUM_NAME)
+  appendDebug(`相簿v2：同名相簿 ${sameName.length} 个`)
+  if (sameName.length > 1) {
+    // 多个同名：保留第一个，其余删掉（内容并入第一个）
+    for (const dup of sameName.slice(1)) {
+      try {
+        const assets = await dup.fetchAssets({})
+        if (assets.length) await sameName[0].addAssets(assets)
+        await Photos.deleteAlbums([dup])
+      } catch {}
+    }
+    appendDebug(`相簿v2：已合并删除 ${sameName.length - 1} 个重复相簿`)
+  }
+  if (sameName.length) return sameName[0]
+  const created = await Photos.createAlbum(ALBUM_NAME)
+  appendDebug(`相簿v2：新建相簿 id=${created?.localIdentifier ?? "null"}`)
+  return created
+}
+
+export async function addLatestVideoToAlbum(fileName: string) {
+  try {
+    const album = await ensureAlbumV2()
+    if (!album) {
+      appendDebug("相簿v2：创建/查找失败")
+      return
+    }
+    // 相册写入是异步的，等落账
+    await new Promise((r) => setTimeout(r, 800))
+    const latest = await Photos.fetchAssets({ mediaType: "video", sortBy: "creationDate", ascending: false, limit: 1 })
+    if (!latest.length) {
+      appendDebug("相簿v2：没取到最新视频资源")
+      return
+    }
+    const asset = latest[0]
+    appendDebug(`相簿v2：取到最新视频 ${asset.localIdentifier?.slice(-8) ?? "?"}（下载的应是 ${fileName}）`)
+    const okAdd = await album.addAssets([asset])
+    appendDebug(`相簿v2：addAssets 返回 ${okAdd}`)
+    // 读回验证：两条通道都查
+    const direct = await album.fetchAssets({ mediaType: "video" })
+    appendDebug(`相簿v2：读回（collection.fetchAssets）= ${direct.length} 条`)
+    const reFetched = await Photos.fetchAlbum(album.localIdentifier)
+    if (reFetched) {
+      appendDebug(`相簿v2：重取相簿 estimatedAssetCount=${reFetched.estimatedAssetCount}`)
+    }
+  } catch (e) {
+    appendDebug(`相簿v2：异常 ${e}`)
+  }
 }
 
 // 尝试把可存相册的文件全部移入相册，返回数量与成功路径
