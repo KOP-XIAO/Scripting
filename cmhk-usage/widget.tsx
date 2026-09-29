@@ -55,9 +55,21 @@ function expiryFull(src?: string | null): string {
   return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`
 }
 function bucketLabel(name: string): string {
+  // v1.19.24 额外购买流量包（本地數據，如"1天10GB本地數據"，短有效期 1~N 天）：
+  // 此前命中 /數據/ 被误标"套餐內"——3 字与其它 2 字标签违和，且与主套餐混淆。
+  // 注意判定顺序：本地數據含"數據"，必须先于通用數據规则判定。
+  if (/本地數據|本地数据|日包|加購|加购/i.test(name)) return "加购"
   if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "赠送"
-  if (/服務計劃|數據|数据/.test(name)) return "套餐內"
+  if (/服務計劃|數據|数据/.test(name)) return "套餐" // 套餐內(3字)→套餐(2字)，与全部标签对齐
   return name.length > 6 ? name.slice(0, 6) : name
+}
+
+// v1.19.24 桶图标三类区分（与主 App 页面约定一致：非主桶用 gift）：
+// 套餐=arrow.down.circle（下载），加购=plus.circle（额外购买），赠送=gift（礼物）。
+function bucketIcon(name: string): string {
+  if (/本地數據|本地数据|日包|加購|加购/i.test(name)) return "plus.circle"
+  if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "gift"
+  return "arrow.down.circle"
 }
 
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
@@ -254,7 +266,7 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Row icon="creditcard" label={fee.label} value={fee.value} color={fee.color} />
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
-          <Row key={i} icon="arrow.down.circle" label={bucketLabel(b.name)}
+          <Row key={i} icon={bucketIcon(b.name)} label={bucketLabel(b.name)}
             value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
         ))}
         {cycleExp && (
