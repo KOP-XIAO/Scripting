@@ -1182,10 +1182,10 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               </HStack>
             }
           >
-            {/* 终端风日志卡：深色底 + 等宽绿字，提示符用主题色 */}
-            <ZStack>
+            {/* 终端风日志卡：深色底 + 等宽绿字，提示符用主题色；始终全宽 */}
+            <ZStack frame={{ maxWidth: "infinity" } as never}>
               <RoundedRectangle cornerRadius={10} fill="#0D1117" />
-              <VStack alignment="leading" spacing={3} padding={10}>
+              <VStack alignment="leading" spacing={3} padding={10} frame={{ maxWidth: "infinity" } as never}>
                 <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
                   vdl@ios:~$ run
                 </Text>
