@@ -16,7 +16,7 @@ import {
 } from "scripting"
 import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, refreshUsage, UsageData } from "./cmhk"
 import { RefreshIntent } from "./app_intents"
-import { ringStops, theme } from "./theme"
+import { dataTierColor, ringStops, theme, usageRatio } from "./theme"
 
 type Bucket = { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }
 
@@ -106,7 +106,7 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
         />
       )}
       <VStack spacing={0}>
-        <Text font="title3" fontWeight="bold" foregroundStyle={theme.textPrimary}>
+        <Text font="title3" fontWeight="bold" foregroundStyle={dataTierColor(ratio)}>
           {ratio != null ? `${Math.round(ratio * 100)}%` : "--"}
         </Text>
         <Text font="caption2" foregroundStyle={theme.textSecondary}>流量剩餘</Text>
@@ -115,13 +115,14 @@ function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
   )
 }
 
-function Row({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) {
+// valueColor 用于"只给数字上色"（如按剩余比例分级的数据量），图标仍保持自身语义色
+function Row({ icon, label, value, color, valueColor }: { icon: string; label: string; value: string; color?: string; valueColor?: string }) {
   return (
     <HStack spacing={9} alignment="center">
       <Image systemName={icon} font={10} foregroundStyle={color ?? theme.accent} frame={{ width: 10, height: 10 }} />
       <Text font="caption2" foregroundStyle={theme.textSecondary}>{label}</Text>
       <Spacer />
-      <Text font="footnote" fontWeight="semibold" foregroundStyle={color ?? theme.textPrimary}>{value}</Text>
+      <Text font="footnote" fontWeight="semibold" foregroundStyle={valueColor ?? color ?? theme.textPrimary}>{value}</Text>
     </HStack>
   )
 }
@@ -176,7 +177,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <Spacer />
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={78} />
-        <Text font="caption2" foregroundStyle={theme.textSecondary}>
+        <Text font="caption2" fontWeight="semibold" foregroundStyle={main ? dataTierColor(ratioOf(main)) : theme.textSecondary}>
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
@@ -233,7 +234,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       {/* 左：主数据环 */}
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={84} />
-        <Text font="caption2" foregroundStyle={theme.textSecondary}>
+        <Text font="caption2" fontWeight="semibold" foregroundStyle={main ? dataTierColor(ratioOf(main)) : theme.textSecondary}>
           {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
@@ -267,7 +268,8 @@ function MediumWidget({ data }: { data: UsageData }) {
         <Row icon="phone" label="通話" value={voiceValue(data)} />
         {extras.map((b, i) => (
           <Row key={i} icon={bucketIcon(b.name)} label={bucketLabel(b.name)}
-            value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`} />
+            value={`${fmtGB(b.remainingGB)} | ${fmtGB(b.totalGB)} GB`}
+            valueColor={dataTierColor(usageRatio(b.totalGB, b.remainingGB))} />
         ))}
         {cycleExp && (
           <Row icon="arrow.triangle.2.circlepath" label="重置" value={expiryFull(cycleExp)} color={theme.textSecondary} />

@@ -47,9 +47,26 @@ export const theme = {
   divider: "rgba(255,255,255,0.12)",
 }
 
-// 按剩余流量比例选渐变
+// 剩余比例（用量/总量）：非法或零总量返回 null，调用方回退中性色
+export function usageRatio(total?: number | null, remaining?: number | null): number | null {
+  if (total == null || remaining == null || total <= 0) return null
+  return Math.max(0, Math.min(1, remaining / total))
+}
+
+// v1.19.25 剩余用量数字的颜色分级（用户建议，四档比三档更细腻）：
+//   ≥60% 青绿（健康）/ 30-60% 黄（偏低）/ 10-30% 橙（警戒）/ <10% 红（危险）
+// 阈值与流量环渐变（ringStops）一致——数字与环同色系，一眼读出健康度。
+export function dataTierColor(ratio: number | null | undefined): string {
+  if (ratio == null || !Number.isFinite(ratio)) return theme.textPrimary
+  if (ratio < 0.1) return "#FF6B6B"
+  if (ratio < 0.3) return "#FF9F43"
+  if (ratio < 0.6) return "#FFD66E"
+  return theme.accentGreen
+}
+
+// 按剩余流量比例选渐变（阈值与 dataTierColor 对齐：0.1 / 0.3）
 export function ringStops(remainingRatio: number) {
   if (remainingRatio <= 0.1) return theme.ringDanger
-  if (remainingRatio <= 0.25) return theme.ringWarning
+  if (remainingRatio <= 0.3) return theme.ringWarning
   return theme.ringGradient
 }

@@ -62,7 +62,7 @@ import {
   UsageData,
 } from "./cmhk"
 import { runWebLogin } from "./web-login"
-import { theme } from "./theme"
+import { dataTierColor, theme, usageRatio } from "./theme"
 
 declare const ShareSheet: { present(items: any[]): Promise<boolean> }
 
@@ -343,7 +343,7 @@ function Page() {
                 <Spacer />
               </HStack>
               <HStack spacing={12} alignment="lastTextBaseline">
-                <Text font="largeTitle" fontWeight="bold" foregroundStyle={theme.textPrimary}>
+                <Text font="largeTitle" fontWeight="bold" foregroundStyle={dataTierColor(ratio)}>
                   {fmtGB(data.dataRemainingGB)}
                 </Text>
                 <Text font="caption" foregroundStyle={theme.textTertiary}>
@@ -378,7 +378,7 @@ function Page() {
                   <Image systemName={i === 0 ? "arrow.down.circle.fill" : "gift"} resizable={true} foregroundStyle={i === 0 ? theme.accentGreen : "#FFD66E"} frame={{ width: 13, height: 13 }} />
                   <Text font="caption" foregroundStyle={theme.textSecondary} lineLimit={1}>{b.name}</Text>
                   <Spacer />
-                  <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.textPrimary}>
+                  <Text font="subheadline" fontWeight="semibold" foregroundStyle={dataTierColor(usageRatio(b.totalGB, b.remainingGB))}>
                     {fmtGB(b.remainingGB)} / {fmtGB(b.totalGB)} GB
                   </Text>
                   {b.expiry && <Text font="caption2" foregroundStyle={theme.textTertiary}>{b.expiry}止</Text>}
