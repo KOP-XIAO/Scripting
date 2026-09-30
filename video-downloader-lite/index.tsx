@@ -860,28 +860,26 @@ function DiagnosticsPage() {
         ) : (
           <VStack
             alignment="leading"
-            spacing=3
-           
-            frame={{ maxWidth: "infinity" }} 
+            spacing={3}
+            padding={10}
+            frame={{ maxWidth: "infinity" } as never}
             background="#0D1117"
             cornerRadius={10}
           >
-<VStack alignment="leading" spacing={3}>
-              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                vdl@ios:~$ diag --tail 40
+            <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+              vdl@ios:~$ diag --tail 40
+            </Text>
+            {shown.map((l, i) => (
+              <Text
+                key={i}
+                font="caption2"
+                monospaced
+                foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
+                lineLimit={2}
+              >
+                {l}
               </Text>
-              {shown.map((l, i) => (
-                <Text
-                  key={i}
-                  font="caption2"
-                  monospaced
-                  foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
-                  lineLimit={2}
-                >
-                  {l}
-                </Text>
-              ))}
-            </VStack>
+            ))}
           </VStack>
         )}
       </Section>
