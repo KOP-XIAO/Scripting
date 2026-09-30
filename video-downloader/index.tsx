@@ -864,7 +864,7 @@ function DiagnosticsPage() {
             padding={10}
             frame={{ maxWidth: "infinity" } as never}
             background="#0D1117"
-            cornerRadius={10}
+            clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
           >
             <HStack>
               <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
@@ -1196,7 +1196,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               padding={10}
               frame={{ maxWidth: "infinity" } as never}
               background="#0D1117"
-              cornerRadius={10}
+              clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
             >
               <HStack>
                 <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
