@@ -858,9 +858,15 @@ function DiagnosticsPage() {
         {shown.length === 0 ? (
           <Text foregroundStyle="secondaryLabel">暂无日志。</Text>
         ) : (
-          <ZStack>
-            <RoundedRectangle cornerRadius={10} fill="#0D1117" />
-            <VStack alignment="leading" spacing={3} padding={10}>
+          <VStack
+            alignment="leading"
+            spacing=3
+           
+            frame={{ maxWidth: "infinity" }} 
+            background="#0D1117"
+            cornerRadius={10}
+          >
+<VStack alignment="leading" spacing={3}>
               <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
                 vdl@ios:~$ diag --tail 40
               </Text>
@@ -876,7 +882,7 @@ function DiagnosticsPage() {
                 </Text>
               ))}
             </VStack>
-          </ZStack>
+          </VStack>
         )}
       </Section>
     </List>
@@ -1182,25 +1188,29 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               </HStack>
             }
           >
-            {/* 终端风日志卡：深色底 + 等宽绿字，提示符用主题色；始终全宽 */}
-            <ZStack frame={{ maxWidth: "infinity" } as never}>
-              <RoundedRectangle cornerRadius={10} fill="#0D1117" />
-              <VStack alignment="leading" spacing={3} padding={10} frame={{ maxWidth: "infinity" } as never}>
-                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                  vdl@ios:~$ run
+            {/* 终端风日志卡：单 VStack 挂背景（ZStack+Shape 在 List 行里不满宽） */}
+            <VStack
+              alignment="leading"
+              spacing={3}
+              padding={10}
+              frame={{ maxWidth: "infinity" } as never}
+              background="#0D1117"
+              cornerRadius={10}
+            >
+              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                vdl@ios:~$ run
+              </Text>
+              {logs.map((l, i) => (
+                <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
+                  {"▸ " + l}
                 </Text>
-                {logs.map((l, i) => (
-                  <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
-                    {"▸ " + l}
-                  </Text>
-                ))}
-                {loading ? (
-                  <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                    {"▌"}
-                  </Text>
-                ) : null}
-              </VStack>
-            </ZStack>
+              ))}
+              {loading ? (
+                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                  {"▌"}
+                </Text>
+              ) : null}
+            </VStack>
           </Section>
         ) : null}
 
