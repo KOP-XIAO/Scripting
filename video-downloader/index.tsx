@@ -866,9 +866,12 @@ function DiagnosticsPage() {
             background="#0D1117"
             cornerRadius={10}
           >
-            <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-              vdl@ios:~$ diag --tail 40
-            </Text>
+            <HStack>
+              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                vdl@ios:~$ diag --tail 40
+              </Text>
+              <Spacer />
+            </HStack>
             {shown.map((l, i) => (
               <Text
                 key={i}
@@ -1195,9 +1198,12 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               background="#0D1117"
               cornerRadius={10}
             >
-              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                vdl@ios:~$ run
-              </Text>
+              <HStack>
+                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                  vdl@ios:~$ run
+                </Text>
+                <Spacer />
+              </HStack>
               {logs.map((l, i) => (
                 <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
                   {"▸ " + l}
