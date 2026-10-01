@@ -79,145 +79,7 @@ import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./s
 // Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
 
 
-// -------------------------------------------------------------
-// 撒花庆祝层：emoji 粒子（本运行时无旋转/物理动画 API，emoji 规避全部限制）
-// -------------------------------------------------------------
-const CONFETTI_EMOJI = ["🎉", "🎊", "✨", "⭐", "🟡", "🟢", "🟣", "🔵", "🟠"]
-
-type ConfettiPiece = {
-  emoji: string
-  x: number
-  y0: number
-  y1: number
-  drift: number
-  size: number
-  dur: number // 时长系数（小=快）
-  phase: number
-}
-
-function newConfettiPieces(): ConfettiPiece[] {
-  return Array.from({ length: 18 }, (_, i) => ({
-    emoji: CONFETTI_EMOJI[i % CONFETTI_EMOJI.length],
-    x: (Math.random() - 0.5) * 300,
-    y0: -140 - Math.random() * 160,
-    y1: 380 + Math.random() * 120,
-    drift: (Math.random() - 0.5) * 60,
-    size: 16 + Math.random() * 18,
-    dur: 0.75 + Math.random() * 0.4,
-    phase: Math.random() * Math.PI * 2,
-  }))
-}
-
-// Animation 与 Storage/Dialog 一样是全局对象（文档全部裸用、从不 import）。
-// 运行时探测：有 → 原生 60fps 插值；没有 → JS 驱动兜底（30fps）。
-declare const Animation: any
-const NativeAnim: any = typeof globalThis !== "undefined" ? (globalThis as any).Animation : undefined
-
-// ---- 原生路径（60fps，SwiftUI 插值）----
-function ConfettiNative() {
-  const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
-  const [go, setGo] = useState(false)
-  const [fade, setFade] = useState(1)
-  const [textIn, setTextIn] = useState(false)
-
-  useEffect(() => {
-    const t1 = setTimeout(() => setGo(true), 40)
-    const t2 = setTimeout(() => setTextIn(true), 400) // 文字延迟淡入
-    const t3 = setTimeout(() => setFade(0), 1400)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-    }
-  }, [])
-
-  return (
-    <ZStack
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-      opacity={fade}
-      animation={{ animation: NativeAnim.easeOut(0.45), value: fade }}
-    >
-      {/* 中央卡片：spring 升起 + 整体渐入，不再生硬瞬移 */}
-      <VStack
-        spacing={8}
-        offset={{ x: 0, y: go ? 0 : 36 }}
-        opacity={go ? 1 : 0}
-        animation={{ animation: NativeAnim.spring({ duration: 0.5, bounce: 0.45 }), value: go }}
-      >
-        <Text font={54}>🎉</Text>
-        <Text
-          font="title3"
-          fontWeight="bold"
-          foregroundStyle="#F0F3F6"
-          opacity={textIn ? 1 : 0}
-          animation={{ animation: NativeAnim.easeOut(0.35), value: textIn }}
-        >
-          下载完成
-        </Text>
-      </VStack>
-      {pieces.map((p2, i) => (
-        <Text
-          key={i}
-          font={p2.size}
-          offset={{ x: go ? p2.x + p2.drift : p2.x, y: go ? p2.y1 : p2.y0 }}
-          animation={{ animation: NativeAnim.easeIn(p2.dur), value: go }}
-        >
-          {p2.emoji}
-        </Text>
-      ))}
-    </ZStack>
-  )
-}
-
-function ConfettiJS() {
-  const [pieces] = useState<ConfettiPiece[]>(newConfettiPieces)
-  const [tick, setTick] = useState(0)
-
-  useEffect(() => {
-    const t0 = Date.now()
-    const timer = setInterval(() => setTick(Date.now() - t0), 33)
-    return () => clearInterval(timer)
-  }, [])
-
-  const LIFE = 1.55
-  const t = tick / 1000
-  const fade = t > LIFE ? Math.max(0, 1 - (t - LIFE) / 0.35) : 1
-
-  // 卡片：与粒子同一时钟——easeOutCubic 从下方升起 + 正弦轻摆 + 回弹过冲
-  const cardRise = Math.min(1, t / 0.45)
-  const cardEased = 1 - Math.pow(1 - cardRise, 3)
-  const cardY = (1 - cardEased) * 46 - Math.sin(Math.min(1, t / 0.45) * Math.PI) * 7
-  const cardX = Math.sin(t * 2.2) * 5 * (t < 1.1 ? 1 : Math.max(0, 1.5 - t))
-  const textOpacity = Math.max(0, Math.min(1, (t - 0.28) / 0.3))
-
-  return (
-    <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never} opacity={fade}>
-      {/* 中央卡片：升起 + 轻摆，文字稍后淡入 */}
-      <VStack spacing={8} offset={{ x: cardX, y: cardY }}>
-        <Text font={54}>🎉</Text>
-        <Text font="title3" fontWeight="bold" foregroundStyle="#F0F3F6" opacity={textOpacity}>
-          下载完成
-        </Text>
-      </VStack>
-      {/* 粒子：easeIn(t²) 加速下落 + 正弦漂移（各自相位） */}
-      {pieces.map((p2, i) => {
-        const pt = Math.min(1, (t / 1.2) * (1 / p2.dur))
-        const eased = pt * pt
-        const y = p2.y0 + (p2.y1 - p2.y0) * eased
-        const x = p2.x + Math.sin(pt * Math.PI + p2.phase) * p2.drift
-        return (
-          <Text key={i} font={p2.size} offset={{ x, y }}>
-            {p2.emoji}
-          </Text>
-        )
-      })}
-    </ZStack>
-  )
-}
-
-function ConfettiOverlay() {
-  return NativeAnim ? <ConfettiNative /> : <ConfettiJS />
-}
+import { ConfettiOverlay } from "./components/confetti"
 
 // 终端风 ASCII 进度条
 function asciiBar(done: number, total: number, width = 40): string {
@@ -936,10 +798,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
 
-  const fireConfetti = () => {
-    setCelebrate(true)
-    setTimeout(() => setCelebrate(false), 1900) // 1.9s 自动消失
-  }
 
   const refreshHistory = async () => {
     setHistory(await listHistory(50))
@@ -1023,6 +881,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       return
     }
     setLoading(true)
+    setCelebrate(false)
     setLogs([])
     setLastFiles([])
     setProgress(null)
@@ -1101,7 +960,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       }
       setStatus(action.message)
       appendDebug(`下载完成: ${outcome.title} (${outcome.files.length} 个文件) -> ${action.message}`)
-      fireConfetti()
+      if (outcome.files.length > 0) setCelebrate(true)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setStatus(`失败：${message}`)
@@ -1294,7 +1153,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
         </Section>
       </List>
-      {celebrate ? <ConfettiOverlay /> : null}
+      {celebrate ? <ConfettiOverlay onFinish={() => setCelebrate(false)} /> : null}
       </ZStack>
     </NavigationStack>
   )
