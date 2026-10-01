@@ -81,14 +81,6 @@ import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./s
 
 import { ConfettiOverlay } from "./components/confetti"
 
-// 终端风 ASCII 进度条
-function asciiBar(done: number, total: number, width = 40): string {
-  const ratio = Math.max(0, Math.min(1, total > 0 ? done / total : 0))
-  const filled = Math.round(ratio * width)
-  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${Math.round(ratio * 100)}%`
-}
-
-
 // 视频缩略图：纯 filePath 渲染（下载时已生成落盘，行内零 hooks 零异步——可靠）
 function VideoThumb({ path }: { path?: string }) {
   if (path) {
@@ -984,6 +976,9 @@ function View(props: { initialHistory: HistoryRecord[] }) {
     }
   }
 
+  const progressRatio = progress && progress.total > 0
+    ? Math.max(0, Math.min(1, progress.done / progress.total))
+    : undefined
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
@@ -1023,14 +1018,24 @@ function View(props: { initialHistory: HistoryRecord[] }) {
 
         <Section title="状态">
           {loading && progress ? (
-            <VStack alignment="leading" spacing={4}>
-              {/* 终端风 ASCII 进度条：[██████░░░░] 63% */}
-              <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
-                {asciiBar(progress.done, progress.total)}
-              </Text>
-              <Text font="caption2" monospaced foregroundStyle="secondaryLabel">
-                {`分片 ${progress.done}/${progress.total}`}
-              </Text>
+            <VStack alignment="leading" spacing={8}>
+              {/* 条形独占一行；数字放在下方，不参与进度条宽度分配。 */}
+              <ProgressView
+                value={progressRatio}
+                total={1}
+                progressViewStyle="linear"
+                tint={getTheme().accent}
+                frame={{ maxWidth: "infinity" } as never}
+              />
+              <HStack>
+                <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
+                  {progressRatio == null ? "下载中…" : `${Math.round(progressRatio * 100)}%`}
+                </Text>
+                <Spacer />
+                <Text font="caption2" monospaced foregroundStyle="secondaryLabel">
+                  {progress.total > 0 ? `分片 ${progress.done}/${progress.total}` : `已完成 ${progress.done} 分片`}
+                </Text>
+              </HStack>
             </VStack>
           ) : (
             <Text foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"}>
