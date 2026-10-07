@@ -8,6 +8,7 @@
 
 import {
   Button,
+  GeometryReader,
   HStack,
   Image,
   Link,
@@ -15,7 +16,6 @@ import {
   Navigation,
   NavigationLink,
   NavigationStack,
-  ProgressView,
   RoundedRectangle,
   Script,
   Section,
@@ -1018,24 +1018,43 @@ function View(props: { initialHistory: HistoryRecord[] }) {
 
         <Section title="状态">
           {loading && progress ? (
-            <VStack alignment="leading" spacing={8}>
-              {/* 条形独占一行；数字放在下方，不参与进度条宽度分配。 */}
-              <ProgressView
-                value={progressRatio}
-                total={1}
-                progressViewStyle="linear"
-                tint={getTheme().accent}
-                frame={{ maxWidth: "infinity" } as never}
-              />
+            /* 进度卡：与日志卡同款终端风。14pt 胶囊条独占一行并垂直居中，
+               大号百分比在上方，不参与条形宽度分配。 */
+            <VStack
+              alignment="leading"
+              spacing={10}
+              padding={12}
+              frame={{ maxWidth: "infinity" } as never}
+              background="#0D1117"
+              clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+            >
               <HStack>
-                <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
+                <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
                   {progressRatio == null ? "下载中…" : `${Math.round(progressRatio * 100)}%`}
                 </Text>
                 <Spacer />
-                <Text font="caption2" monospaced foregroundStyle="secondaryLabel">
+                <Text font="caption" monospaced foregroundStyle="secondaryLabel">
                   {progress.total > 0 ? `分片 ${progress.done}/${progress.total}` : `已完成 ${progress.done} 分片`}
                 </Text>
               </HStack>
+              <GeometryReader>
+                {proxy => {
+                  const trackW = proxy.size.width
+                  const ratio = progressRatio
+                  const fillW = ratio == null
+                    ? trackW * 0.4
+                    : Math.max(14, Math.min(trackW, trackW * ratio))
+                  return (
+                    <ZStack alignment="leading" frame={{ width: trackW, height: 14 }}>
+                      <RoundedRectangle cornerRadius={7} fill="rgba(255,255,255,0.10)"
+                        frame={{ width: trackW, height: 14 }} />
+                      <RoundedRectangle cornerRadius={7}
+                        fill={ratio == null ? getTheme().accentSoft : getTheme().accent}
+                        frame={{ width: fillW, height: 14 }} />
+                    </ZStack>
+                  )
+                }}
+              </GeometryReader>
             </VStack>
           ) : (
             <Text foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"}>
