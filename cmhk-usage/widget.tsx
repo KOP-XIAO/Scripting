@@ -54,22 +54,63 @@ function expiryFull(src?: string | null): string {
   if (!m) return String(src).slice(0, 10)
   return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`
 }
+// v1.19.27 桶分类正则由标签/图标/圆环选择共用（此前三处各自维护，易漂移）。
+// 判定顺序固定：加购 → 赠送 → 套餐（本地數據含"數據"，必须先于通用數據规则判定）。
+const RE_ADDON = /本地數據|本地数据|日包|加購|加购/i
+const RE_GIFT = /漫遊|漫游|贈送|赠送|extra/i
+const RE_PLAN = /服務計劃|數據|数据/
+type BucketKind = "addon" | "gift" | "plan" | "other"
+function bucketKind(name: string): BucketKind {
+  if (RE_ADDON.test(name)) return "addon"
+  if (RE_GIFT.test(name)) return "gift"
+  if (RE_PLAN.test(name)) return "plan"
+  return "other"
+}
 function bucketLabel(name: string): string {
   // v1.19.24 额外购买流量包（本地數據，如"1天10GB本地數據"，短有效期 1~N 天）：
   // 此前命中 /數據/ 被误标"套餐內"——3 字与其它 2 字标签违和，且与主套餐混淆。
-  // 注意判定顺序：本地數據含"數據"，必须先于通用數據规则判定。
-  if (/本地數據|本地数据|日包|加購|加购/i.test(name)) return "加购"
-  if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "赠送"
-  if (/服務計劃|數據|数据/.test(name)) return "套餐" // 套餐內(3字)→套餐(2字)，与全部标签对齐
+  const kind = bucketKind(name)
+  if (kind === "addon") return "加购"
+  if (kind === "gift") return "赠送"
+  if (kind === "plan") return "套餐" // 套餐內(3字)→套餐(2字)，与全部标签对齐
   return name.length > 6 ? name.slice(0, 6) : name
 }
 
 // v1.19.24 桶图标三类区分（与主 App 页面约定一致：非主桶用 gift）：
 // 套餐=arrow.down.circle（下载），加购=plus.circle（额外购买），赠送=gift（礼物）。
 function bucketIcon(name: string): string {
-  if (/本地數據|本地数据|日包|加購|加购/i.test(name)) return "plus.circle"
-  if (/漫遊|漫游|贈送|赠送|extra/i.test(name)) return "gift"
+  const kind = bucketKind(name)
+  if (kind === "addon") return "plus.circle"
+  if (kind === "gift") return "gift"
   return "arrow.down.circle"
+}
+
+// v1.19.27 加购包过期判定：expiry 当日仍有效，次日 0 点起算过期；日期未知视为未过期。
+function isExpired(expiry?: string | null): boolean {
+  if (!expiry) return false
+  const t = new Date(String(expiry).slice(0, 10).replace(/-/g, "/")).getTime()
+  if (!Number.isFinite(t)) return false
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return t < today.getTime()
+}
+// 过期加购一律不显示（圆环与右侧明细都过滤）
+function isVisibleBucket(b: Bucket): boolean {
+  return !(bucketKind(b.name) === "addon" && isExpired(b.expiry))
+}
+
+// v1.19.27 圆环桶选择（用户：圆环显示"当前正在消耗"的那一档流量）：
+// 优先级 赠送(最先使用) → 套餐 → 加购(未过期)；上一档剩余为 0 才落到下一档。
+// 剩余未知(null)不视为用完，避免解析缺失时圆环乱跳；全部用完回退套餐桶（显示 0%）。
+function activeBucket(buckets: Bucket[]): Bucket | undefined {
+  const usable = buckets.filter(isVisibleBucket)
+  const gift = usable.find((b) => bucketKind(b.name) === "gift")
+  const plan = usable.find((b) => { const k = bucketKind(b.name); return k === "plan" || k === "other" })
+  const addon = usable.find((b) => bucketKind(b.name) === "addon")
+  const hasLeft = (b?: Bucket) => !!b && (b.remainingGB ?? 1) > 0
+  if (hasLeft(gift)) return gift
+  if (hasLeft(plan)) return plan
+  if (hasLeft(addon)) return addon
+  return plan ?? gift ?? addon ?? usable[0]
 }
 
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
@@ -151,7 +192,7 @@ function BrandBar({ compact }: { compact: boolean }) {
 }
 
 function SmallWidget({ data }: { data: UsageData }) {
-  const main = bucketsOf(data)[0]
+  const main = activeBucket(bucketsOf(data)) // v1.19.27：圆环按 赠送→套餐→加购 选择
   const fee = FeeRow(data)
   const idname = identity(data) || "CMHK"
   const tail = phoneTail(data)
@@ -178,7 +219,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={78} />
         <Text font="caption2" fontWeight="semibold" foregroundStyle={main ? dataTierColor(ratioOf(main)) : theme.textSecondary}>
-          {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `${bucketLabel(main.name)} ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       <Spacer />
@@ -200,9 +241,9 @@ function SmallWidget({ data }: { data: UsageData }) {
 
 function MediumWidget({ data }: { data: UsageData }) {
   const buckets = bucketsOf(data)
-  const main = buckets[0]
-  // 其余流量桶：优先桶数组，若缺漫遊则用 roam 标量补齐（确保 59.7 一定显示）
-  const bucketExtras = buckets.slice(1)
+  const main = activeBucket(buckets) // v1.19.27：圆环按 赠送→套餐→加购 选择
+  // 其余流量桶：圆环已占的桶除外；v1.19.27 过期加购不显示。若缺漫遊则用 roam 标量补齐（确保 59.7 一定显示）
+  const bucketExtras = buckets.filter((b) => b !== main && isVisibleBucket(b))
   const roamScalar = data.roamDataRemainingGB != null
     ? { name: "漫遊數據", totalGB: data.roamDataTotalGB, remainingGB: data.roamDataRemainingGB, expiry: data.roamExpiry }
     : null
@@ -214,7 +255,9 @@ function MediumWidget({ data }: { data: UsageData }) {
   const idname = identity(data)
   const tail = phoneTail(data)
   const member = data.membershipTier || data.points != null
-  const cycleExp = main?.expiry || data.cycleEndDate || null
+  // v1.19.27 重置日始终看套餐桶：圆环可能正显示赠送/加购，其 expiry 是流量包失效日而非账单重置日
+  const planBucket = buckets.find((b) => bucketKind(b.name) === "plan")
+  const cycleExp = planBucket?.expiry || data.cycleEndDate || null
   return (
     <ZStack alignment="bottomLeading">
       {/* 背景+品牌水印合为一层：渐变铺满整卡，徽标垂直居中垫于左块之下（不参与内容布局）。
@@ -235,7 +278,7 @@ function MediumWidget({ data }: { data: UsageData }) {
       <VStack spacing={8} alignment="center">
         <DataRing bucket={main} size={84} />
         <Text font="caption2" fontWeight="semibold" foregroundStyle={main ? dataTierColor(ratioOf(main)) : theme.textSecondary}>
-          {main ? `剩餘 ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
+          {main ? `${bucketLabel(main.name)} ${fmtGB(main.remainingGB)} | ${fmtGB(main.totalGB)} GB` : "—"}
         </Text>
       </VStack>
       {/* 中：竖向分割线（左环与右侧明细的视觉分割） */}
