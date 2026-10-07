@@ -55,13 +55,16 @@ function expiryFull(src?: string | null): string {
   return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`
 }
 // v1.19.27 桶分类正则由标签/图标/圆环选择共用（此前三处各自维护，易漂移）。
-// 判定顺序固定：加购 → 赠送 → 套餐（本地數據含"數據"，必须先于通用數據规则判定）。
+// 判定顺序固定：加购 → 漫遊 → 赠送 → 套餐（本地數據/漫遊數據都含"數據"，必须先于通用數據规则判定）。
+// v1.19.28 漫遊独立为 roam 类：不参与圆环优先级（在家不会先消耗漫遊流量），右侧以"漫游"标签单独展示。
 const RE_ADDON = /本地數據|本地数据|日包|加購|加购/i
-const RE_GIFT = /漫遊|漫游|贈送|赠送|extra/i
+const RE_ROAM = /漫遊|漫游/i
+const RE_GIFT = /贈送|赠送|extra/i
 const RE_PLAN = /服務計劃|數據|数据/
-type BucketKind = "addon" | "gift" | "plan" | "other"
+type BucketKind = "addon" | "gift" | "plan" | "roam" | "other"
 function bucketKind(name: string): BucketKind {
   if (RE_ADDON.test(name)) return "addon"
+  if (RE_ROAM.test(name)) return "roam"
   if (RE_GIFT.test(name)) return "gift"
   if (RE_PLAN.test(name)) return "plan"
   return "other"
@@ -71,6 +74,7 @@ function bucketLabel(name: string): string {
   // 此前命中 /數據/ 被误标"套餐內"——3 字与其它 2 字标签违和，且与主套餐混淆。
   const kind = bucketKind(name)
   if (kind === "addon") return "加购"
+  if (kind === "roam") return "漫游" // v1.19.28 漫遊独立标签：此前并入"赠送"，圆环显示赠送时右侧漫遊行同名，看似重复
   if (kind === "gift") return "赠送"
   if (kind === "plan") return "套餐" // 套餐內(3字)→套餐(2字)，与全部标签对齐
   return name.length > 6 ? name.slice(0, 6) : name
@@ -81,6 +85,7 @@ function bucketLabel(name: string): string {
 function bucketIcon(name: string): string {
   const kind = bucketKind(name)
   if (kind === "addon") return "plus.circle"
+  if (kind === "roam") return "airplane"
   if (kind === "gift") return "gift"
   return "arrow.down.circle"
 }
@@ -208,7 +213,7 @@ function SmallWidget({ data }: { data: UsageData }) {
       </HStack>
       {/* 身份行：nickname | 尾號 */}
       <HStack spacing={4}>
-        <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1}>
+        <Text font="caption2" foregroundStyle={theme.textSecondary} lineLimit={1} minScaleFactor={0.65}>
           {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
         </Text>
         {data.membershipTier && (
@@ -249,7 +254,8 @@ function MediumWidget({ data }: { data: UsageData }) {
     : null
   const extras = [
     ...bucketExtras,
-    ...(roamScalar && !bucketExtras.some((b) => /漫遊|漫游/.test(b.name)) ? [roamScalar] : []),
+    // v1.19.28 查重范围含圆环桶：漫遊被圆环占用时（桶数组里唯一的桶）不再重复补齐为文字行
+    ...(roamScalar && ![main, ...bucketExtras].some((b) => b != null && RE_ROAM.test(b.name)) ? [roamScalar] : []),
   ].slice(0, 2)
   const fee = FeeRow(data)
   const idname = identity(data)
@@ -297,12 +303,13 @@ function MediumWidget({ data }: { data: UsageData }) {
         {/* 身份行：nickname | 尾號 | 會籍 | 積分 */}
         <HStack spacing={6}>
           {idname && (
-            <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1}>
+            // v1.19.28 minScaleFactor：昵称+尾號+會籍+積分超宽时自动缩字（最低 65%），不再截断成省略号
+            <Text font="caption2" foregroundStyle={theme.textTertiary} lineLimit={1} minScaleFactor={0.65}>
               {idname}{tail && !/^尾號/.test(idname) ? ` | ${tail}` : ""}
             </Text>
           )}
           {member && (
-            <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1}>
+            <Text font="caption2" foregroundStyle="#FFD66E" lineLimit={1} minScaleFactor={0.65}>
               {data.membershipTier ? `${tierLabel(data.membershipTier)} |` : ""}{data.points != null ? ` ${data.points}分` : ""}
             </Text>
           )}
