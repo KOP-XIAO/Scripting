@@ -12,7 +12,7 @@
 
 import { fetch } from "scripting"
 
-export const VERSION = "1.19.30"  // 与 script.json 同步
+export const VERSION = "1.20.0"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -36,7 +36,7 @@ export type UsageData = {
   points: number | null          // 我的積分
   nickname: string | null        // 昵称（getNickname）
   userName: string | null         // 账户真实姓名（queryAccountInfo.userName）
-  buckets?: { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }[]
+  buckets?: { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null; expired?: boolean | null }[]
   nickname: string | null        // 昵称
   fetchedAt: number              // 抓取时间戳 ms
   stale?: boolean                // 是否为失败后的缓存数据
@@ -116,6 +116,9 @@ export function saveCredentials(phone: string, password: string): boolean {
 export function getPhone(): string | null {
   return Keychain.get(KC_PHONE)
 }
+export function getPassword(): string | null {
+  return Keychain.get(KC_PASSWORD)
+}
 export function hasCredentials(): boolean {
   return !!(Keychain.get(KC_PHONE) && Keychain.get(KC_PASSWORD))
 }
@@ -134,9 +137,11 @@ export type WebSession = {
   at?: number                    // 会话捕获时间（epoch ms，v1.19.10+；旧会话无此字段）
   authorization: string | null
   cookie: string | null
+  headers?: Record<string, string> // v1.20.0 完整请求头：cmhkChannel 等体系参数（真机诊断 840371 缺参根因）
 }
 
 const KC_WEB_METHOD = "cmhk.web.method"
+const KC_WEB_HEADERS = "cmhk.web.headers"
 const KC_WEB_AT = "cmhk.web.at"
 const KC_WEB_REQBODY = "cmhk.web.reqbody"
 const KC_WEB_PAGEURL = "cmhk.web.pageurl"
@@ -149,13 +154,16 @@ export function saveWebSession(s: WebSession): boolean {
     Keychain.set(KC_WEB_METHOD, s.method ?? "GET") &&
     Keychain.set(KC_WEB_REQBODY, s.reqBody ?? "") &&
     Keychain.set(KC_WEB_PAGEURL, s.pageUrl ?? "") &&
-    Keychain.set(KC_WEB_AT, s.at != null ? String(s.at) : "")
+    Keychain.set(KC_WEB_AT, s.at != null ? String(s.at) : "") &&
+    Keychain.set(KC_WEB_HEADERS, JSON.stringify(s.headers ?? {}))
   return ok
 }
 export function readWebSession(): WebSession | null {
   const url = Keychain.get(KC_WEB_URL)
   if (!url) return null
   const atRaw = Keychain.get(KC_WEB_AT)
+  let headers: Record<string, string> | undefined
+  try { const h = Keychain.get(KC_WEB_HEADERS); if (h) headers = JSON.parse(h) } catch { /* 忽略 */ }
   return {
     url,
     at: atRaw ? Number(atRaw) : undefined,
@@ -164,6 +172,7 @@ export function readWebSession(): WebSession | null {
     pageUrl: Keychain.get(KC_WEB_PAGEURL) || undefined,
     authorization: Keychain.get(KC_WEB_AUTH) || null,
     cookie: Keychain.get(KC_WEB_COOKIE) || null,
+    headers,
   }
 }
 export function hasWebSession(): boolean {
@@ -176,6 +185,7 @@ export function clearWebSession() {
   Keychain.remove(KC_WEB_METHOD)
   Keychain.remove(KC_WEB_REQBODY)
   Keychain.remove(KC_WEB_PAGEURL)
+  Keychain.remove(KC_WEB_HEADERS)
 }
 
 // ---- 手动接口配置（抓包粘贴：终极兜底路径） ----
@@ -417,6 +427,11 @@ export function demoData(): UsageData {
   }
 }
 
+// ---- v1.20.0 登录页 URL（页内捕获发现被重定向时记录，作自动重登起点） ----
+const KEY_LOGIN_PAGE_URL = "cmhk.login.pageurl"
+export function saveLoginPageUrl(url: string) { Storage.set(KEY_LOGIN_PAGE_URL, url) }
+export function readLoginPageUrl(): string | null { return Storage.get<string>(KEY_LOGIN_PAGE_URL) }
+
 // ---- 网络 ----
 function getPath(obj: any, path: string): any {
   return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj)
@@ -481,7 +496,15 @@ export function summaryHasUsage(v: any): boolean {
 
 async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   const { apiUrl } = resolveSessionUrl(s)
-  const headers: Record<string, string> = { "Accept": "application/json" }
+  // v1.20.0 回放捕获的完整请求头：真机诊断证明直连必败的根因是缺体系参数
+  // （{"code":"840371","message":"缺少必要的体系参数：cmhkChannel"}）——此前只存了
+  // Authorization/Cookie，页面自定义头全丢。逐跳/伪头与安全头除外，后者由专用字段覆盖。
+  const SKIP_HEADERS = new Set(["host", "content-length", "connection", "accept-encoding", "cookie", "authorization"])
+  const headers: Record<string, string> = {}
+  for (const [k, v] of Object.entries(s.headers ?? {})) {
+    if (!SKIP_HEADERS.has(k.toLowerCase())) headers[k] = v
+  }
+  if (!Object.keys(headers).some((k) => k.toLowerCase() === "accept")) headers["Accept"] = "application/json"
   if (s.authorization) headers["Authorization"] = s.authorization
   if (s.cookie) headers["Cookie"] = s.cookie
   const method = (s.method ?? "GET").toUpperCase()
@@ -624,7 +647,7 @@ async function fetchWithWebSession(): Promise<any> {
       // v1.19.17 会话真死的证据之一：页面被重定向到登录/认证页
       if (!sawLoginPage) {
         const href = await withTimeout(wv.evaluateJavaScript<string>("return location.href"), 2000, "读取地址").catch(() => null)
-        if (typeof href === "string" && /login|authn|signin|sso|verify/i.test(href)) sawLoginPage = true
+        if (typeof href === "string" && /login|authn|signin|sso|verify/i.test(href)) { sawLoginPage = true; saveLoginPageUrl(href) }
       }
       // 证据之二：页面自己发出的请求收到了"未登录"错误响应（页面确实通了、服务端明确拒绝）
       if (!currentAuthError()) {
@@ -733,6 +756,25 @@ async function authedGet(path: string): Promise<any> {
       })
     }
     throw e
+  }
+}
+
+// ---- v1.20.0 自动重登（DI：App 入口注册 handler；widget/AppIntent 不注册则不触发） ----
+// 触发条件苛刻：仅当页内捕获拿到"会话真死"证据（重定向登录页/服务端未登录响应）、
+// 且 Keychain 有凭据时，才在后台无头 WebView 自动填表登录。冷却 5 分钟防重复提交。
+export type AutoReloginResult = { summary: any | null; reason?: string }
+let autoReloginHandler: (() => Promise<AutoReloginResult>) | null = null
+export function setAutoReloginHandler(fn: () => Promise<AutoReloginResult>) { autoReloginHandler = fn }
+const KEY_RELOGIN_AT = "cmhk.relogin.at"
+async function tryAutoRelogin(): Promise<AutoReloginResult> {
+  if (!autoReloginHandler) return { summary: null, reason: "当前上下文不支持自动重登" }
+  const last = Storage.get<number>(KEY_RELOGIN_AT) ?? 0
+  if (Date.now() - last < 5 * 60 * 1000) return { summary: null, reason: "冷却中（5 分钟内已尝试）" }
+  Storage.set(KEY_RELOGIN_AT, Date.now())
+  try {
+    return await autoReloginHandler()
+  } catch (e) {
+    return { summary: null, reason: String((e as any)?.message ?? e).slice(0, 80) }
   }
 }
 
@@ -872,8 +914,21 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
           const hm = /HTTP (\d+)/.exec(reason)
           const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /未捕获/.test(reason) ? "·未捕获" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: 页内捕获失败 ${reason.slice(0, 120)}`)
-          const body = readCapturedBody()
-          if (body) {
+          // v1.20.0 会话真死 + 有凭据 → 先尝试无头自动重登；成功则本轮直接用新数据
+          if (/已过期/.test(reason) && hasCredentials()) {
+            const rl = await tryAutoRelogin()
+            if (rl.summary != null && summaryHasUsage(rl.summary)) {
+              summary = rl.summary
+              pathLabel = "自动重登"
+              appendDebug("刷新: 自动重登成功（新会话已捕获）")
+            } else {
+              appendDebug(`刷新: 自动重登未果（${rl.reason ?? "未知原因"}）`)
+            }
+          }
+          const body = summary == null ? readCapturedBody() : null
+          if (summary != null) {
+            // 自动重登已拿到新数据，跳过快照回退
+          } else if (body) {
             // 保留更新的缓存：仅当缓存真的更新（时间戳判定，v1.19.10）
             const cur = readCache()
             const snapAt = readWebSession()?.at ?? readCapturedBodyAt()
@@ -1035,6 +1090,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
         totalGB: b.totalGB ?? null,
         remainingGB: b.remainingGB ?? null,
         expiry: b.expiry ?? null,
+        expired: b.expired ?? null,
       })),
       billDay: toNum(getPath(summary, fm.billDay)) ?? auto.billDay ?? null,
       cycleEndDate: getPath(summary, fm.cycleEndDate) ?? (parsed.buckets?.[0]?.expiry ?? null),

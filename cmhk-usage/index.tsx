@@ -55,13 +55,14 @@ import {
   readRefreshReport,
   refreshUsage,
   saveCapturedBody,
+  setAutoReloginHandler,
   saveCredentials,
   saveManualEndpoint,
   setDemoMode,
   setWebStartUrl,
   UsageData,
 } from "./cmhk"
-import { runWebLogin } from "./web-login"
+import { autoRelogin, runWebLogin } from "./web-login"
 import { dataTierColor, theme, usageRatio } from "./theme"
 
 declare const ShareSheet: { present(items: any[]): Promise<boolean> }
@@ -248,7 +249,7 @@ function Page() {
       "cmhk.usage.cache", "cmhk.demo", "cmhk.manual.url", "cmhk.manual.headers",
       "cmhk.web.starturl", "cmhk.web.body", "cmhk.captures", "cmhk.debuglog",
       "cmhk.overview.html", "cmhk.member.json", "cmhk.nickname.json", "cmhk.profile",
-      "cmhk.refresh.report",
+      "cmhk.refresh.report", "cmhk.login.pageurl", "cmhk.relogin.at",
     ]
   }
 
@@ -516,7 +517,7 @@ function PasswordPage(props: {
       </Section>
       <Section header={<Text>說明</Text>}>
         <Text font="caption2" foregroundStyle="secondary">
-          密碼方式走 MyLink REST 接口（無公開文檔，字段需校準），建議優先使用主頁的「網頁登入」。
+          保存憑據後，會話過期時腳本會在後台自動重新登入（遇驗證碼自動退回手動）；密碼僅存本機 Keychain，不寫日誌。
         </Text>
         {props.status && <Text font="caption" foregroundStyle="secondary">{props.status}</Text>}
       </Section>
@@ -595,7 +596,7 @@ function DiagnosticsPage(props: {
               : "尚无刷新记录"}
           </Text>
           <Text font="caption2" foregroundStyle="secondary">
-            刷新链路：手动接口 → 直连重放 → 页内捕获（加载官网页面截获其请求）→ 登录时快取。小組件（系統每 30 分鐘重載）只能走直連/手動接口——若官網會話依賴 httpOnly Cookie，直連會失敗，組件會顯示緩存，直到 App 打開後完成一次完整刷新。
+            刷新链路：手动接口 → 直连重放 → 页内捕获（加载官网页面截获其请求）→ 会话过期且有凭据时自动重登 → 登录时快取。小組件（系統每 30 分鐘重載）只能走直連/手動接口——若官網會話依賴 httpOnly Cookie，直連會失敗，組件會顯示緩存，直到 App 打開後完成一次完整刷新。
           </Text>
         </VStack>
       </Section>
@@ -646,6 +647,8 @@ function DiagnosticsPage(props: {
 }
 
 async function run() {
+  // v1.20.0：注册自动重登（仅 App 上下文；widget/AppIntent 不注册，绝不后台开 WebView）
+  setAutoReloginHandler(autoRelogin)
   await Navigation.present(<Page />)
   Script.exit()
 }

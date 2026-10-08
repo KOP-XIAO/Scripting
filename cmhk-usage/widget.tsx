@@ -18,7 +18,7 @@ import { fmtGB, fmtMin, fmtMoney, fmtUpdatedAt, readCache, refreshUsage, UsageDa
 import { RefreshIntent } from "./app_intents"
 import { dataTierColor, ringStops, theme, usageRatio } from "./theme"
 
-type Bucket = { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null }
+type Bucket = { name: string; totalGB: number | null; remainingGB: number | null; expiry: string | null; expired?: boolean | null }
 
 function bucketsOf(d: UsageData): Bucket[] {
   if (d.buckets && d.buckets.length) return d.buckets
@@ -100,7 +100,8 @@ function isExpired(expiry?: string | null): boolean {
 }
 // 过期加购一律不显示（圆环与右侧明细都过滤）
 function isVisibleBucket(b: Bucket): boolean {
-  return !(bucketKind(b.name) === "addon" && isExpired(b.expiry))
+  // v1.20.0 优先用接口原生 expired 标志（精确到时分）；无标志时退回日期比较
+  return !(bucketKind(b.name) === "addon" && (b.expired === true || isExpired(b.expiry)))
 }
 
 // v1.19.30 圆环 = 当前正在消耗的那一档流量。

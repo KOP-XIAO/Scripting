@@ -9,6 +9,7 @@ export type UsageBucket = {
   totalGB?: number
   remainingGB?: number
   expiry?: string
+  expired?: boolean       // v1.20.0 接口原生过期标志（usageQuery details.expired，精确到时分）
 }
 
 export type ParsedUsage = {
@@ -200,6 +201,9 @@ export function parseUsageQueryJson(json: any): ParsedUsage {
         totalGB: totalGBn(b),
         remainingGB: toGBn(b),
         expiry: exp ? String(exp).replace(/[./]/g, "-").slice(0, 10) : undefined,
+        // v1.20.0 接口权威过期标志：真机实证过期桶仍带剩余量返回（本地數據 4.44GB expired:true），
+        // 日期比较在到期日当天会多显示几小时，以接口标志为准
+        expired: b.expired === true,
         __cat: String(b.__cat ?? ""),
       }
     })
