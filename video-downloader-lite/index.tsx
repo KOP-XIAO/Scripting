@@ -180,10 +180,10 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
           monospaced
           fontWeight="semibold"
           foregroundStyle={badge.fg}
-          padding={4}
+          padding={2}
           background={badge.bg}
-          clipShape={{ type: "rect", cornerRadius: 7, style: "continuous" }}
-          offset={{ x: 4, y: 4 }}
+          clipShape={{ type: "rect", cornerRadius: 5, style: "continuous" }}
+          offset={{ x: 2, y: 2 }}
         >
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
@@ -197,9 +197,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             {metaLine1}
           </Text>
           {item.note.includes("相册") ? (
-            <Text font="caption2" foregroundStyle="systemGreen">
-              已存相册
-            </Text>
+            <Image systemName="photo.on.rectangle" font={12} foregroundStyle="systemGreen" />
           ) : null}
         </HStack>
         <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>
