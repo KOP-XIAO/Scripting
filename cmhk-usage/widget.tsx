@@ -56,7 +56,7 @@ function expiryFull(src?: string | null): string {
 }
 // v1.19.27 桶分类正则由标签/图标/圆环选择共用（此前三处各自维护，易漂移）。
 // 判定顺序固定：加购 → 漫遊 → 赠送 → 套餐（本地數據/漫遊數據都含"數據"，必须先于通用數據规则判定）。
-// v1.19.28 漫遊独立为 roam 类：不参与圆环优先级（在家不会先消耗漫遊流量），右侧以"漫游"标签单独展示。
+// v1.19.28 漫遊独立为 roam 类：右侧以"漫游"标签单独展示（不与"赠送"撞名）。圆环参与规则见 activeBucket v1.19.30。
 const RE_ADDON = /本地數據|本地数据|日包|加購|加购/i
 const RE_ROAM = /漫遊|漫游/i
 const RE_GIFT = /贈送|赠送|extra/i
@@ -103,26 +103,29 @@ function isVisibleBucket(b: Bucket): boolean {
   return !(bucketKind(b.name) === "addon" && isExpired(b.expiry))
 }
 
-// v1.19.29 圆环 = 当前正在消耗的那一档流量（用户对 v1.19.27 的纠正）：
-// v1.19.27 只看"剩余>0"（谁还有货）→ 真实事故：套餐 18.6/60 正在往下掉、
-// 赠送 60/60 一格未动，圆环却给了没开始用的赠送。
-// 正确判定分两层：
-//   ① 正在消耗 = 已开用且未用完（0 < 剩余 < 总量）。多档同时部分消耗时
-//      按消耗顺序 赠送 → 套餐 → 加购 取最靠前的一档。
-//   ② 没有任何一档在消耗（全新周期都满格）→ 按消耗顺序取第一档有剩余的。
-// 剩余/总量未知(null)无法判定"在消耗"，只参与②；全部用完回退套餐桶（显示 0%）。
+// v1.19.30 圆环 = 当前正在消耗的那一档流量。
+// "正在消耗" = 已开用且未用完（0 < 剩余 < 总量），对**所有**桶类生效——含漫遊。
+// 真实事故（v1.19.28 误判）：曾把漫遊排除出圆环（假设"在家不先消耗漫遊"），
+// 但用户在外地时漫遊 44.9/60 正是唯一在消耗的档，套餐 60/60 满格——圆环却给了套餐。
+// 多档同时部分消耗时取剩余比例最低者（掉得最多 = 最可能正在用，也避免
+// "漫遊很久以前用掉 0.3GB"这类陈旧部分消耗抢环）；
+// 都不在消耗（全新周期全满格）→ 按消耗顺序 赠送→套餐→加购 取第一档有剩余的（漫遊兜底）。
+// 剩余/总量未知(null)无法判定"在消耗"，只参与兜底；全部用完回退套餐（0%）。
 function activeBucket(buckets: Bucket[]): Bucket | undefined {
   const usable = buckets.filter(isVisibleBucket)
-  const gift = usable.find((b) => bucketKind(b.name) === "gift")
-  const plan = usable.find((b) => { const k = bucketKind(b.name); return k === "plan" || k === "other" })
-  const addon = usable.find((b) => bucketKind(b.name) === "addon")
-  const candidates = [gift, plan, addon].filter((b): b is Bucket => !!b) // 已按消耗顺序排列
   const hasLeft = (b: Bucket) => (b.remainingGB ?? 1) > 0
   const inUse = (b: Bucket) =>
     hasLeft(b) && b.remainingGB != null && b.totalGB != null && b.remainingGB < b.totalGB
-  return candidates.find(inUse)      // ① 正在往下掉的
-      ?? candidates.find(hasLeft)    // ② 都未动过：消耗顺序第一档
-      ?? plan ?? gift ?? addon ?? usable[0] // 全部用完：回退套餐（0%）
+  const active = usable.filter(inUse)
+  if (active.length) {
+    // 剩余比例最低（消耗最深）者优先
+    return active.reduce((a, b) => ((ratioOf(a) ?? 1) <= (ratioOf(b) ?? 1) ? a : b))
+  }
+  for (const k of ["gift", "plan", "other", "addon", "roam"] as BucketKind[]) {
+    const hit = usable.find((b) => bucketKind(b.name) === k && hasLeft(b))
+    if (hit) return hit
+  }
+  return usable[0]
 }
 
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
