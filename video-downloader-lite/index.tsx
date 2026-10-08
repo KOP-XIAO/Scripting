@@ -90,13 +90,13 @@ function VideoThumb({ path }: { path?: string }) {
         resizable={true}
         scaleToFill={true}
         renderingMode="original"
-        frame={{ width: 72, height: 46 }}
+        frame={{ width: 84, height: 54 }}
         clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
       />
     )
   }
   // 占位块：单层圆角矩形（嵌套层数多是本运行时的雷区）
-  return <RoundedRectangle cornerRadius={6} fill="#2A2A32" frame={{ width: 72, height: 46 }} />
+  return <RoundedRectangle cornerRadius={6} fill="#2A2A32" frame={{ width: 84, height: 54 }} />
 }
 
 // -------------------------------------------------------------
@@ -161,13 +161,22 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
     .join(" · ")
 
   return (
-    <HStack spacing={8} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
-      <VStack alignment="leading" spacing={2} padding={{ top: 2, bottom: 2 }}>
-        <Text font="caption" monospaced foregroundStyle="tertiaryLabel">
+    <HStack spacing={10} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
+      {/* 缩略图 + 左上角序号徽标：序号不再独占一行，与缩略图融为一体 */}
+      <ZStack alignment="topLeading" frame={{ width: 84, height: 54 }}>
+        <VideoThumb path={item.thumb_path} />
+        <Text
+          font="caption2"
+          monospaced
+          foregroundStyle="#FFFFFF"
+          padding={3}
+          background="rgba(0,0,0,0.55)"
+          clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
+          offset={{ x: 3, y: 3 }}
+        >
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
-        <VideoThumb path={item.thumb_path} />
-      </VStack>
+      </ZStack>
       <VStack alignment="leading" spacing={3}>
         <Text font="subheadline" fontWeight="medium" lineLimit={2}>
           {item.title || item.file_name}
