@@ -105,6 +105,16 @@ function VideoThumb({ path }: { path?: string }) {
 // -------------------------------------------------------------
 function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () => Promise<void> }) {
   const { item, index, onChanged } = props
+  // 序号徽标：主题色实底（半透明黑底在杂色封面上发灰发糊）；
+  // 文字色按主题色相对亮度选黑/白，保证任何主题下对比度都够
+  const badge = (() => {
+    const hex = getTheme().accent.replace("#", "")
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    const L = 0.2126 * lin(parseInt(hex.slice(0, 2), 16) / 255)
+      + 0.7152 * lin(parseInt(hex.slice(2, 4), 16) / 255)
+      + 0.0722 * lin(parseInt(hex.slice(4, 6), 16) / 255)
+    return { bg: getTheme().accent, fg: L > 0.18 ? "#101014" : "#FFFFFF" }
+  })()
 
   const openActions = async () => {
     const exists = await FileManager.exists(item.file_path)
@@ -166,13 +176,14 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
       <ZStack alignment="topLeading" frame={{ width: 84, height: 54 }}>
         <VideoThumb path={item.thumb_path} />
         <Text
-          font="caption2"
+          font="caption"
           monospaced
-          foregroundStyle="#FFFFFF"
-          padding={3}
-          background="rgba(0,0,0,0.55)"
-          clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
-          offset={{ x: 3, y: 3 }}
+          fontWeight="semibold"
+          foregroundStyle={badge.fg}
+          padding={4}
+          background={badge.bg}
+          clipShape={{ type: "rect", cornerRadius: 7, style: "continuous" }}
+          offset={{ x: 4, y: 4 }}
         >
           {`#${String(index + 1).padStart(2, "0")}`}
         </Text>
