@@ -103,19 +103,26 @@ function isVisibleBucket(b: Bucket): boolean {
   return !(bucketKind(b.name) === "addon" && isExpired(b.expiry))
 }
 
-// v1.19.27 圆环桶选择（用户：圆环显示"当前正在消耗"的那一档流量）：
-// 优先级 赠送(最先使用) → 套餐 → 加购(未过期)；上一档剩余为 0 才落到下一档。
-// 剩余未知(null)不视为用完，避免解析缺失时圆环乱跳；全部用完回退套餐桶（显示 0%）。
+// v1.19.29 圆环 = 当前正在消耗的那一档流量（用户对 v1.19.27 的纠正）：
+// v1.19.27 只看"剩余>0"（谁还有货）→ 真实事故：套餐 18.6/60 正在往下掉、
+// 赠送 60/60 一格未动，圆环却给了没开始用的赠送。
+// 正确判定分两层：
+//   ① 正在消耗 = 已开用且未用完（0 < 剩余 < 总量）。多档同时部分消耗时
+//      按消耗顺序 赠送 → 套餐 → 加购 取最靠前的一档。
+//   ② 没有任何一档在消耗（全新周期都满格）→ 按消耗顺序取第一档有剩余的。
+// 剩余/总量未知(null)无法判定"在消耗"，只参与②；全部用完回退套餐桶（显示 0%）。
 function activeBucket(buckets: Bucket[]): Bucket | undefined {
   const usable = buckets.filter(isVisibleBucket)
   const gift = usable.find((b) => bucketKind(b.name) === "gift")
   const plan = usable.find((b) => { const k = bucketKind(b.name); return k === "plan" || k === "other" })
   const addon = usable.find((b) => bucketKind(b.name) === "addon")
-  const hasLeft = (b?: Bucket) => !!b && (b.remainingGB ?? 1) > 0
-  if (hasLeft(gift)) return gift
-  if (hasLeft(plan)) return plan
-  if (hasLeft(addon)) return addon
-  return plan ?? gift ?? addon ?? usable[0]
+  const candidates = [gift, plan, addon].filter((b): b is Bucket => !!b) // 已按消耗顺序排列
+  const hasLeft = (b: Bucket) => (b.remainingGB ?? 1) > 0
+  const inUse = (b: Bucket) =>
+    hasLeft(b) && b.remainingGB != null && b.totalGB != null && b.remainingGB < b.totalGB
+  return candidates.find(inUse)      // ① 正在往下掉的
+      ?? candidates.find(hasLeft)    // ② 都未动过：消耗顺序第一档
+      ?? plan ?? gift ?? addon ?? usable[0] // 全部用完：回退套餐（0%）
 }
 
 function DataRing({ bucket, size }: { bucket?: Bucket; size: number }) {
