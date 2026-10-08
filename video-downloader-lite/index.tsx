@@ -1033,7 +1033,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   {progressRatio == null ? "下载中…" : `${Math.round(progressRatio * 100)}%`}
                 </Text>
                 <Spacer />
-                <Text font="caption" monospaced foregroundStyle="secondaryLabel">
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.60)">
                   {progress.total > 0 ? `分片 ${progress.done}/${progress.total}` : `已完成 ${progress.done} 分片`}
                 </Text>
               </HStack>
@@ -1043,14 +1043,28 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   const ratio = progressRatio
                   const fillW = ratio == null
                     ? trackW * 0.4
-                    : Math.max(14, Math.min(trackW, trackW * ratio))
+                    : Math.max(16, Math.min(trackW, trackW * ratio))
+                  const t = getTheme()
+                  // 渐变填充（柔色→实色，指向前沿）+ 末端高光圆点，进度前沿一眼可见
+                  const fillStyle = ratio == null
+                    ? t.accentSoft
+                    : ({
+                        gradient: [
+                          { color: t.accentSoft, location: 0 },
+                          { color: t.accent, location: 1 },
+                        ],
+                        startPoint: { x: 0, y: 0 },
+                        endPoint: { x: 1, y: 0 },
+                      } as any)
                   return (
-                    <ZStack alignment="leading" frame={{ width: trackW, height: 14 }}>
-                      <RoundedRectangle cornerRadius={7} fill="rgba(255,255,255,0.10)"
-                        frame={{ width: trackW, height: 14 }} />
-                      <RoundedRectangle cornerRadius={7}
-                        fill={ratio == null ? getTheme().accentSoft : getTheme().accent}
-                        frame={{ width: fillW, height: 14 }} />
+                    <ZStack alignment="leading" frame={{ width: trackW, height: 16 }}>
+                      <RoundedRectangle cornerRadius={8} fill="rgba(255,255,255,0.10)"
+                        frame={{ width: trackW, height: 16 }} />
+                      <RoundedRectangle cornerRadius={8} fill={fillStyle}
+                        frame={{ width: fillW, height: 16 }} />
+                      <RoundedRectangle cornerRadius={6.5} fill="#FFFFFF" opacity={0.85}
+                        frame={{ width: 13, height: 13 }}
+                        offset={{ x: Math.max(1.5, fillW - 14.5), y: 0 }} />
                     </ZStack>
                   )
                 }}

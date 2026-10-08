@@ -37,43 +37,59 @@ export function playCompletionFeedback() {
     }
   } catch {}
 }
-export const CONFETTI_MS = 2400
+export const CONFETTI_MS = 2700
 const APEX = 0.48
 const LAND = 2.1
 const clamp = (n: number) => Math.max(0, Math.min(1, n))
 
+// 每片纸屑一套独立参数：发射延迟、下落时长、落点高度、横向摆动、自转角速度、圆角，
+// 避免所有碎片沿同一轨迹、同一时间落在同一水平线上。
 type Piece = {
   side: number; spread: number; lift: number; drift: number
-  width: number; height: number; angle: number; spin: number; color: string
+  width: number; height: number; radius: number
+  angle: number; spin: number; color: string
+  delay: number; fallDur: number; land: number
+  swayAmp: number; swayFreq: number; swayPhase: number
 }
 
 export function newConfettiPieces(accent: string): Piece[] {
   const colors = [accent, "#FFD166", "#FF6B86", "#66D9EF", "#B794F6"]
   return Array.from({ length: 40 }, (_, i) => ({
     side: i % 2 ? 1 : -1,
-    spread: (Math.random() - 0.5) * 0.78,
-    lift: 0.65 + Math.random() * 0.35,
-    drift: (Math.random() - 0.5) * 0.12,
+    spread: (Math.random() - 0.5) * 0.9,
+    lift: 0.55 + Math.random() * 0.5,
+    drift: (Math.random() - 0.5) * 0.22,
     width: 9 + Math.random() * 7,
     height: i % 4 === 0 ? 11 : 18 + Math.random() * 12,
+    radius: 2 + Math.random() * 3,
     angle: Math.random() * 180,
-    spin: (i % 2 ? 1 : -1) * (240 + Math.random() * 360),
+    spin: (i % 2 ? 1 : -1) * (180 + Math.random() * 540),
     color: colors[i % colors.length],
+    delay: Math.random() * 0.18,
+    // 最晚落地时刻 = delay + APEX + fallDur ≈ 0.18+0.48+1.33 ≈ 2.0s（不超出全局时间轴 LAND）
+    fallDur: (LAND - APEX) * (0.5 + Math.random() * 0.32),
+    land: 0.48 + Math.random() * 0.34,
+    swayAmp: 0.02 + Math.random() * 0.05,
+    swayFreq: 4 + Math.random() * 6,
+    swayPhase: Math.random() * Math.PI * 2,
   }))
 }
 
 export function confettiPosition(p: Piece, time: number, width: number, height: number) {
-  const rise = clamp(time / APEX)
-  const fall = clamp((time - APEX) / (LAND - APEX))
+  const rise = clamp((time - p.delay) / APEX)
+  const fall = clamp((time - APEX - p.delay) / p.fallDur)
   const launchX = p.side * width * 0.38
   const apexX = p.spread * width
   const launchY = height * 0.14
   const apexY = launchY - Math.min(height * 0.4, 250) * p.lift
+  const landY = height * p.land
   const up = 1 - (1 - rise) ** 2
+  // 下落阶段叠加各自频率/相位的横向摆动，轨迹不再平行
+  const sway = Math.sin(time * p.swayFreq + p.swayPhase) * p.swayAmp * width * fall
   return {
-    x: launchX + (apexX - launchX) * up + p.drift * width * fall,
-    y: launchY + (apexY - launchY) * up + (height * 0.58 - apexY) * fall ** 2,
-    angle: p.angle + p.spin * clamp(time / LAND),
+    x: launchX + (apexX - launchX) * up + p.drift * width * fall + sway,
+    y: launchY + (apexY - launchY) * up + (landY - apexY) * fall ** 2,
+    angle: p.angle + p.spin * clamp((time - p.delay) / (APEX + p.fallDur)),
   }
 }
 
@@ -91,7 +107,7 @@ export function ConfettiScene({ width, height, onFinish }: {
     if (native) {
       timers.push(setTimeout(() => setTime(APEX), 40))
       timers.push(setTimeout(() => setTime(LAND), 520))
-      timers.push(setTimeout(() => setExiting(true), 1900))
+      timers.push(setTimeout(() => setExiting(true), 2100))
     } else {
       const started = Date.now()
       interval = setInterval(() => setTime(Math.min(CONFETTI_MS, Date.now() - started) / 1000), 33)
@@ -106,7 +122,7 @@ export function ConfettiScene({ width, height, onFinish }: {
     }
   }, [])
 
-  const fade = native ? (exiting ? 0 : 1) : 1 - clamp((time - 1.9) / 0.45)
+  const fade = native ? (exiting ? 0 : 1) : 1 - clamp((time - 2.1) / 0.5)
   const enter = native ? (time > 0 ? 1 : 0) : 1 - (1 - clamp(time / 0.35)) ** 3
   const motion = native ? {
     animation: time <= APEX ? native.easeOut(APEX) : native.easeIn(LAND - APEX), value: time,
@@ -116,7 +132,7 @@ export function ConfettiScene({ width, height, onFinish }: {
       animation={native ? { animation: native.easeOut(0.45), value: fade } : undefined}>
       {pieces.map((piece, i) => {
         const p = confettiPosition(piece, time, width, height)
-        return <RoundedRectangle key={i} cornerRadius={3} fill={piece.color}
+        return <RoundedRectangle key={i} cornerRadius={piece.radius} fill={piece.color}
           frame={{ width: piece.width, height: piece.height }}
           rotationEffect={p.angle} offset={{ x: p.x, y: p.y }} animation={motion} />
       })}
