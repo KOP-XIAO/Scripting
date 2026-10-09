@@ -37,10 +37,13 @@ export type DownloadOutcome = {
   sourceLabel?: string // 具体来源（腾讯云点播/抖音H5/cobalt…），用于历史展示
 }
 
+// 进度回调第三参：字节级统计（速度/ETA）。m3u8 总量未知时 totalBytes=0、ETA 为按平均分片大小的估算
+export type ProgressStats = { bytes: number; totalBytes: number; speedBps: number; etaSec: number | null }
+
 export type RunOptions = {
   prefs: Preferences
   onLog?: (line: string) => void
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number, stats?: ProgressStats) => void
   // 多路清晰度时回调选择（App 内弹面板；intent 不传则自动第一路）
   onChooseVariants?: (videos: ResolvedVideo[], title: string) => Promise<ResolvedVideo[]>
 }
@@ -183,7 +186,7 @@ async function downloadChunked(
   referer: string | undefined,
   maxMB: number,
   log: (l: string) => void,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, stats?: ProgressStats) => void,
 ): Promise<number> {
   const headers = { "User-Agent": UA, ...(referer ? { Referer: referer } : {}) }
   // 探测 Range 支持与总大小
@@ -201,6 +204,7 @@ async function downloadChunked(
     if (maxMB > 0 && len > maxMB * 1048576) throw new Error(`文件超过上限 ${maxMB}MB`)
     const bytes = new Uint8Array(await resp.arrayBuffer())
     await FileManager.writeAsBytes(destPath, bytes)
+    onProgress?.(1, 1, { bytes: bytes.length, totalBytes: bytes.length, speedBps: 0, etaSec: null })
     return bytes.length
   }
   if (maxMB > 0 && total > maxMB * 1048576) throw new Error(`文件 ${(total / 1048576).toFixed(0)}MB 超过上限 ${maxMB}MB`)
@@ -208,12 +212,23 @@ async function downloadChunked(
   const chunks = Math.ceil(total / CHUNK)
   const t0 = Date.now()
   let doneBytes = 0
+  const stats = (): ProgressStats => {
+    const elapsed = (Date.now() - t0) / 1000
+    const speedBps = elapsed > 0.2 ? doneBytes / elapsed : 0
+    return {
+      bytes: doneBytes,
+      totalBytes: total,
+      speedBps,
+      etaSec: speedBps > 0 ? Math.max(0, Math.round((total - doneBytes) / speedBps)) : null,
+    }
+  }
   for (let i = 0; i < chunks; i++) {
     const partPath = `${destPath}.part-${String(i).padStart(4, "0")}`
     if (await FileManager.exists(partPath)) {
       // 续传：已完成的块直接跳过
       const st = await FileManager.stat(partPath)
       doneBytes += st.size
+      onProgress?.(i + 1, chunks, stats())
       continue
     }
     const from = i * CHUNK
@@ -231,7 +246,7 @@ async function downloadChunked(
         if (attempt === 2) throw new Error(`分块 ${i + 1}/${chunks} 三次重试失败（.part 已保留，重跑可续传）: ${e}`)
       }
     }
-    onProgress?.(i + 1, chunks)
+    onProgress?.(i + 1, chunks, stats())
     const elapsed = (Date.now() - t0) / 1000
     if (elapsed > 1 && i % 2 === 1) {
       const speed = doneBytes / elapsed / 1048576
@@ -297,13 +312,20 @@ async function downloadM3U8(
 
   const chunks: Uint8Array[] = []
   let total = 0
+  const t0 = Date.now()
   const maxBytes = opts.prefs.maxMB > 0 ? opts.prefs.maxMB * 1048576 : Infinity
   for (let i = 0; i < segs.length; i++) {
     const b = await fetchBytes(segs[i], mediaUrl, 0)
     total += b.length
     if (total > maxBytes) throw new Error(`累计超过大小上限 ${opts.prefs.maxMB}MB，已中止`)
     chunks.push(b)
-    opts.onProgress?.(i + 1, segs.length)
+    const elapsed = (Date.now() - t0) / 1000
+    const speedBps = elapsed > 0.2 ? total / elapsed : 0
+    // 总量未知：按平均分片大小估算剩余字节 -> ETA
+    const etaSec = speedBps > 0
+      ? Math.max(0, Math.round(((segs.length - i - 1) * (total / (i + 1))) / speedBps))
+      : null
+    opts.onProgress?.(i + 1, segs.length, { bytes: total, totalBytes: 0, speedBps, etaSec })
     if (i % 10 === 0 || i === segs.length - 1) {
       log(`分片 ${i + 1}/${segs.length}（${(total / 1048576).toFixed(1)} MB）`)
     }

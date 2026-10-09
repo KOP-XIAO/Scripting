@@ -800,7 +800,9 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [prefs, setPrefs] = useState<Preferences>(getPreferences())
   const [inputURL, setInputURL] = useState("")
   const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [progress, setProgress] = useState<{
+    done: number; total: number; bytes: number; totalBytes: number; speedBps: number; etaSec: number | null
+  } | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [status, setStatus] = useState("就绪")
   const [history, setHistory] = useState<HistoryRecord[]>(props.initialHistory)
@@ -926,7 +928,15 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       const outcome: DownloadOutcome = await runDownload(url, {
         prefs,
         onLog: log,
-        onProgress: (done, total) => setProgress({ done, total }),
+        onProgress: (done, total, st) =>
+          setProgress({
+            done,
+            total,
+            bytes: st?.bytes ?? 0,
+            totalBytes: st?.totalBytes ?? 0,
+            speedBps: st?.speedBps ?? 0,
+            etaSec: st?.etaSec ?? null,
+          }),
         onChooseVariants: prefs.askQuality
           ? async (videos, title) => {
               const idx = await Dialog.actionSheet({
@@ -1071,7 +1081,12 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               </HStack>
               <HStack>
                 <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
-                  {progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`}
+                  {[
+                    progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
+                    progress.bytes > 0 ? formatBytes(progress.bytes) : "",
+                    progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
+                    progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
+                  ].filter(Boolean).join(" · ")}
                 </Text>
                 <Spacer />
                 <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
