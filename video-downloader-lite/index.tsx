@@ -8,6 +8,7 @@
 
 import {
   Button,
+  GeometryReader,
   HStack,
   Image,
   Link,
@@ -1006,7 +1007,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const progressRatio = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.done / progress.total))
     : undefined
-  const BAR_BLOCKS = 26 // ASCII 进度条块数（caption 等宽字体下不溢出小屏）
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
@@ -1065,20 +1065,34 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
                 </Text>
               </HStack>
-              <HStack spacing={0}>
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.35)">{"["}</Text>
-                <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
-                  {progressRatio == null
-                    ? "▚".repeat(BAR_BLOCKS)
-                    : "█".repeat(Math.round(progressRatio * BAR_BLOCKS))}
-                </Text>
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.18)">
-                  {progressRatio == null
-                    ? ""
-                    : "░".repeat(BAR_BLOCKS - Math.round(progressRatio * BAR_BLOCKS))}
-                </Text>
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.35)">{"]"}</Text>
-              </HStack>
+              {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
+                  亮块=主题色，最前沿一块白色高亮，暗块=12% 白；不定进度为斑马呼吸纹 */}
+              <GeometryReader>
+                {proxy => {
+                  const trackW = proxy.size.width
+                  const gap = 2
+                  const N = Math.max(20, Math.floor((trackW + gap) / 8))
+                  const bw = (trackW - (N - 1) * gap) / N
+                  const lit = progressRatio == null ? 0 : Math.round(progressRatio * N)
+                  return (
+                    <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
+                      {Array.from({ length: N }, (_, i) => (
+                        <RoundedRectangle
+                          key={i}
+                          cornerRadius={1.5}
+                          fill={progressRatio == null
+                            ? "rgba(255,255,255,0.12)"
+                            : i < lit
+                              ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
+                              : "rgba(255,255,255,0.12)"}
+                          opacity={progressRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
+                          frame={{ width: bw, height: 14 }}
+                        />
+                      ))}
+                    </HStack>
+                  )
+                }}
+              </GeometryReader>
               <HStack>
                 <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
                   {[
