@@ -8,7 +8,6 @@
 
 import {
   Button,
-  GeometryReader,
   HStack,
   Image,
   Link,
@@ -997,6 +996,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const progressRatio = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.done / progress.total))
     : undefined
+  const BAR_BLOCKS = 26 // ASCII 进度条块数（caption 等宽字体下不溢出小屏）
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
@@ -1036,57 +1036,46 @@ function View(props: { initialHistory: HistoryRecord[] }) {
 
         <Section title="状态">
           {loading && progress ? (
-            /* 进度卡：与日志卡同款终端风。14pt 胶囊条独占一行并垂直居中，
-               大号百分比在上方，不参与条形宽度分配。 */
+            /* 终端风进度卡：命令行提示符 + ASCII 方块条 + 分片计数 + 光标。
+               实心块=已完成（主题色），空心块=剩余（暗白），不定进度用 ▚ 填充。 */
             <VStack
               alignment="leading"
-              spacing={10}
+              spacing={8}
               padding={12}
               frame={{ maxWidth: "infinity" } as never}
               background="#0D1117"
               clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
             >
               <HStack>
-                <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
-                  {progressRatio == null ? "下载中…" : `${Math.round(progressRatio * 100)}%`}
+                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                  vdl@ios:~$ download
                 </Text>
                 <Spacer />
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.60)">
-                  {progress.total > 0 ? `分片 ${progress.done}/${progress.total}` : `已完成 ${progress.done} 分片`}
+                <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
+                  {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
                 </Text>
               </HStack>
-              <GeometryReader>
-                {proxy => {
-                  const trackW = proxy.size.width
-                  const ratio = progressRatio
-                  const fillW = ratio == null
-                    ? trackW * 0.4
-                    : Math.max(16, Math.min(trackW, trackW * ratio))
-                  const t = getTheme()
-                  // 渐变填充（柔色→实色，指向前沿）+ 末端高光圆点，进度前沿一眼可见
-                  const fillStyle = ratio == null
-                    ? t.accentSoft
-                    : ({
-                        gradient: [
-                          { color: t.accentSoft, location: 0 },
-                          { color: t.accent, location: 1 },
-                        ],
-                        startPoint: { x: 0, y: 0 },
-                        endPoint: { x: 1, y: 0 },
-                      } as any)
-                  return (
-                    <ZStack alignment="leading" frame={{ width: trackW, height: 16 }}>
-                      <RoundedRectangle cornerRadius={8} fill="rgba(255,255,255,0.10)"
-                        frame={{ width: trackW, height: 16 }} />
-                      <RoundedRectangle cornerRadius={8} fill={fillStyle}
-                        frame={{ width: fillW, height: 16 }} />
-                      <RoundedRectangle cornerRadius={6.5} fill="#FFFFFF" opacity={0.85}
-                        frame={{ width: 13, height: 13 }}
-                        offset={{ x: Math.max(1.5, fillW - 14.5), y: 0 }} />
-                    </ZStack>
-                  )
-                }}
-              </GeometryReader>
+              <HStack spacing={0}>
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.35)">{"["}</Text>
+                <Text font="caption" monospaced foregroundStyle={getTheme().accent}>
+                  {progressRatio == null
+                    ? "▚".repeat(BAR_BLOCKS)
+                    : "█".repeat(Math.round(progressRatio * BAR_BLOCKS))}
+                </Text>
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.18)">
+                  {progressRatio == null
+                    ? ""
+                    : "░".repeat(BAR_BLOCKS - Math.round(progressRatio * BAR_BLOCKS))}
+                </Text>
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.35)">{"]"}</Text>
+              </HStack>
+              <HStack>
+                <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
+                  {progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`}
+                </Text>
+                <Spacer />
+                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
+              </HStack>
             </VStack>
           ) : (
             <Text foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"}>
