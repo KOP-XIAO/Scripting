@@ -113,7 +113,7 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
     const L = 0.2126 * lin(parseInt(hex.slice(0, 2), 16) / 255)
       + 0.7152 * lin(parseInt(hex.slice(2, 4), 16) / 255)
       + 0.0722 * lin(parseInt(hex.slice(4, 6), 16) / 255)
-    return { bg: getTheme().accent, fg: L > 0.18 ? "#101014" : "#FFFFFF" }
+    return { bg: getTheme().accent, fg: L > 0.28 ? "#101014" : "#FFFFFF" }
   })()
 
   const openActions = async () => {
