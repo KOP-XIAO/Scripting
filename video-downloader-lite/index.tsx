@@ -1045,9 +1045,9 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         </Section>
 
         <Section title="状态">
-          {loading && progress ? (
-            /* 终端风进度卡：命令行提示符 + ASCII 方块条 + 分片计数 + 光标。
-               实心块=已完成（主题色），空心块=剩余（暗白），不定进度用 ▚ 填充。 */
+          {loading ? (
+            /* 终端风进度卡：loading 全程显示——解析/探测阶段 progress 尚未产生，
+               用零值兜底渲染斑马纹 + resolving…，避免进度条在最后时刻突然闪现。 */
             <VStack
               alignment="leading"
               spacing={8}
@@ -1095,12 +1095,14 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               </GeometryReader>
               <HStack>
                 <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
-                  {[
-                    progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
-                    progress.bytes > 0 ? formatBytes(progress.bytes) : "",
-                    progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
-                    progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
-                  ].filter(Boolean).join(" · ")}
+                  {progress == null || (progress.total === 0 && progress.done === 0)
+                    ? "resolving…"
+                    : [
+                        progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
+                        progress.bytes > 0 ? formatBytes(progress.bytes) : "",
+                        progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
+                        progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
+                      ].filter(Boolean).join(" · ")}
                 </Text>
                 <Spacer />
                 <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>

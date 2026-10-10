@@ -222,6 +222,7 @@ async function downloadChunked(
       etaSec: speedBps > 0 ? Math.max(0, Math.round((total - doneBytes) / speedBps)) : null,
     }
   }
+  onProgress?.(0, chunks, stats()) // 探测完成即上报 0%：进度条立刻从斑马纹切换为已知总量的空条
   for (let i = 0; i < chunks; i++) {
     const partPath = `${destPath}.part-${String(i).padStart(4, "0")}`
     if (await FileManager.exists(partPath)) {
