@@ -465,12 +465,12 @@ def bake_theme_badges():
             # 动漫：主题色硬边圆钮（浅底用压暗色）+ 白色描边环 + 白色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(40, 70, 40, 90)), 10 * SS))
+                (S, S), lambda dd: dd.ellipse([24, 38, S - 24, S - 10], fill=(40, 70, 40, 90)), 10 * SS))
             d = ImageDraw.Draw(base)
-            d.ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent), 225),
+            d.ellipse([16, 16, S - 16, S - 16], fill=hex_rgba(darken_for_light(accent), 225),
                       outline=(255, 255, 255, 255), width=8 * SS)
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 45)), 14 * SS))
+                (S, S), lambda dd: dd.ellipse([56, 30, S - 56, S // 2], fill=(255, 255, 255, 45)), 14 * SS))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 118 * SS, (255, 255, 255, 255))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
@@ -482,23 +482,23 @@ def bake_theme_badges():
             def octagon(cx, cy, r):
                 return [(cx + r * math.cos(math.radians(22.5 + 45 * k)),
                          cy + r * math.sin(math.radians(22.5 + 45 * k))) for k in range(8)]
-            octo = octagon(S / 2, S / 2, S * 0.42)
-            d.line(octo + [octo[0]], fill=(234, 242, 255, 255), width=13 * SS, joint="curve")
-            octo2 = octagon(S / 2, S / 2, S * 0.32)
+            octo = octagon(S / 2, S / 2, S * 0.47)
+            d.line(octo + [octo[0]], fill=(234, 242, 255, 255), width=15 * SS, joint="curve")
+            octo2 = octagon(S / 2, S / 2, S * 0.36)
             d.line(octo2 + [octo2[0]], fill=(234, 242, 255, 60), width=2 * SS, joint="curve")
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 118 * SS, hex_rgba(accent))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 124 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
             # 霓虹：主题色圆角矩形辉光牌（霓虹灯招牌形）+ 深色内芯 + 主题色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.rounded_rectangle([40, 40, S - 40, S - 40], radius=30 * SS,
+                (S, S), lambda dd: dd.rounded_rectangle([30, 30, S - 30, S - 30], radius=32 * SS,
                                                         fill=hex_rgba(accent, 200)), 16 * SS))
             d = ImageDraw.Draw(base)
-            d.rounded_rectangle([30, 30, S - 30, S - 30], radius=28 * SS, outline=hex_rgba(accent), width=11 * SS)
-            d.rounded_rectangle([44, 44, S - 44, S - 44], radius=22 * SS, fill=(11, 11, 26, 200))
+            d.rounded_rectangle([22, 22, S - 22, S - 22], radius=30 * SS, outline=hex_rgba(accent), width=11 * SS)
+            d.rounded_rectangle([36, 36, S - 36, S - 36], radius=24 * SS, fill=(11, 11, 26, 200))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
@@ -506,7 +506,7 @@ def bake_theme_badges():
 
             # 赛博朋克：切角方牌（主题色描边 + 深色半透明底 + 黄色角标）+ 主题色字形
             c = int(S * 0.09)  # 切角量
-            m0, m1 = int(S * 0.10), int(S * 0.90)
+            m0, m1 = int(S * 0.08), int(S * 0.92)
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             d = ImageDraw.Draw(base)
             chamfer = [(m0 + c, m0), (m1, m0), (m1, m1 - c), (m1 - c, m1), (m0, m1), (m0, m0 + c)]
@@ -516,7 +516,7 @@ def bake_theme_badges():
             d.polygon([(m0, m0 + c), (m0 + c, m0), (m0 + int(c * 2.2), m0), (m0, m0 + int(c * 2.2))],
                       fill=CYBER_YELLOW + (255,))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 120 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-cyberpunk-{glyph}-{theme}.png"))
 
