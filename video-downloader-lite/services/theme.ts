@@ -151,7 +151,7 @@ export const WIDGET_STYLE_KEY = "vdl.widgetStyle"
 
 export const WIDGET_STYLES = [
   { key: "texture", label: "暗色纹理" },
-  { key: "watercolor", label: "水彩田园" },
+  { key: "anime", label: "动漫风景" },
   { key: "blueprint", label: "蓝图" },
   { key: "neon", label: "霓虹" },
   { key: "cyberpunk", label: "赛博朋克" },

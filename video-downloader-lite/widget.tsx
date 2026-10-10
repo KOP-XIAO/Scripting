@@ -228,28 +228,28 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // -------------------------------------------------------------
 // 视觉资产全部烘焙为 PNG（见各 Background/Badge），此处仅保留文字配色；
 // 点缀色统一跟随配色主题（accentOn / getTheme().accent）
-const WATERCOLOR = {
-  ink: "#2E3B2E",
-  sub: "rgba(46,59,46,0.55)",
+const ANIME = {
+  ink: "#1F2A38",
+  sub: "rgba(31,42,56,0.55)",
 }
 
-// 背景为烘焙 PNG（tools/bake-style-assets.py）：天空/云朵/暖阳/层叠丘陵/小屋树木
-function WatercolorBackground({ family }: { family: "small" | "medium" }) {
+// 背景为烘焙 PNG（tools/bake-style-assets.py）：蓝天/积雨云/太阳/远山/稻田/电线杆/飞鸟
+function AnimeBackground({ family }: { family: "small" | "medium" }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-watercolor-${family}.png`}
+      filePath={`${Script.directory}/assets/widget-style-anime-${family}.png`}
       resizable={true}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
     />
   )
 }
 
-// 水彩风下载钮：烘焙 PNG（软边主题色圆 + 字形）+ 手指角标（浅底用压暗主题色）
-function WatercolorBadge({ size }: { size: number }) {
+// 动漫风下载钮：烘焙 PNG（硬边主题色圆 + 白描边环 + 字形）+ 手指角标（浅底用压暗主题色）
+function AnimeBadge({ size }: { size: number }) {
   return (
     <ZStack frame={{ width: size, height: size }}>
       <Image
-        filePath={`${Script.directory}/assets/widget-style-badge-watercolor-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        filePath={`${Script.directory}/assets/widget-style-badge-anime-${getBadgeGlyph()}-${getThemeKey()}.png`}
         resizable={true}
         scaleToFit={true}
         frame={{ width: size, height: size }}
@@ -264,41 +264,41 @@ function WatercolorBadge({ size }: { size: number }) {
   )
 }
 
-function WatercolorSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+function AnimeSmallView({ snap }: { snap: WidgetSnapshot | null }) {
   const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="topTrailing">
-      <WatercolorBackground family="small" />
+      <AnimeBackground family="small" />
       <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
           <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
-          <Text font="subheadline" fontWeight="bold" foregroundStyle={WATERCOLOR.ink} monospaced>
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={ANIME.ink} monospaced>
             VIDEO DOWNLOADER
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={WATERCOLOR.ink} sub={WATERCOLOR.sub} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={ANIME.ink} sub={ANIME.sub} />
         <Spacer />
-        <WatercolorBadge size={30} />
+        <AnimeBadge size={30} />
       </VStack>
     </ZStack>
   )
 }
 
-function WatercolorMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+function AnimeMediumView({ snap }: { snap: WidgetSnapshot | null }) {
   const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="bottomLeading">
-      <WatercolorBackground family="medium" />
+      <AnimeBackground family="medium" />
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
             <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
-            <Text font="headline" fontWeight="bold" foregroundStyle={WATERCOLOR.ink} monospaced>
+            <Text font="headline" fontWeight="bold" foregroundStyle={ANIME.ink} monospaced>
               VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={WATERCOLOR.ink} sub={WATERCOLOR.sub} />
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={ANIME.ink} sub={ANIME.sub} />
           </VStack>
           <VStack padding={{ top: 6 }}>
             <SecondRow item={snap?.second ?? null} color={accent} />
@@ -308,7 +308,7 @@ function WatercolorMediumView({ snap }: { snap: WidgetSnapshot | null }) {
         <VStack padding={{ top: 28 }}>
           <Spacer />
           <Link url={RUN_URL}>
-            <WatercolorBadge size={64} />
+            <AnimeBadge size={64} />
           </Link>
           <Spacer />
         </VStack>
@@ -600,12 +600,12 @@ function run() {
   const medium = Widget.family === "systemMedium"
   const style = getWidgetStyle()
   const view = medium
-    ? style === "watercolor" ? <WatercolorMediumView snap={snap} />
+    ? style === "anime" ? <AnimeMediumView snap={snap} />
       : style === "blueprint" ? <BlueprintMediumView snap={snap} />
       : style === "neon" ? <NeonMediumView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkMediumView snap={snap} />
       : <MediumView snap={snap} />
-    : style === "watercolor" ? <WatercolorSmallView snap={snap} />
+    : style === "anime" ? <AnimeSmallView snap={snap} />
       : style === "blueprint" ? <BlueprintSmallView snap={snap} />
       : style === "neon" ? <NeonSmallView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkSmallView snap={snap} />
