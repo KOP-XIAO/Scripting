@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "assets")
 os.makedirs(ASSETS, exist_ok=True)
 
-SIZES = {"small": (360, 360), "medium": (720, 360)}
+SIZES = {"small": (720, 720), "medium": (1440, 720)}
 MONO = "/System/Library/Fonts/Menlo.ttc"
 
 
@@ -75,6 +75,7 @@ def bake_anime():
     for fam, size in SIZES.items():
         w, h = size
         horizon = int(h * 0.52)
+        U = w / 720
         img = diag_gradient(size, (250, 252, 246), (238, 244, 232))
 
         # 高饱和蓝天渐变
@@ -115,7 +116,7 @@ def bake_anime():
             a = math.radians(ang)
             d.line([(sun_x + math.cos(a) * sun_r * 1.5, sun_y + math.sin(a) * sun_r * 1.5),
                     (sun_x + math.cos(a) * sun_r * 2.6, sun_y + math.sin(a) * sun_r * 2.6)],
-                   fill=(255, 250, 210, 150), width=3)
+                   fill=(255, 250, 210, 150), width=max(1, round(3 * U)))
         img = Image.alpha_composite(img, ov)
 
         # 远山（蓝紫剪影）+ 中景绿丘 + 前景
@@ -138,12 +139,12 @@ def bake_anime():
         pole_top, pole_bot = int(h * 0.40), int(h * 0.80)
         ov = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
-        d.rectangle([px - 3, pole_top, px + 3, pole_bot], fill=(60, 60, 70, 255))
-        d.rectangle([px - int(w * 0.05), pole_top + int(h * 0.03), px + int(w * 0.05), pole_top + int(h * 0.03) + 4],
+        d.rectangle([px - 3 * U, pole_top, px + 3 * U, pole_bot], fill=(60, 60, 70, 255))
+        d.rectangle([px - int(w * 0.05), pole_top + int(h * 0.03), px + int(w * 0.05), pole_top + int(h * 0.03) + max(2, round(4 * U))],
                     fill=(60, 60, 70, 255))
         for wy in (pole_top + int(h * 0.03), pole_top + int(h * 0.07)):
             pts = [(x, wy + int(abs((x - px) / (w * 0.5)) ** 1.5 * h * 0.04)) for x in range(0, w + 10, 10)]
-            d.line(pts, fill=(60, 60, 70, 220), width=2)
+            d.line(pts, fill=(60, 60, 70, 220), width=max(1, round(2 * U)))
         img = Image.alpha_composite(img, ov)
 
         # 小屋（硬边）+ 两棵树（硬边团 + 亮面）
@@ -169,8 +170,8 @@ def bake_anime():
         ov = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
         for bx, by in [(w * 0.42, h * 0.10), (w * 0.47, h * 0.13), (w * 0.38, h * 0.14)]:
-            d.arc([bx - 6, by - 4, bx, by + 4], 200, 340, fill=(50, 60, 80, 255), width=2)
-            d.arc([bx, by - 4, bx + 6, by + 4], 200, 340, fill=(50, 60, 80, 255), width=2)
+            d.arc([bx - 6 * U, by - 4 * U, bx, by + 4 * U], 200, 340, fill=(50, 60, 80, 255), width=max(1, round(2 * U)))
+            d.arc([bx, by - 4 * U, bx + 6 * U, by + 4 * U], 200, 340, fill=(50, 60, 80, 255), width=max(1, round(2 * U)))
         img = Image.alpha_composite(img, ov)
 
         # 左侧文字区白色衬底
@@ -192,24 +193,25 @@ def bake_blueprint():
     for fam, size in SIZES.items():
         w, h = size
         img = diag_gradient(size, (16, 48, 92), (10, 31, 61))
+        U = w / 720  # 分辨率无关缩放单位
         # 线条全部画在 overlay 上再合成（ImageDraw 直接画半透明色会改写像素 alpha）
         ov = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
         # 细网格 20px / 主网格 100px
-        for xx in range(0, w + 1, 20):
-            major = xx % 100 == 0
-            d.line([(xx, 0), (xx, h)], fill=LINE + (9 if major else 4,), width=2 if major else 1)
-        for yy in range(0, h + 1, 20):
-            major = yy % 100 == 0
-            d.line([(0, yy), (w, yy)], fill=LINE + (9 if major else 4,), width=2 if major else 1)
+        for xx in range(0, w + 1, int(20 * U)):
+            major = xx % int(100 * U) == 0
+            d.line([(xx, 0), (xx, h)], fill=LINE + (9 if major else 4,), width=max(1, round(2 * U) if major else round(U)))
+        for yy in range(0, h + 1, int(20 * U)):
+            major = yy % int(100 * U) == 0
+            d.line([(0, yy), (w, yy)], fill=LINE + (9 if major else 4,), width=max(1, round(2 * U) if major else round(U)))
         # 罗盘同心圆弧（右上出画）
         cx, cy = int(w * 0.86), int(-h * 0.10)
-        for r in (90, 150, 210):
-            d.arc([cx - r, cy - r, cx + r, cy + r], 20, 160, fill=LINE + (16,), width=2)
+        for r in (90 * U, 150 * U, 210 * U):
+            d.arc([cx - r, cy - r, cx + r, cy + r], 20, 160, fill=LINE + (16,), width=max(1, round(2 * U)))
         # 十字准星
         for gx, gy in [(int(w * 0.12), int(h * 0.82)), (int(w * 0.52), int(h * 0.18)), (int(w * 0.88), int(h * 0.66))]:
-            d.line([(gx - 7, gy), (gx + 7, gy)], fill=LINE + (40,), width=2)
-            d.line([(gx, gy - 7), (gx, gy + 7)], fill=LINE + (40,), width=2)
+            d.line([(gx - 7 * U, gy), (gx + 7 * U, gy)], fill=LINE + (40,), width=max(1, round(2 * U)))
+            d.line([(gx, gy - 7 * U), (gx, gy + 7 * U)], fill=LINE + (40,), width=max(1, round(2 * U)))
         img = Image.alpha_composite(img, ov)
         # 左侧文字区暗色衬底（左 -> 右渐变到透明），压住网格保证白字可读
         scrim_w = int(w * 0.62)
@@ -224,8 +226,8 @@ def bake_blueprint():
         # 图签文字（overlay 合成）
         if fam == "medium":
             ov2 = Image.new("RGBA", size, (0, 0, 0, 0))
-            ImageDraw.Draw(ov2).text((w - 14, h - 14), "DWG.NO VDL-2508 · SCALE 1:1",
-                   font=mono_font(13), fill=LINE + (70,), anchor="rs")
+            ImageDraw.Draw(ov2).text((w - 14 * U, h - 14 * U), "DWG.NO VDL-2508 · SCALE 1:1",
+                   font=mono_font(int(13 * U)), fill=LINE + (70,), anchor="rs")
             img = Image.alpha_composite(img, ov2)
         img.save(os.path.join(ASSETS, f"widget-style-blueprint-{fam}.png"))
 
@@ -247,6 +249,7 @@ def bake_neon():
         arr = np.repeat(top * (1 - ys) + bot * ys, w, axis=1)
         img = Image.fromarray(arr.astype(np.uint8), "RGB").convert("RGBA")
 
+        U = w / 720
         # 星星（overlay 合成，避免透明洞）
         stars = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(stars)
@@ -254,7 +257,7 @@ def bake_neon():
         for _ in range(int(w * h / 2600)):
             sx, sy = rng.integers(0, w), rng.integers(0, horizon - 8)
             a = int(rng.integers(40, 130))
-            d.point([(sx, sy)], fill=(255, 255, 255, a))
+            d.rectangle([sx, sy, sx + max(1, round(U)), sy + max(1, round(U))], fill=(255, 255, 255, a))
         img = Image.alpha_composite(img, stars)
 
         # 落日（右上，品红->橙，横向切缝）
@@ -296,9 +299,9 @@ def bake_neon():
             for i in range(1, 8):
                 yy = horizon + (h - horizon) * (i / 8) ** 2.1
                 dd.line([(0, yy), (w, yy)], fill=CYAN + (alpha,), width=width)
-        img = Image.alpha_composite(img, glow_layer(size, lambda dd: grid(dd, 3, 110), 5))
+        img = Image.alpha_composite(img, glow_layer(size, lambda dd: grid(dd, max(1, round(3 * U)), 110), 5 * U))
         sharp = Image.new("RGBA", size, (0, 0, 0, 0))
-        grid(ImageDraw.Draw(sharp), 1, 150)
+        grid(ImageDraw.Draw(sharp), max(1, round(U)), 150)
         img = Image.alpha_composite(img, sharp)
         dg = ImageDraw.Draw(img)
 
@@ -321,12 +324,13 @@ def bake_cyberpunk():
     for fam, size in SIZES.items():
         w, h = size
         img = diag_gradient(size, (11, 6, 24), (27, 16, 51))
+        U = w / 720
 
         ov = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
         # 扫描线（4px 间隔）
-        for yy in range(0, h, 4):
-            d.line([(0, yy), (w, yy)], fill=(255, 255, 255, 10), width=1)
+        for yy in range(0, h, max(1, round(4 * U))):
+            d.line([(0, yy), (w, yy)], fill=(255, 255, 255, 10), width=max(1, round(U)))
         # 电路走线（45° 折线 + 节点方块）
         traces = [
             [(0, int(h * 0.22)), (int(w * 0.20), int(h * 0.22)), (int(w * 0.30), int(h * 0.34)), (int(w * 0.46), int(h * 0.34))],
@@ -334,9 +338,9 @@ def bake_cyberpunk():
             [(int(w * 0.08), h), (int(w * 0.08), int(h * 0.78)), (int(w * 0.18), int(h * 0.66)), (int(w * 0.34), int(h * 0.66))],
         ]
         for pts in traces:
-            d.line(pts, fill=CYBER_CYAN + (95,), width=3, joint="curve")
+            d.line(pts, fill=CYBER_CYAN + (95,), width=max(1, round(3 * U)), joint="curve")
             for px, py in (pts[1], pts[2]):
-                d.rectangle([px - 4, py - 4, px + 4, py + 4], outline=CYBER_CYAN + (130,), width=2)
+                d.rectangle([px - 4 * U, py - 4 * U, px + 4 * U, py + 4 * U], outline=CYBER_CYAN + (130,), width=max(1, round(2 * U)))
         # 故障条纹（短横条，黄/品红）
         rng = np.random.default_rng(11)
         for _ in range(5):
@@ -344,16 +348,16 @@ def bake_cyberpunk():
             x0 = int(rng.integers(0, int(w * 0.7)))
             ln = int(rng.integers(int(w * 0.06), int(w * 0.18)))
             col = CYBER_YELLOW if rng.random() < 0.6 else (255, 46, 136)
-            d.rectangle([x0, yy, x0 + ln, yy + 3], fill=col + (150,))
+            d.rectangle([x0, yy, x0 + ln, yy + max(1, round(3 * U))], fill=col + (150,))
         # 切角框线（四角 L 型括号）
-        m, ln2 = 10, 26
+        m, ln2 = 10 * U, 26 * U
         for ox, oy, sx, sy in [(m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)]:
-            d.line([(ox, oy), (ox + sx * ln2, oy)], fill=CYBER_YELLOW + (210,), width=4)
-            d.line([(ox, oy), (ox, oy + sy * ln2)], fill=CYBER_YELLOW + (210,), width=4)
+            d.line([(ox, oy), (ox + sx * ln2, oy)], fill=CYBER_YELLOW + (210,), width=max(1, round(4 * U)))
+            d.line([(ox, oy), (ox, oy + sy * ln2)], fill=CYBER_YELLOW + (210,), width=max(1, round(4 * U)))
         # 右下角警示斜纹带
         for i in range(6):
-            x0 = w - 90 + i * 16
-            d.polygon([(x0, h), (x0 + 8, h), (x0 + 8 - 24, h - 24), (x0 - 24, h - 24)], fill=CYBER_YELLOW + (55,))
+            x0 = w - 90 * U + i * 16 * U
+            d.polygon([(x0, h), (x0 + 8 * U, h), (x0 + 8 * U - 24 * U, h - 24 * U), (x0 - 24 * U, h - 24 * U)], fill=CYBER_YELLOW + (55,))
         img = Image.alpha_composite(img, ov)
 
         # 左侧文字区暗色衬底（同蓝图处理）
@@ -368,7 +372,7 @@ def bake_cyberpunk():
 
         if fam == "medium":
             ov2 = Image.new("RGBA", size, (0, 0, 0, 0))
-            ImageDraw.Draw(ov2).text((w - 16, 12), "CYBER.DL // SECTOR 07", font=mono_font(13),
+            ImageDraw.Draw(ov2).text((w - 16 * U, 12 * U), "CYBER.DL // SECTOR 07", font=mono_font(int(13 * U)),
                                      fill=CYBER_CYAN + (160,), anchor="rs")
             img = Image.alpha_composite(img, ov2)
         img.save(os.path.join(ASSETS, f"widget-style-cyberpunk-{fam}.png"))
@@ -454,7 +458,7 @@ def bake_theme_badges():
     4 倍超采样绘制再 LANCZOS 缩小（PIL 无抗锯齿，直接 256 画边缘全是大锯齿）"""
     SS = 4
     S = 256 * SS
-    OUT = 256
+    OUT = 384
     accents = theme_accents()
     for theme, accent in accents.items():
         for glyph in GLYPHS:
