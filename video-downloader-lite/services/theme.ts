@@ -135,6 +135,7 @@ export const WIDGET_STYLE_KEY = "vdl.widgetStyle"
 export const WIDGET_STYLES = [
   { key: "texture", label: "暗色纹理" },
   { key: "poster", label: "海报大字" },
+  { key: "blueprint", label: "蓝图" },
 ] as const
 
 export type WidgetStyle = (typeof WIDGET_STYLES)[number]["key"]

@@ -347,13 +347,147 @@ function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
   )
 }
 
+// -------------------------------------------------------------
+// 蓝图风：深蓝图纸底 + 细网格线 + 白蓝图字 + 琥珀点缀 + 白色圆环下载钮
+// -------------------------------------------------------------
+const BLUEPRINT = {
+  bgTop: "#10305C",
+  bgBottom: "#0A1F3D",
+  ink: "#EAF2FF",
+  sub: "rgba(234,242,255,0.55)",
+  accent: "#FFC82E",
+  line: "rgba(234,242,255,0.07)",
+  ringCore: "#12345F", // 圆环内芯（近似渐变中值，视觉上与背景融为一体）
+}
+
+// 网格：4 横 6 纵细线，Spacer 均分（图纸坐标格）
+function BlueprintGrid() {
+  const hLine = (
+    <RoundedRectangle cornerRadius={0} fill={BLUEPRINT.line}
+      frame={{ maxWidth: "infinity", height: 0.5 } as never} />
+  )
+  const vLine = (
+    <RoundedRectangle cornerRadius={0} fill={BLUEPRINT.line}
+      frame={{ width: 0.5, maxHeight: "infinity" } as never} />
+  )
+  return (
+    <ZStack>
+      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        <Spacer />{hLine}<Spacer />{hLine}<Spacer />{hLine}<Spacer />{hLine}<Spacer />
+      </VStack>
+      <HStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        <Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />
+      </HStack>
+    </ZStack>
+  )
+}
+
+function BlueprintBackground({ family }: { family: "small" | "medium" }) {
+  return (
+    <ZStack>
+      <VStack
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+        background={{
+          gradient: [
+            { color: BLUEPRINT.bgTop, location: 0 },
+            { color: BLUEPRINT.bgBottom, location: 1 },
+          ],
+          startPoint: { x: 0, y: 0 },
+          endPoint: { x: 1, y: 1 },
+        } as any}
+      >
+        <Spacer />
+      </VStack>
+      <BlueprintGrid />
+      {family === "medium" ? (
+        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+          <Spacer />
+          <Text font="caption2" monospaced foregroundStyle="rgba(234,242,255,0.18)">
+            DWG.NO VDL-2508 · SCALE 1:1
+          </Text>
+        </VStack>
+      ) : null}
+    </ZStack>
+  )
+}
+
+// 蓝图风下载钮：白色圆环（外圆 - 内芯）+ 琥珀箭头
+function BlueprintBadge({ size }: { size: number }) {
+  const ring = 3
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      <RoundedRectangle cornerRadius={size / 2} fill={BLUEPRINT.ink} frame={{ width: size, height: size }} />
+      <RoundedRectangle cornerRadius={(size - ring * 2) / 2} fill={BLUEPRINT.ringCore}
+        frame={{ width: size - ring * 2, height: size - ring * 2 }} />
+      <Image systemName="arrow.down" font={size * 0.38} foregroundStyle={BLUEPRINT.accent} />
+    </ZStack>
+  )
+}
+
+function BlueprintSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack alignment="topTrailing">
+      <BlueprintBackground family="small" />
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
+        <HStack spacing={6}>
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={BLUEPRINT.accent} />
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={BLUEPRINT.ink} monospaced>
+            VIDEO DOWNLOADER
+          </Text>
+        </HStack>
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={BLUEPRINT.accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
+        <Spacer />
+        <BlueprintBadge size={30} />
+      </VStack>
+      <RefreshButton offsetX={-3} offsetY={3} color={BLUEPRINT.sub} />
+    </ZStack>
+  )
+}
+
+function BlueprintMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack alignment="bottomLeading">
+      <BlueprintBackground family="medium" />
+      <HStack spacing={4} padding>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
+          <HStack spacing={6}>
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={BLUEPRINT.accent} />
+            <Text font="headline" fontWeight="bold" foregroundStyle={BLUEPRINT.ink} monospaced>
+              VIDEO DOWNLOADER
+            </Text>
+          </HStack>
+          <VStack padding={{ top: 12 }}>
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={BLUEPRINT.accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
+          </VStack>
+          <VStack padding={{ top: 6 }}>
+            <SecondRow item={snap?.second ?? null} color={BLUEPRINT.accent} />
+          </VStack>
+          <Spacer />
+        </VStack>
+        <VStack padding={{ top: 28 }}>
+          <Spacer />
+          <Link url={RUN_URL}>
+            <BlueprintBadge size={64} />
+          </Link>
+          <Spacer />
+        </VStack>
+      </HStack>
+      <RefreshButton offsetX={3} offsetY={-3} color={BLUEPRINT.sub} />
+    </ZStack>
+  )
+}
+
 function run() {
   const snap = getWidgetSnapshot()
   const medium = Widget.family === "systemMedium"
-  const poster = getWidgetStyle() === "poster"
+  const style = getWidgetStyle()
   const view = medium
-    ? poster ? <PosterMediumView snap={snap} /> : <MediumView snap={snap} />
-    : poster ? <PosterSmallView snap={snap} /> : <SmallView snap={snap} />
+    ? style === "poster" ? <PosterMediumView snap={snap} />
+      : style === "blueprint" ? <BlueprintMediumView snap={snap} />
+      : <MediumView snap={snap} />
+    : style === "poster" ? <PosterSmallView snap={snap} />
+      : style === "blueprint" ? <BlueprintSmallView snap={snap} />
+      : <SmallView snap={snap} />
   Widget.present(view, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()
     reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },

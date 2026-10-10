@@ -420,9 +420,14 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         })()}
         {/* 小组件风格：暗色纹理（烘焙 PNG 徽章）/ 海报大字（纯色绘制圆形钮） */}
         {(() => {
+          const PREVIEW: Record<WidgetStyle, { bg: string; ink: string; dot: string }> = {
+            texture: { bg: THEMES[themeKey].bgTop, ink: "#F0F3F6", dot: THEMES[themeKey].accent },
+            poster: { bg: "#F7F2E7", ink: "#1B1B1B", dot: "#C0392B" },
+            blueprint: { bg: "#10305C", ink: "#EAF2FF", dot: "#FFC82E" },
+          }
           const styleCell = (key: WidgetStyle, label: string) => {
             const selected = key === widgetStyle
-            const poster = key === "poster"
+            const pv = PREVIEW[key]
             return (
               <Button
                 buttonStyle="plain"
@@ -436,12 +441,12 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                     <RoundedRectangle
                       frame={{ width: 64, height: 64 }}
                       cornerRadius={10}
-                      fill={poster ? "#F7F2E7" : THEMES[themeKey].bgTop}
+                      fill={pv.bg}
                     />
                     <Text
                       font="caption2"
                       fontWeight="bold"
-                      foregroundStyle={poster ? "#1B1B1B" : "#F0F3F6"}
+                      foregroundStyle={pv.ink}
                       offset={{ x: -10, y: -12 }}
                     >
                       Aa
@@ -449,7 +454,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                     <RoundedRectangle
                       frame={{ width: 16, height: 16 }}
                       cornerRadius={8}
-                      fill={poster ? "#C0392B" : THEMES[themeKey].accent}
+                      fill={pv.dot}
                       offset={{ x: 14, y: 14 }}
                     />
                     {selected ? (
@@ -473,6 +478,8 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               {styleCell("texture", "暗色纹理")}
               <Spacer />
               {styleCell("poster", "海报大字")}
+              <Spacer />
+              {styleCell("blueprint", "蓝图")}
               <Spacer />
               <Spacer />
             </HStack>
