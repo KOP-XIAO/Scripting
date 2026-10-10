@@ -897,6 +897,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
     setLogs([])
     setLastFiles([])
     setProgress(null)
+    let sawProgress = false
 
     const log = (line: string) => {
       const d = new Date()
@@ -929,7 +930,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       const outcome: DownloadOutcome = await runDownload(url, {
         prefs,
         onLog: log,
-        onProgress: (done, total, st) =>
+        onProgress: (done, total, st) => {
+          sawProgress = true
           setProgress({
             done,
             total,
@@ -937,7 +939,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
             totalBytes: st?.totalBytes ?? 0,
             speedBps: st?.speedBps ?? 0,
             etaSec: st?.etaSec ?? null,
-          }),
+          })
+        },
         onChooseVariants: prefs.askQuality
           ? async (videos, title) => {
               const idx = await Dialog.actionSheet({
@@ -987,6 +990,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       appendDebug(`下载失败: ${message}`)
       await Dialog.alert({ title: "下载失败", message })
     } finally {
+      // 小文件秒下时给进度条留出追到 100% 的展示窗口，避免一闪而过
+      if (sawProgress) await new Promise((r) => setTimeout(r, 650))
       setLoading(false)
       setProgress(null)
     }
@@ -1007,6 +1012,24 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const progressRatio = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.done / progress.total))
     : undefined
+  // 平滑追赶：显示值以恒定速率（约 1.3/s）追向真实进度。
+  // 小文件秒下时真实值瞬间到 100%，显示值仍会扫过完整动画。
+  const [displayRatio, setDisplayRatio] = useState<number | null>(null)
+  useEffect(() => {
+    if (progressRatio == null) {
+      if (displayRatio !== null) setDisplayRatio(null)
+      return
+    }
+    if (displayRatio == null) {
+      setDisplayRatio(0)
+      return
+    }
+    if (displayRatio >= progressRatio) return
+    const timer = setTimeout(() => {
+      setDisplayRatio((r) => (r == null ? 0 : Math.min(progressRatio, r + 0.04)))
+    }, 30)
+    return () => clearTimeout(timer)
+  }, [progressRatio, displayRatio])
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
@@ -1062,7 +1085,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                 </Text>
                 <Spacer />
                 <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
-                  {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
+                  {displayRatio == null ? "--%" : `${Math.round(displayRatio * 100)}%`}
                 </Text>
               </HStack>
               {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
@@ -1073,19 +1096,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   const gap = 2
                   const N = Math.max(20, Math.floor((trackW + gap) / 8))
                   const bw = (trackW - (N - 1) * gap) / N
-                  const lit = progressRatio == null ? 0 : Math.round(progressRatio * N)
+                  const lit = displayRatio == null ? 0 : Math.round(displayRatio * N)
                   return (
                     <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
                       {Array.from({ length: N }, (_, i) => (
                         <RoundedRectangle
                           key={i}
                           cornerRadius={1.5}
-                          fill={progressRatio == null
+                          fill={displayRatio == null
                             ? "rgba(255,255,255,0.12)"
                             : i < lit
                               ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
                               : "rgba(255,255,255,0.12)"}
-                          opacity={progressRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
+                          opacity={displayRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
                           frame={{ width: bw, height: 14 }}
                         />
                       ))}
