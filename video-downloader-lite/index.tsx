@@ -472,7 +472,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             <HStack spacing={0}>
               {styleCell("texture", "暗色纹理")}
               <Spacer />
-              {styleCell("poster", "海报大字")}
+              {styleCell("watercolor", "水彩田园")}
               <Spacer />
               {styleCell("blueprint", "蓝图")}
               <Spacer />

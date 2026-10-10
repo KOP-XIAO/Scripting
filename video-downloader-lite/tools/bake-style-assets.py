@@ -58,36 +58,108 @@ def mono_font(px):
 
 
 # -------------------------------------------------------------
-# 海报：米色纸感 + 噪点 + 暖棕半调圆点群 + 巨型水印箭头
+# 水彩田园：纸纹 + 天空水彩渐变 + 云朵暖阳 + 层叠丘陵 + 小屋树木
+# 水彩感手法：每层独立绘制后高斯模糊边缘（颜料晕染），半透明叠色
 # -------------------------------------------------------------
-def bake_poster():
+def _hill_layer(size, base_y, amp, freq, phase, color, blur=3):
+    """一层丘陵：正弦曲线轮廓 + 软边"""
+    w, h = size
+    layer = Image.new("RGBA", size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    pts = [(x, base_y + amp * math.sin(x / w * math.pi * 2 * freq + phase)) for x in range(0, w + 8, 8)]
+    d.polygon(pts + [(w, h), (0, h)], fill=color)
+    return layer.filter(ImageFilter.GaussianBlur(blur))
+
+
+def bake_watercolor():
     for fam, size in SIZES.items():
         w, h = size
-        img = diag_gradient(size, (247, 242, 231), (233, 224, 204))
-        img = add_grain(img, sigma=6, alpha=0.5)
+        horizon = int(h * 0.50)
+        # 水彩纸底（暖白 + 纸纹颗粒）
+        img = diag_gradient(size, (252, 249, 240), (243, 238, 224))
+        img = add_grain(img, sigma=5, alpha=0.35)
 
-        # 半透明元素画在 overlay 上再 alpha_composite
-        # （ImageDraw 直接画半透明色会改写像素 alpha，导致 PNG 出现透明洞）
+        # 天空水彩渐变（上深下浅，洗到地平线）
+        sky = np.zeros((horizon, w, 4), dtype=np.uint8)
+        ys = np.linspace(0, 1, horizon)[:, None, None]
+        c_top = np.array([137, 190, 222], dtype=float)
+        c_bot = np.array([214, 236, 246], dtype=float)
+        sky_col = c_top * (1 - ys) + c_bot * ys
+        sky[..., :3] = np.repeat(sky_col, w, axis=1).astype(np.uint8)
+        sky[..., 3] = 255
+        img.paste(Image.fromarray(sky, "RGBA"), (0, 0))
+
+        # 暖阳（柔光晕）
+        sun_x, sun_y, sun_r = int(w * 0.76), int(h * 0.15), int(w * 0.075)
+        img = Image.alpha_composite(img, glow_layer(
+            size, lambda dd: dd.ellipse([sun_x - sun_r, sun_y - sun_r, sun_x + sun_r, sun_y + sun_r],
+                                        fill=(249, 217, 118, 220)), int(w * 0.03)))
+        ov = Image.new("RGBA", size, (0, 0, 0, 0))
+        ImageDraw.Draw(ov).ellipse([sun_x - sun_r, sun_y - sun_r, sun_x + sun_r, sun_y + sun_r],
+                                   fill=(252, 224, 130, 235))
+        img = Image.alpha_composite(img, ov.filter(ImageFilter.GaussianBlur(2)))
+
+        # 云朵（模糊椭圆簇）
+        def cloud(cx, cy, cw, alpha):
+            c = Image.new("RGBA", size, (0, 0, 0, 0))
+            dc = ImageDraw.Draw(c)
+            for ox, oy, orr in [(-0.30, 0.05, 0.30), (0.0, -0.08, 0.40), (0.32, 0.06, 0.28)]:
+                dc.ellipse([cx + ox * cw - orr * cw, cy + oy * cw - orr * cw * 0.55,
+                            cx + ox * cw + orr * cw, cy + oy * cw + orr * cw * 0.55], fill=(255, 255, 255, alpha))
+            return c.filter(ImageFilter.GaussianBlur(int(w * 0.012)))
+        img = Image.alpha_composite(img, cloud(w * 0.22, h * 0.16, w * 0.34, 220))
+        img = Image.alpha_composite(img, cloud(w * 0.55, h * 0.28, w * 0.24, 180))
+
+        # 层叠丘陵（远浅近深，层间微微透色）
+        img = Image.alpha_composite(img, _hill_layer(size, int(h * 0.50), h * 0.03, 1.2, 0.4, (168, 203, 150, 235), 4))
+        mid = _hill_layer(size, int(h * 0.60), h * 0.045, 0.9, 2.2, (126, 178, 106, 240), 3)
+        img = Image.alpha_composite(img, mid)
+        img = Image.alpha_composite(img, _hill_layer(size, int(h * 0.76), h * 0.05, 1.5, 4.0, (96, 152, 82, 245), 3))
+
+        # 中景小屋（奶油墙 + 红屋顶 + 烟囱）
         ov = Image.new("RGBA", size, (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
-        # 半调圆点群（右下角，暖棕色，极低透明度）
-        step = 18
-        for row, yy in enumerate(range(int(h * 0.45), h, step)):
-            for col, xx in enumerate(range(int(w * 0.5), w, step)):
-                r = 1.2 + 1.6 * ((row + col) % 3) / 2
-                d.ellipse([xx - r, yy - r, xx + r, yy + r], fill=(160, 110, 60, 38))
-        # 巨型水印箭头（正红，极低透明度，右侧出画）
-        draw_down_arrow(d, w * 0.88, h * 0.42, h * 0.85, (192, 57, 43, 30))
-        img = Image.alpha_composite(img, ov)
-        # 边缘轻晕影（纸张四周略深）
-        vig = Image.new("L", size, 0)
-        dv = ImageDraw.Draw(vig)
-        dv.rectangle([0, 0, w, h], outline=30, width=int(min(w, h) * 0.06))
-        vig = vig.filter(ImageFilter.GaussianBlur(min(w, h) * 0.05))
-        dark = Image.new("RGBA", size, (120, 90, 50, 255))
-        img = Image.composite(dark, img, vig.point(lambda v: v * 0.20))
-        img.save(os.path.join(ASSETS, f"widget-style-poster-{fam}.png"))
+        hx, hy = int(w * 0.30), int(h * 0.56)
+        hw, hh = int(w * 0.055), int(h * 0.075)
+        d.rectangle([hx, hy, hx + hw, hy + hh], fill=(245, 235, 221, 255))
+        d.polygon([(hx - hw * 0.18, hy), (hx + hw * 1.18, hy), (hx + hw * 0.5, hy - hh * 0.72)], fill=(201, 111, 74, 255))
+        d.rectangle([hx + hw * 0.68, hy - hh * 0.55, hx + hw * 0.84, hy - hh * 0.10], fill=(201, 111, 74, 255))
+        d.rectangle([hx + hw * 0.36, hy + hh * 0.38, hx + hw * 0.62, hy + hh], fill=(139, 96, 63, 255))
+        img = Image.alpha_composite(img, ov.filter(ImageFilter.GaussianBlur(1)))
 
+        # 树木（柔边树冠团 + 短干）
+        def tree(tx, ty, tr, alpha=235):
+            t = Image.new("RGBA", size, (0, 0, 0, 0))
+            dt = ImageDraw.Draw(t)
+            dt.rectangle([tx - tr * 0.08, ty, tx + tr * 0.08, ty + tr * 1.1], fill=(120, 85, 55, alpha))
+            for ox, oy, orr in [(-0.35, -0.25, 0.42), (0.3, -0.3, 0.45), (0.0, -0.62, 0.5)]:
+                dt.ellipse([tx + ox * tr - orr * tr, ty + oy * tr - orr * tr,
+                            tx + ox * tr + orr * tr, ty + oy * tr + orr * tr], fill=(94, 140, 74, alpha))
+            return t.filter(ImageFilter.GaussianBlur(2))
+        img = Image.alpha_composite(img, tree(int(w * 0.14), int(h * 0.56), w * 0.045))
+        img = Image.alpha_composite(img, tree(int(w * 0.62), int(h * 0.52), w * 0.038))
+        img = Image.alpha_composite(img, tree(int(w * 0.86), int(h * 0.68), w * 0.055))
+
+        # 前景田野笔触（短横笔触，略深绿）
+        ov = Image.new("RGBA", size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        rng = np.random.default_rng(5)
+        for _ in range(40):
+            sx = int(rng.integers(0, w))
+            sy = int(rng.integers(int(h * 0.80), h - 4))
+            ln = int(rng.integers(int(w * 0.02), int(w * 0.06)))
+            d.line([(sx, sy), (sx + ln, sy - 2)], fill=(74, 128, 62, 90), width=3)
+        img = Image.alpha_composite(img, ov.filter(ImageFilter.GaussianBlur(2)))
+
+        # 左侧文字区白色水彩衬底（浅底上用白晕托住深墨字）
+        scrim_w = int(w * 0.62)
+        xs = np.linspace(0, 1, scrim_w)[None, :, None]
+        scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
+        scrim_arr[..., :3] = 255
+        scrim_arr[..., 3] = np.repeat((1 - xs) * 95, h, axis=0)[..., 0].astype(np.uint8)
+        img = Image.alpha_composite(img, Image.fromarray(scrim_arr, "RGBA").resize(size).filter(ImageFilter.GaussianBlur(8)))
+
+        img.save(os.path.join(ASSETS, f"widget-style-watercolor-{fam}.png"))
 
 
 # -------------------------------------------------------------
@@ -364,18 +436,22 @@ def bake_theme_badges():
     accents = theme_accents()
     for theme, accent in accents.items():
         for glyph in GLYPHS:
-            # 海报：主题色圆钮（浅底用压暗色）+ 投影 + 高光 + 白色字形
+            # 水彩：主题色软边圆钮（浅底用压暗色，水彩晕染边）+ 白色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(90, 50, 20, 120)), 10 * SS))
-            d = ImageDraw.Draw(base)
-            d.ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent), 210))
+                (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(70, 90, 50, 90)), 10 * SS))
+            circle = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            ImageDraw.Draw(circle).ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent), 215))
+            # 水彩晕边：略微放大模糊层 + 本体，边缘柔和
+            bleed = circle.filter(ImageFilter.GaussianBlur(3 * SS))
+            base = Image.alpha_composite(base, bleed)
+            base = Image.alpha_composite(base, circle.filter(ImageFilter.GaussianBlur(1 * SS)))
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 60)), 14 * SS))
+                (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 50)), 14 * SS))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 122 * SS, (255, 255, 255, 255))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
-            badge.save(os.path.join(ASSETS, f"widget-style-badge-poster-{glyph}-{theme}.png"))
+            badge.save(os.path.join(ASSETS, f"widget-style-badge-watercolor-{glyph}-{theme}.png"))
 
             # 蓝图：白圆环 + 主题色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -417,8 +493,8 @@ def bake_theme_badges():
 
 
 if __name__ == "__main__":
-    bake_poster()
-    print("poster ok")
+    bake_watercolor()
+    print("watercolor ok")
     bake_blueprint()
     print("blueprint ok")
     bake_neon()

@@ -228,28 +228,28 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // -------------------------------------------------------------
 // 视觉资产全部烘焙为 PNG（见各 Background/Badge），此处仅保留文字配色；
 // 点缀色统一跟随配色主题（accentOn / getTheme().accent）
-const POSTER = {
-  ink: "#1B1B1B",
-  sub: "rgba(27,27,27,0.55)",
+const WATERCOLOR = {
+  ink: "#2E3B2E",
+  sub: "rgba(46,59,46,0.55)",
 }
 
-// 背景为烘焙 PNG（tools/bake-style-assets.py）：纸感噪点 + 半调圆点 + 水印箭头
-function PosterBackground({ family }: { family: "small" | "medium" }) {
+// 背景为烘焙 PNG（tools/bake-style-assets.py）：天空/云朵/暖阳/层叠丘陵/小屋树木
+function WatercolorBackground({ family }: { family: "small" | "medium" }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-poster-${family}.png`}
+      filePath={`${Script.directory}/assets/widget-style-watercolor-${family}.png`}
       resizable={true}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
     />
   )
 }
 
-// 海报风下载钮：烘焙 PNG（主题色圆 + 字形）+ 手指角标（浅底用压暗主题色）
-function PosterBadge({ size }: { size: number }) {
+// 水彩风下载钮：烘焙 PNG（软边主题色圆 + 字形）+ 手指角标（浅底用压暗主题色）
+function WatercolorBadge({ size }: { size: number }) {
   return (
     <ZStack frame={{ width: size, height: size }}>
       <Image
-        filePath={`${Script.directory}/assets/widget-style-badge-poster-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        filePath={`${Script.directory}/assets/widget-style-badge-watercolor-${getBadgeGlyph()}-${getThemeKey()}.png`}
         resizable={true}
         scaleToFit={true}
         frame={{ width: size, height: size }}
@@ -264,41 +264,41 @@ function PosterBadge({ size }: { size: number }) {
   )
 }
 
-function PosterSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+function WatercolorSmallView({ snap }: { snap: WidgetSnapshot | null }) {
   const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="topTrailing">
-      <PosterBackground family="small" />
+      <WatercolorBackground family="small" />
       <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
           <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
-          <Text font="subheadline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={WATERCOLOR.ink} monospaced>
             VIDEO DOWNLOADER
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={POSTER.ink} sub={POSTER.sub} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={WATERCOLOR.ink} sub={WATERCOLOR.sub} />
         <Spacer />
-        <PosterBadge size={30} />
+        <WatercolorBadge size={30} />
       </VStack>
     </ZStack>
   )
 }
 
-function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+function WatercolorMediumView({ snap }: { snap: WidgetSnapshot | null }) {
   const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="bottomLeading">
-      <PosterBackground family="medium" />
+      <WatercolorBackground family="medium" />
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
             <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
-            <Text font="headline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
+            <Text font="headline" fontWeight="bold" foregroundStyle={WATERCOLOR.ink} monospaced>
               VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={POSTER.ink} sub={POSTER.sub} />
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={WATERCOLOR.ink} sub={WATERCOLOR.sub} />
           </VStack>
           <VStack padding={{ top: 6 }}>
             <SecondRow item={snap?.second ?? null} color={accent} />
@@ -308,7 +308,7 @@ function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
         <VStack padding={{ top: 28 }}>
           <Spacer />
           <Link url={RUN_URL}>
-            <PosterBadge size={64} />
+            <WatercolorBadge size={64} />
           </Link>
           <Spacer />
         </VStack>
@@ -600,12 +600,12 @@ function run() {
   const medium = Widget.family === "systemMedium"
   const style = getWidgetStyle()
   const view = medium
-    ? style === "poster" ? <PosterMediumView snap={snap} />
+    ? style === "watercolor" ? <WatercolorMediumView snap={snap} />
       : style === "blueprint" ? <BlueprintMediumView snap={snap} />
       : style === "neon" ? <NeonMediumView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkMediumView snap={snap} />
       : <MediumView snap={snap} />
-    : style === "poster" ? <PosterSmallView snap={snap} />
+    : style === "watercolor" ? <WatercolorSmallView snap={snap} />
       : style === "blueprint" ? <BlueprintSmallView snap={snap} />
       : style === "neon" ? <NeonSmallView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkSmallView snap={snap} />
