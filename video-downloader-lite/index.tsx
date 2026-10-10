@@ -418,17 +418,16 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             </HStack>
           ))
         })()}
-        {/* 小组件风格：暗色纹理（烘焙 PNG 徽章）/ 海报大字（纯色绘制圆形钮） */}
+        {/* 小组件风格预览：直接用烘焙 PNG 实物缩略（纹理风跟随当前主题/徽章实时变化） */}
         {(() => {
-          const PREVIEW: Record<WidgetStyle, { bg: string; ink: string; dot: string }> = {
-            texture: { bg: THEMES[themeKey].bgTop, ink: "#F0F3F6", dot: THEMES[themeKey].accent },
-            poster: { bg: "#F7F2E7", ink: "#1B1B1B", dot: "#C0392B" },
-            blueprint: { bg: "#10305C", ink: "#EAF2FF", dot: "#FFC82E" },
-            neon: { bg: "#05050A", ink: "#F2F5FF", dot: "#00E5FF" },
-          }
           const styleCell = (key: WidgetStyle, label: string) => {
             const selected = key === widgetStyle
-            const pv = PREVIEW[key]
+            const bgSrc = key === "texture"
+              ? `${Script.directory}/assets/widget-bg-${themeKey}-small.png`
+              : `${Script.directory}/assets/widget-style-${key}-small.png`
+            const badgeSrc = key === "texture"
+              ? `${Script.directory}/assets/widget-badge-${badgeGlyph}-${themeKey}.png`
+              : `${Script.directory}/assets/widget-style-badge-${key}.png`
             return (
               <Button
                 buttonStyle="plain"
@@ -439,24 +438,19 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               >
                 <VStack spacing={4}>
                   <ZStack frame={{ width: 64, height: 64 }}>
-                    <RoundedRectangle
+                    <Image
+                      filePath={bgSrc}
+                      resizable={true}
+                      scaleToFill={true}
                       frame={{ width: 64, height: 64 }}
-                      cornerRadius={10}
-                      fill={pv.bg}
+                      clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
                     />
-                    <Text
-                      font="caption2"
-                      fontWeight="bold"
-                      foregroundStyle={pv.ink}
-                      offset={{ x: -10, y: -12 }}
-                    >
-                      Aa
-                    </Text>
-                    <RoundedRectangle
-                      frame={{ width: 16, height: 16 }}
-                      cornerRadius={8}
-                      fill={pv.dot}
-                      offset={{ x: 14, y: 14 }}
+                    <Image
+                      filePath={badgeSrc}
+                      resizable={true}
+                      scaleToFit={true}
+                      frame={{ width: 20, height: 20 }}
+                      offset={{ x: 16, y: 16 }}
                     />
                     {selected ? (
                       <Image

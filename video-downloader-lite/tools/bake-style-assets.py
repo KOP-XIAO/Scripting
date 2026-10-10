@@ -66,16 +66,19 @@ def bake_poster():
         img = diag_gradient(size, (247, 242, 231), (233, 224, 204))
         img = add_grain(img, sigma=6, alpha=0.5)
 
-        d = ImageDraw.Draw(img)
+        # 半透明元素画在 overlay 上再 alpha_composite
+        # （ImageDraw 直接画半透明色会改写像素 alpha，导致 PNG 出现透明洞）
+        ov = Image.new("RGBA", size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
         # 半调圆点群（右下角，暖棕色，极低透明度）
         step = 18
         for row, yy in enumerate(range(int(h * 0.45), h, step)):
             for col, xx in enumerate(range(int(w * 0.5), w, step)):
                 r = 1.2 + 1.6 * ((row + col) % 3) / 2
                 d.ellipse([xx - r, yy - r, xx + r, yy + r], fill=(160, 110, 60, 38))
-        # 巨型水印箭头（正红，8% 透明度，右侧出画）
-        d2 = ImageDraw.Draw(img)
-        draw_down_arrow(d2, w * 0.88, h * 0.42, h * 0.85, (192, 57, 43, 30))
+        # 巨型水印箭头（正红，极低透明度，右侧出画）
+        draw_down_arrow(d, w * 0.88, h * 0.42, h * 0.85, (192, 57, 43, 30))
+        img = Image.alpha_composite(img, ov)
         # 边缘轻晕影（纸张四周略深）
         vig = Image.new("L", size, 0)
         dv = ImageDraw.Draw(vig)
@@ -108,26 +111,41 @@ def bake_blueprint():
     for fam, size in SIZES.items():
         w, h = size
         img = diag_gradient(size, (16, 48, 92), (10, 31, 61))
-        d = ImageDraw.Draw(img)
+        # 线条全部画在 overlay 上再合成（ImageDraw 直接画半透明色会改写像素 alpha）
+        ov = Image.new("RGBA", size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
         # 细网格 20px / 主网格 100px
         for xx in range(0, w + 1, 20):
             major = xx % 100 == 0
-            d.line([(xx, 0), (xx, h)], fill=LINE + (16 if major else 6,), width=2 if major else 1)
+            d.line([(xx, 0), (xx, h)], fill=LINE + (9 if major else 4,), width=2 if major else 1)
         for yy in range(0, h + 1, 20):
             major = yy % 100 == 0
-            d.line([(0, yy), (w, yy)], fill=LINE + (16 if major else 6,), width=2 if major else 1)
+            d.line([(0, yy), (w, yy)], fill=LINE + (9 if major else 4,), width=2 if major else 1)
         # 罗盘同心圆弧（右上出画）
         cx, cy = int(w * 0.86), int(-h * 0.10)
         for r in (90, 150, 210):
-            d.arc([cx - r, cy - r, cx + r, cy + r], 20, 160, fill=LINE + (26,), width=2)
+            d.arc([cx - r, cy - r, cx + r, cy + r], 20, 160, fill=LINE + (16,), width=2)
         # 十字准星
         for gx, gy in [(int(w * 0.12), int(h * 0.82)), (int(w * 0.52), int(h * 0.18)), (int(w * 0.88), int(h * 0.66))]:
-            d.line([(gx - 7, gy), (gx + 7, gy)], fill=LINE + (70,), width=2)
-            d.line([(gx, gy - 7), (gx, gy + 7)], fill=LINE + (70,), width=2)
-        # 图签文字
+            d.line([(gx - 7, gy), (gx + 7, gy)], fill=LINE + (40,), width=2)
+            d.line([(gx, gy - 7), (gx, gy + 7)], fill=LINE + (40,), width=2)
+        img = Image.alpha_composite(img, ov)
+        # 左侧文字区暗色衬底（左 -> 右渐变到透明），压住网格保证白字可读
+        scrim_w = int(w * 0.62)
+        xs = np.linspace(0, 1, scrim_w)[None, :, None]
+        scrim_alpha = (1 - xs) * 90
+        scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
+        scrim_arr[..., 0] = 6
+        scrim_arr[..., 1] = 14
+        scrim_arr[..., 2] = 30
+        scrim_arr[..., 3] = np.repeat(scrim_alpha, h, axis=0)[..., 0].astype(np.uint8)
+        img = Image.alpha_composite(img, Image.fromarray(scrim_arr, "RGBA").resize(size))
+        # 图签文字（overlay 合成）
         if fam == "medium":
-            d.text((w - 14, h - 14), "DWG.NO VDL-2508 · SCALE 1:1",
+            ov2 = Image.new("RGBA", size, (0, 0, 0, 0))
+            ImageDraw.Draw(ov2).text((w - 14, h - 14), "DWG.NO VDL-2508 · SCALE 1:1",
                    font=mono_font(13), fill=LINE + (70,), anchor="rs")
+            img = Image.alpha_composite(img, ov2)
         img.save(os.path.join(ASSETS, f"widget-style-blueprint-{fam}.png"))
 
     # 徽章：白圆环 + 琥珀箭头
@@ -156,13 +174,15 @@ def bake_neon():
         arr = np.repeat(top * (1 - ys) + bot * ys, w, axis=1)
         img = Image.fromarray(arr.astype(np.uint8), "RGB").convert("RGBA")
 
-        # 星星
-        d = ImageDraw.Draw(img)
+        # 星星（overlay 合成，避免透明洞）
+        stars = Image.new("RGBA", size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(stars)
         rng = np.random.default_rng(7)
         for _ in range(int(w * h / 2600)):
             sx, sy = rng.integers(0, w), rng.integers(0, horizon - 8)
             a = int(rng.integers(40, 130))
             d.point([(sx, sy)], fill=(255, 255, 255, a))
+        img = Image.alpha_composite(img, stars)
 
         # 落日（右上，品红->橙，横向切缝）
         sun_r = int(w * 0.16)
@@ -204,11 +224,15 @@ def bake_neon():
                 yy = horizon + (h - horizon) * (i / 8) ** 2.1
                 dd.line([(0, yy), (w, yy)], fill=CYAN + (alpha,), width=width)
         img = Image.alpha_composite(img, glow_layer(size, lambda dd: grid(dd, 3, 110), 5))
+        sharp = Image.new("RGBA", size, (0, 0, 0, 0))
+        grid(ImageDraw.Draw(sharp), 1, 150)
+        img = Image.alpha_composite(img, sharp)
         dg = ImageDraw.Draw(img)
-        grid(dg, 1, 150)
 
         if fam == "medium":
-            dg.text((w - 14, 12), "NEON.DL // READY", font=mono_font(13), fill=CYAN + (110,), anchor="rs")
+            ov3 = Image.new("RGBA", size, (0, 0, 0, 0))
+            ImageDraw.Draw(ov3).text((w - 14, 12), "NEON.DL // READY", font=mono_font(13), fill=CYAN + (110,), anchor="rs")
+            img = Image.alpha_composite(img, ov3)
         img.save(os.path.join(ASSETS, f"widget-style-neon-{fam}.png"))
 
     # 徽章：青色辉光环 + 深色内芯 + 青箭头
