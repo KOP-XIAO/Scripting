@@ -171,7 +171,9 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
     .join(" · ")
 
   return (
-    <HStack spacing={10} frame={{ maxWidth: "infinity" } as never} onTapGesture={() => void openActions()}>
+    <HStack spacing={10} frame={{ maxWidth: "infinity" } as never}
+      listRowInsets={{ top: 5, leading: 16, bottom: 5, trailing: 16 } as never}
+      onTapGesture={() => void openActions()}>
       {/* 缩略图 + 左上角序号徽标：序号不再独占一行，与缩略图融为一体 */}
       <ZStack alignment="topLeading" frame={{ width: 84, height: 54 }}>
         <VideoThumb path={item.thumb_path} />
@@ -1051,11 +1053,11 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         }}
       >
         <Section
-          header={<Text>下载链接</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接。复制链接后点底部「粘贴并下载」一键开始；
-              在其它 App 里也可直接分享到本脚本。当前识别：{kindHint}　·　v{VERSION}
+              {inputURL.trim()
+                ? `当前识别：${kindHint}`
+                : "支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接，复制链接后点底部按钮即可"}
             </Text>
           }
         >
