@@ -7,7 +7,7 @@
 
 import { HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
-import { getTheme, getBadgeGlyph, getWidgetStyle } from "./services/theme"
+import { getTheme, getThemeKey, getBadgeGlyph, getWidgetStyle, accentOn } from "./services/theme"
 import { formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
 
 const SCRIPT_NAME = "Video Downloader Lite"
@@ -226,11 +226,11 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // -------------------------------------------------------------
 // 海报大字风：米色纸感渐变 + 深墨字 + 正红圆形下载钮（纯色绘制，无需烘焙 PNG）
 // -------------------------------------------------------------
-// 视觉资产全部烘焙为 PNG（见各 Background/Badge），此处仅保留文字/点缀配色
+// 视觉资产全部烘焙为 PNG（见各 Background/Badge），此处仅保留文字配色；
+// 点缀色统一跟随配色主题（accentOn / getTheme().accent）
 const POSTER = {
   ink: "#1B1B1B",
   sub: "rgba(27,27,27,0.55)",
-  accent: "#C0392B",
 }
 
 // 背景为烘焙 PNG（tools/bake-style-assets.py）：纸感噪点 + 半调圆点 + 水印箭头
@@ -248,7 +248,7 @@ function PosterBackground({ family }: { family: "small" | "medium" }) {
 function PosterBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-poster.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-poster-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}
@@ -257,17 +257,18 @@ function PosterBadge({ size }: { size: number }) {
 }
 
 function PosterSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="topTrailing">
       <PosterBackground family="small" />
       <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
-          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={POSTER.accent} />
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
           <Text font="subheadline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
             VIDEO DOWNLOADER
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={POSTER.accent} ink={POSTER.ink} sub={POSTER.sub} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={POSTER.ink} sub={POSTER.sub} />
         <Spacer />
         <PosterBadge size={30} />
       </VStack>
@@ -276,22 +277,23 @@ function PosterSmallView({ snap }: { snap: WidgetSnapshot | null }) {
 }
 
 function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = accentOn("light") // 浅底：过亮主题色自动压暗
   return (
     <ZStack alignment="bottomLeading">
       <PosterBackground family="medium" />
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
-            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={POSTER.accent} />
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
             <Text font="headline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
               VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={POSTER.accent} ink={POSTER.ink} sub={POSTER.sub} />
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={POSTER.ink} sub={POSTER.sub} />
           </VStack>
           <VStack padding={{ top: 6 }}>
-            <SecondRow item={snap?.second ?? null} color={POSTER.accent} />
+            <SecondRow item={snap?.second ?? null} color={accent} />
           </VStack>
           <Spacer />
         </VStack>
@@ -313,7 +315,6 @@ function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
 const BLUEPRINT = {
   ink: "#EAF2FF",
   sub: "rgba(234,242,255,0.55)",
-  accent: "#FFC82E",
 }
 
 // 背景为烘焙 PNG（tools/bake-style-assets.py）：细/主网格 + 罗盘圆弧 + 准星 + 图签
@@ -331,7 +332,7 @@ function BlueprintBackground({ family }: { family: "small" | "medium" }) {
 function BlueprintBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-blueprint.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-blueprint-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}
@@ -340,17 +341,18 @@ function BlueprintBadge({ size }: { size: number }) {
 }
 
 function BlueprintSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
   return (
     <ZStack alignment="topTrailing">
       <BlueprintBackground family="small" />
       <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
-          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={BLUEPRINT.accent} />
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
           <Text font="subheadline" fontWeight="bold" foregroundStyle={BLUEPRINT.ink} monospaced>
             VIDEO DOWNLOADER
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={BLUEPRINT.accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
         <Spacer />
         <BlueprintBadge size={30} />
       </VStack>
@@ -359,22 +361,23 @@ function BlueprintSmallView({ snap }: { snap: WidgetSnapshot | null }) {
 }
 
 function BlueprintMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
   return (
     <ZStack alignment="bottomLeading">
       <BlueprintBackground family="medium" />
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
-            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={BLUEPRINT.accent} />
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
             <Text font="headline" fontWeight="bold" foregroundStyle={BLUEPRINT.ink} monospaced>
               VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={BLUEPRINT.accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={BLUEPRINT.ink} sub={BLUEPRINT.sub} />
           </VStack>
           <VStack padding={{ top: 6 }}>
-            <SecondRow item={snap?.second ?? null} color={BLUEPRINT.accent} />
+            <SecondRow item={snap?.second ?? null} color={accent} />
           </VStack>
           <Spacer />
         </VStack>
@@ -396,8 +399,6 @@ function BlueprintMediumView({ snap }: { snap: WidgetSnapshot | null }) {
 const NEON = {
   ink: "#F2F5FF",
   sub: "rgba(242,245,255,0.50)",
-  accent: "#00E5FF", // 霓虹青
-  accent2: "#FF2E88", // 霓虹品红
 }
 
 // 背景为烘焙 PNG（tools/bake-style-assets.py）：星空 + 落日 + 透视网格 + 辉光
@@ -415,7 +416,7 @@ function NeonBackground({ family }: { family: "small" | "medium" }) {
 function NeonBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-neon.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-neon-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}
@@ -424,17 +425,18 @@ function NeonBadge({ size }: { size: number }) {
 }
 
 function NeonSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
   return (
     <ZStack>
       <NeonBackground family="small" />
       <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
         <HStack spacing={6}>
-          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={NEON.accent} />
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
           <Text font="subheadline" fontWeight="bold" foregroundStyle={NEON.ink} monospaced>
             VIDEO DOWNLOADER
           </Text>
         </HStack>
-        <LatestInfo item={snap?.latest ?? null} lines={2} accent={NEON.accent} ink={NEON.ink} sub={NEON.sub} />
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={NEON.ink} sub={NEON.sub} />
         <Spacer />
         <NeonBadge size={30} />
       </VStack>
@@ -443,22 +445,23 @@ function NeonSmallView({ snap }: { snap: WidgetSnapshot | null }) {
 }
 
 function NeonMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
   return (
     <ZStack>
       <NeonBackground family="medium" />
       <HStack spacing={4} padding>
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
           <HStack spacing={6}>
-            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={NEON.accent} />
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
             <Text font="headline" fontWeight="bold" foregroundStyle={NEON.ink} monospaced>
               VIDEO DOWNLOADER
             </Text>
           </HStack>
           <VStack padding={{ top: 12 }}>
-            <LatestInfo item={snap?.latest ?? null} lines={2} accent={NEON.accent} ink={NEON.ink} sub={NEON.sub} />
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={NEON.ink} sub={NEON.sub} />
           </VStack>
           <VStack padding={{ top: 6 }}>
-            <SecondRow item={snap?.second ?? null} color={NEON.accent2} />
+            <SecondRow item={snap?.second ?? null} color={accent} />
           </VStack>
           <Spacer />
         </VStack>

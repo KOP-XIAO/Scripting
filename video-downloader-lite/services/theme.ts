@@ -128,8 +128,25 @@ export function setThemeKey(key: ThemeKey) {
 }
 
 // -------------------------------------------------------------
-// 小组件视觉风格（独立于配色主题）：暗色纹理（烘焙 PNG）/ 海报大字（纯色绘制）
+// 小组件视觉风格（独立于配色主题）：暗色纹理 / 海报大字 / 蓝图 / 霓虹
+// 各风格背景保持自身特色，点缀色（徽章箭头/图标/强调文字）跟随配色主题
 // -------------------------------------------------------------
+
+// 浅底风格（海报）下主题色可能过亮不可读：按 gamma 逐档压暗至对比度达标
+export function accentOn(mode: "light" | "dark"): string {
+  const hex = getTheme().accent
+  if (mode === "dark") return hex
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  if (lum(rgb[0], rgb[1], rgb[2]) <= 0.15) return hex
+  // gamma 2.2 保色相压暗；达不到目标再线性缩放（红色系单靠 gamma 压不下去）
+  let out = rgb.map((c) => c ** 2.2)
+  let k = 1.0
+  while (lum(out[0] * k, out[1] * k, out[2] * k) > 0.15 && k > 0.3) k -= 0.05
+  out = out.map((c) => c * k)
+  return "#" + out.map((c) => Math.round(c * 255).toString(16).padStart(2, "0")).join("")
+}
 export const WIDGET_STYLE_KEY = "vdl.widgetStyle"
 
 export const WIDGET_STYLES = [

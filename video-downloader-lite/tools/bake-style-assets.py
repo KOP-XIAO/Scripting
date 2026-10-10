@@ -88,19 +88,6 @@ def bake_poster():
         img = Image.composite(dark, img, vig.point(lambda v: v * 0.20))
         img.save(os.path.join(ASSETS, f"widget-style-poster-{fam}.png"))
 
-    # 徽章：正红圆钮 + 柔和投影 + 白箭头
-    S = 256
-    badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    shadow = glow_layer((S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(90, 50, 20, 120)), 10)
-    badge = Image.alpha_composite(badge, shadow)
-    d = ImageDraw.Draw(badge)
-    d.ellipse([24, 24, S - 24, S - 24], fill=(192, 57, 43, 255))
-    # 顶部高光
-    hl = glow_layer((S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 60)), 14)
-    badge = Image.alpha_composite(badge, hl)
-    d = ImageDraw.Draw(badge)
-    draw_down_arrow(d, S / 2, S / 2, 108, (255, 255, 255, 255))
-    badge.save(os.path.join(ASSETS, "widget-style-badge-poster.png"))
 
 
 # -------------------------------------------------------------
@@ -148,14 +135,6 @@ def bake_blueprint():
             img = Image.alpha_composite(img, ov2)
         img.save(os.path.join(ASSETS, f"widget-style-blueprint-{fam}.png"))
 
-    # 徽章：白圆环 + 琥珀箭头
-    S = 256
-    badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(badge)
-    d.ellipse([22, 22, S - 22, S - 22], outline=(234, 242, 255, 255), width=13)
-    d.ellipse([48, 48, S - 48, S - 48], outline=(234, 242, 255, 60), width=2)
-    draw_down_arrow(d, S / 2, S / 2, 104, (255, 200, 46, 255))
-    badge.save(os.path.join(ASSETS, "widget-style-badge-blueprint.png"))
 
 
 # -------------------------------------------------------------
@@ -235,16 +214,69 @@ def bake_neon():
             img = Image.alpha_composite(img, ov3)
         img.save(os.path.join(ASSETS, f"widget-style-neon-{fam}.png"))
 
-    # 徽章：青色辉光环 + 深色内芯 + 青箭头
+
+
+# -------------------------------------------------------------
+# 主题徽章：3 风格 × 10 主题色（点缀色跟随配色主题，背景不动）
+# -------------------------------------------------------------
+def theme_accents():
+    """从 services/theme.ts 解析主题 accent 表"""
+    import re
+    src = open(os.path.join(ROOT, "services", "theme.ts")).read()
+    return {m.group(1): m.group(2) for m in re.finditer(r'(\w+):\s*\{[^}]*?accent:\s*"(#[0-9A-Fa-f]{6})"', src)}
+
+
+def darken_for_light(hex_color, target_l=0.15):
+    """与 theme.ts 的 accentOn('light') 同逻辑：先 gamma 2.2 保色相，不够再线性缩放"""
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    lin = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    lum = lambda rr, gg, bb: 0.2126 * lin(rr) + 0.7152 * lin(gg) + 0.0722 * lin(bb)
+    if lum(r, g, b) <= target_l:
+        return hex_color
+    rr, gg, bb = r ** 2.2, g ** 2.2, b ** 2.2
+    k = 1.0
+    while lum(rr * k, gg * k, bb * k) > target_l and k > 0.3:
+        k -= 0.05
+    rr, gg, bb = rr * k, gg * k, bb * k
+    return "#{:02X}{:02X}{:02X}".format(round(rr * 255), round(gg * 255), round(bb * 255))
+
+
+def hex_rgba(hex_color, a=255):
+    return (int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16), a)
+
+
+def bake_theme_badges():
     S = 256
-    badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    glow = glow_layer((S, S), lambda dd: dd.ellipse([40, 40, S - 40, S - 40], fill=CYAN + (200,)), 16)
-    badge = Image.alpha_composite(badge, glow)
-    d = ImageDraw.Draw(badge)
-    d.ellipse([30, 30, S - 30, S - 30], outline=CYAN + (255,), width=11)
-    d.ellipse([44, 44, S - 44, S - 44], fill=(11, 11, 26, 255))
-    draw_down_arrow(d, S / 2, S / 2, 100, CYAN + (255,))
-    badge.save(os.path.join(ASSETS, "widget-style-badge-neon.png"))
+    for theme, accent in theme_accents().items():
+        # 海报：主题色圆钮（浅底用压暗色）+ 投影 + 高光 + 白箭头
+        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        badge = Image.alpha_composite(badge, glow_layer(
+            (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(90, 50, 20, 120)), 10))
+        d = ImageDraw.Draw(badge)
+        d.ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent)))
+        badge = Image.alpha_composite(badge, glow_layer(
+            (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 60)), 14))
+        d = ImageDraw.Draw(badge)
+        draw_down_arrow(d, S / 2, S / 2, 108, (255, 255, 255, 255))
+        badge.save(os.path.join(ASSETS, f"widget-style-badge-poster-{theme}.png"))
+
+        # 蓝图：白圆环 + 主题色箭头
+        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        d = ImageDraw.Draw(badge)
+        d.ellipse([22, 22, S - 22, S - 22], outline=(234, 242, 255, 255), width=13)
+        d.ellipse([48, 48, S - 48, S - 48], outline=(234, 242, 255, 60), width=2)
+        draw_down_arrow(d, S / 2, S / 2, 104, hex_rgba(accent))
+        badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{theme}.png"))
+
+        # 霓虹：主题色辉光环 + 深色内芯 + 主题色箭头
+        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        badge = Image.alpha_composite(badge, glow_layer(
+            (S, S), lambda dd: dd.ellipse([40, 40, S - 40, S - 40], fill=hex_rgba(accent, 200)), 16))
+        d = ImageDraw.Draw(badge)
+        d.ellipse([30, 30, S - 30, S - 30], outline=hex_rgba(accent), width=11)
+        d.ellipse([44, 44, S - 44, S - 44], fill=(11, 11, 26, 255))
+        draw_down_arrow(d, S / 2, S / 2, 100, hex_rgba(accent))
+        badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{theme}.png"))
 
 
 if __name__ == "__main__":
@@ -254,3 +286,5 @@ if __name__ == "__main__":
     print("blueprint ok")
     bake_neon()
     print("neon ok")
+    bake_theme_badges()
+    print("theme badges ok")
