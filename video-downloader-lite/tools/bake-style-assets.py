@@ -45,6 +45,41 @@ def glow_layer(size, draw_fn, blur):
     return layer.filter(ImageFilter.GaussianBlur(blur))
 
 
+def _rounded_poly_points(pts, radius, seg=8):
+    """圆角多边形：每个顶点沿两边回退切点，之间用圆弧连接（真正的倒角，非顶点堆球）"""
+    out = []
+    n = len(pts)
+    for i in range(n):
+        p0, p1, p2 = pts[i - 1], pts[i], pts[(i + 1) % n]
+        e1 = (p0[0] - p1[0], p0[1] - p1[1])
+        e2 = (p2[0] - p1[0], p2[1] - p1[1])
+        l1, l2 = math.hypot(*e1), math.hypot(*e2)
+        e1 = (e1[0] / l1, e1[1] / l1)
+        e2 = (e2[0] / l2, e2[1] / l2)
+        cosa = max(-1.0, min(1.0, e1[0] * e2[0] + e1[1] * e2[1]))
+        half = math.acos(cosa) / 2
+        if math.sin(half) < 1e-3:
+            out.append(p1)
+            continue
+        td = min(radius / math.tan(half), l1 / 2, l2 / 2)
+        t1 = (p1[0] + e1[0] * td, p1[1] + e1[1] * td)
+        t2 = (p1[0] + e2[0] * td, p1[1] + e2[1] * td)
+        bis = (e1[0] + e2[0], e1[1] + e2[1])
+        bl = math.hypot(*bis)
+        bis = (bis[0] / bl, bis[1] / bl)
+        rr = td * math.tan(half)
+        cd = rr / math.sin(half)
+        c = (p1[0] + bis[0] * cd, p1[1] + bis[1] * cd)
+        a1 = math.atan2(t1[1] - c[1], t1[0] - c[0])
+        da = (math.atan2(t2[1] - c[1], t2[0] - c[0]) - a1) % (2 * math.pi)
+        if da > math.pi:
+            da -= 2 * math.pi
+        for k in range(seg + 1):
+            a = a1 + da * k / seg
+            out.append((c[0] + rr * math.cos(a), c[1] + rr * math.sin(a)))
+    return out
+
+
 def draw_down_arrow(d, cx, cy, h, color):
     """手绘下箭头（轴矩形 + 三角头），不依赖字体"""
     sw = h * 0.26
@@ -414,7 +449,8 @@ def draw_glyph(d, glyph, cx, cy, h, color):
     """六款徽章字形，全部 PIL 原语绘制；挖洞用全透明填充（在 overlay 层上等效裁切）"""
     HOLE = (0, 0, 0, 0)
     if glyph == "play":
-        d.polygon([(cx - h * 0.28, cy - h * 0.42), (cx - h * 0.28, cy + h * 0.42), (cx + h * 0.46, cy)], fill=color)
+        pts = [(cx - h * 0.28, cy - h * 0.42), (cx - h * 0.28, cy + h * 0.42), (cx + h * 0.46, cy)]
+        d.polygon(_rounded_poly_points(pts, h * 0.09), fill=color)
     elif glyph == "download":
         draw_down_arrow(d, cx, cy, h, color)
     elif glyph == "film":
