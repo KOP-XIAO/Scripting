@@ -427,7 +427,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               : `${Script.directory}/assets/widget-style-${key}-small.png`
             const badgeSrc = key === "texture"
               ? `${Script.directory}/assets/widget-badge-${badgeGlyph}-${themeKey}.png`
-              : `${Script.directory}/assets/widget-style-badge-${key}-${themeKey}.png`
+              : `${Script.directory}/assets/widget-style-badge-${key}-${badgeGlyph}-${themeKey}.png`
             return (
               <Button
                 buttonStyle="plain"

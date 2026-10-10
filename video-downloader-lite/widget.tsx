@@ -248,7 +248,7 @@ function PosterBackground({ family }: { family: "small" | "medium" }) {
 function PosterBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-poster-${getThemeKey()}.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-poster-${getBadgeGlyph()}-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}
@@ -332,7 +332,7 @@ function BlueprintBackground({ family }: { family: "small" | "medium" }) {
 function BlueprintBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-blueprint-${getThemeKey()}.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-blueprint-${getBadgeGlyph()}-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}
@@ -416,7 +416,7 @@ function NeonBackground({ family }: { family: "small" | "medium" }) {
 function NeonBadge({ size }: { size: number }) {
   return (
     <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-neon-${getThemeKey()}.png`}
+      filePath={`${Script.directory}/assets/widget-style-badge-neon-${getBadgeGlyph()}-${getThemeKey()}.png`}
       resizable={true}
       scaleToFit={true}
       frame={{ width: size, height: size }}

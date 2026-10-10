@@ -245,38 +245,92 @@ def hex_rgba(hex_color, a=255):
     return (int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16), a)
 
 
+GLYPHS = ["clapperboard", "popcorn", "play", "film", "video", "download"]
+
+
+def draw_glyph(d, glyph, cx, cy, h, color):
+    """六款徽章字形，全部 PIL 原语绘制；挖洞用全透明填充（在 overlay 层上等效裁切）"""
+    HOLE = (0, 0, 0, 0)
+    if glyph == "play":
+        d.polygon([(cx - h * 0.28, cy - h * 0.42), (cx - h * 0.28, cy + h * 0.42), (cx + h * 0.46, cy)], fill=color)
+    elif glyph == "download":
+        draw_down_arrow(d, cx, cy, h, color)
+    elif glyph == "film":
+        # 横置胶片：圆角框 + 上下两排齿孔
+        w2, h2 = h * 0.58, h * 0.40
+        d.rounded_rectangle([cx - w2, cy - h2, cx + w2, cy + h2], radius=h * 0.10, fill=color)
+        hole = h * 0.10
+        for i in range(4):
+            x = cx - w2 + h * 0.10 + i * (2 * w2 - h * 0.20 - hole) / 3
+            d.rectangle([x, cy - h2 + h * 0.06, x + hole, cy - h2 + h * 0.06 + hole], fill=HOLE)
+            d.rectangle([x, cy + h2 - h * 0.06 - hole, x + hole, cy + h2 - h * 0.06], fill=HOLE)
+    elif glyph == "video":
+        # 摄像机：圆角机身 + 右侧三角镜头
+        w2, h2 = h * 0.40, h * 0.30
+        d.rounded_rectangle([cx - h * 0.58, cy - h2, cx + w2 - h * 0.18, cy + h2], radius=h * 0.10, fill=color)
+        d.polygon([(cx + w2 - h * 0.14, cy - h * 0.12), (cx + w2 - h * 0.14, cy + h * 0.12),
+                   (cx + h * 0.58, cy + h * 0.30), (cx + h * 0.58, cy - h * 0.30)], fill=color)
+    elif glyph == "clapperboard":
+        # 场记板：底板 + 斜纹上翻板
+        w2 = h * 0.52
+        d.rounded_rectangle([cx - w2, cy - h * 0.10, cx + w2, cy + h * 0.40], radius=h * 0.07, fill=color)
+        d.polygon([(cx - w2, cy - h * 0.14), (cx - w2 + h * 0.06, cy - h * 0.38),
+                   (cx + w2, cy - h * 0.28), (cx + w2, cy - h * 0.04)], fill=color)
+        for i in range(3):  # 斜纹挖洞
+            x0 = cx - w2 + h * (0.14 + i * 0.34)
+            d.polygon([(x0, cy - h * 0.36 + h * 0.02 * i), (x0 + h * 0.10, cy - h * 0.345 + h * 0.02 * i),
+                       (x0 + h * 0.22, cy - h * 0.08), (x0 + h * 0.12, cy - h * 0.065)], fill=HOLE)
+    elif glyph == "popcorn":
+        # 爆米花桶：梯形盒身 + 竖条纹挖洞 + 顶部三颗米花
+        d.polygon([(cx - h * 0.36, cy - h * 0.02), (cx + h * 0.36, cy - h * 0.02),
+                   (cx + h * 0.25, cy + h * 0.46), (cx - h * 0.25, cy + h * 0.46)], fill=color)
+        for sx in (-0.14, 0.0, 0.14):
+            d.polygon([(cx + h * (sx - 0.035), cy), (cx + h * (sx + 0.035), cy),
+                       (cx + h * (sx * 0.7 + 0.03), cy + h * 0.44), (cx + h * (sx * 0.7 - 0.03), cy + h * 0.44)], fill=HOLE)
+        for bx, by, br in ((-0.22, -0.12, 0.14), (0.0, -0.22, 0.16), (0.22, -0.12, 0.14)):
+            d.ellipse([cx + h * (bx - br), cy + h * (by - br), cx + h * (bx + br), cy + h * (by + br)], fill=color)
+
+
 def bake_theme_badges():
+    """全矩阵：3 风格 × 6 款式 × 10 主题 = 180 张徽章"""
     S = 256
-    for theme, accent in theme_accents().items():
-        # 海报：主题色圆钮（浅底用压暗色）+ 投影 + 高光 + 白箭头
-        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-        badge = Image.alpha_composite(badge, glow_layer(
-            (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(90, 50, 20, 120)), 10))
-        d = ImageDraw.Draw(badge)
-        d.ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent)))
-        badge = Image.alpha_composite(badge, glow_layer(
-            (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 60)), 14))
-        d = ImageDraw.Draw(badge)
-        draw_down_arrow(d, S / 2, S / 2, 108, (255, 255, 255, 255))
-        badge.save(os.path.join(ASSETS, f"widget-style-badge-poster-{theme}.png"))
+    accents = theme_accents()
+    for theme, accent in accents.items():
+        for glyph in GLYPHS:
+            # 海报：主题色圆钮（浅底用压暗色）+ 投影 + 高光 + 白色字形
+            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            base = Image.alpha_composite(base, glow_layer(
+                (S, S), lambda dd: dd.ellipse([28, 40, S - 28, S - 16], fill=(90, 50, 20, 120)), 10))
+            d = ImageDraw.Draw(base)
+            d.ellipse([24, 24, S - 24, S - 24], fill=hex_rgba(darken_for_light(accent)))
+            base = Image.alpha_composite(base, glow_layer(
+                (S, S), lambda dd: dd.ellipse([60, 34, S - 60, S // 2], fill=(255, 255, 255, 60)), 14))
+            ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 100, (255, 255, 255, 255))
+            badge = Image.alpha_composite(base, ov)
+            badge.save(os.path.join(ASSETS, f"widget-style-badge-poster-{glyph}-{theme}.png"))
 
-        # 蓝图：白圆环 + 主题色箭头
-        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-        d = ImageDraw.Draw(badge)
-        d.ellipse([22, 22, S - 22, S - 22], outline=(234, 242, 255, 255), width=13)
-        d.ellipse([48, 48, S - 48, S - 48], outline=(234, 242, 255, 60), width=2)
-        draw_down_arrow(d, S / 2, S / 2, 104, hex_rgba(accent))
-        badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{theme}.png"))
+            # 蓝图：白圆环 + 主题色字形
+            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            d = ImageDraw.Draw(base)
+            d.ellipse([22, 22, S - 22, S - 22], outline=(234, 242, 255, 255), width=13)
+            d.ellipse([48, 48, S - 48, S - 48], outline=(234, 242, 255, 60), width=2)
+            ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 96, hex_rgba(accent))
+            badge = Image.alpha_composite(base, ov)
+            badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
-        # 霓虹：主题色辉光环 + 深色内芯 + 主题色箭头
-        badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-        badge = Image.alpha_composite(badge, glow_layer(
-            (S, S), lambda dd: dd.ellipse([40, 40, S - 40, S - 40], fill=hex_rgba(accent, 200)), 16))
-        d = ImageDraw.Draw(badge)
-        d.ellipse([30, 30, S - 30, S - 30], outline=hex_rgba(accent), width=11)
-        d.ellipse([44, 44, S - 44, S - 44], fill=(11, 11, 26, 255))
-        draw_down_arrow(d, S / 2, S / 2, 100, hex_rgba(accent))
-        badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{theme}.png"))
+            # 霓虹：主题色辉光环 + 深色内芯 + 主题色字形
+            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            base = Image.alpha_composite(base, glow_layer(
+                (S, S), lambda dd: dd.ellipse([40, 40, S - 40, S - 40], fill=hex_rgba(accent, 200)), 16))
+            d = ImageDraw.Draw(base)
+            d.ellipse([30, 30, S - 30, S - 30], outline=hex_rgba(accent), width=11)
+            d.ellipse([44, 44, S - 44, S - 44], fill=(11, 11, 26, 255))
+            ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 92, hex_rgba(accent))
+            badge = Image.alpha_composite(base, ov)
+            badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{glyph}-{theme}.png"))
 
 
 if __name__ == "__main__":
