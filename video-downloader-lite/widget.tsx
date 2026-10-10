@@ -503,6 +503,98 @@ function NeonMediumView({ snap }: { snap: WidgetSnapshot | null }) {
   )
 }
 
+// -------------------------------------------------------------
+// 赛博朋克：警示黄 UI 元素 + 青色电路走线（背景/徽章均为烘焙 PNG）
+// -------------------------------------------------------------
+const CYBERPUNK = {
+  ink: "#F2F0E6",
+  sub: "rgba(242,240,230,0.55)",
+}
+
+function CyberpunkBackground({ family }: { family: "small" | "medium" }) {
+  return (
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-cyberpunk-${family}.png`}
+      resizable={true}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+    />
+  )
+}
+
+// 赛博朋克下载钮：烘焙 PNG（切角方牌 + 黄色角标 + 主题色描边/字形）+ 手指角标
+function CyberpunkBadge({ size }: { size: number }) {
+  const dotColor = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      <Image
+        filePath={`${Script.directory}/assets/widget-style-badge-cyberpunk-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: size, height: size }}
+      />
+      <Image
+        systemName="hand.tap.fill"
+        font={size * 0.42}
+        foregroundStyle={dotColor}
+        offset={{ x: size * 0.42, y: size * 0.42 }}
+      />
+    </ZStack>
+  )
+}
+
+function CyberpunkSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
+  return (
+    <ZStack>
+      <CyberpunkBackground family="small" />
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
+        <HStack spacing={6}>
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={accent} />
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={CYBERPUNK.ink} monospaced>
+            VIDEO DOWNLOADER
+          </Text>
+        </HStack>
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={CYBERPUNK.ink} sub={CYBERPUNK.sub} />
+        <Spacer />
+        <CyberpunkBadge size={30} />
+      </VStack>
+    </ZStack>
+  )
+}
+
+function CyberpunkMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  const accent = getTheme().accent // 深底：主题原色
+  return (
+    <ZStack>
+      <CyberpunkBackground family="medium" />
+      <HStack spacing={4} padding>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
+          <HStack spacing={6}>
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={accent} />
+            <Text font="headline" fontWeight="bold" foregroundStyle={CYBERPUNK.ink} monospaced>
+              VIDEO DOWNLOADER
+            </Text>
+          </HStack>
+          <VStack padding={{ top: 12 }}>
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={CYBERPUNK.ink} sub={CYBERPUNK.sub} />
+          </VStack>
+          <VStack padding={{ top: 6 }}>
+            <SecondRow item={snap?.second ?? null} color={accent} />
+          </VStack>
+          <Spacer />
+        </VStack>
+        <VStack padding={{ top: 28 }}>
+          <Spacer />
+          <Link url={RUN_URL}>
+            <CyberpunkBadge size={64} />
+          </Link>
+          <Spacer />
+        </VStack>
+      </HStack>
+    </ZStack>
+  )
+}
+
 function run() {
   const snap = getWidgetSnapshot()
   const medium = Widget.family === "systemMedium"
@@ -511,10 +603,12 @@ function run() {
     ? style === "poster" ? <PosterMediumView snap={snap} />
       : style === "blueprint" ? <BlueprintMediumView snap={snap} />
       : style === "neon" ? <NeonMediumView snap={snap} />
+      : style === "cyberpunk" ? <CyberpunkMediumView snap={snap} />
       : <MediumView snap={snap} />
     : style === "poster" ? <PosterSmallView snap={snap} />
       : style === "blueprint" ? <BlueprintSmallView snap={snap} />
       : style === "neon" ? <NeonSmallView snap={snap} />
+      : style === "cyberpunk" ? <CyberpunkSmallView snap={snap} />
       : <SmallView snap={snap} />
   Widget.present(view, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()

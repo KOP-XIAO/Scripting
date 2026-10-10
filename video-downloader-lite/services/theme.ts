@@ -154,6 +154,7 @@ export const WIDGET_STYLES = [
   { key: "poster", label: "海报大字" },
   { key: "blueprint", label: "蓝图" },
   { key: "neon", label: "霓虹" },
+  { key: "cyberpunk", label: "赛博朋克" },
 ] as const
 
 export type WidgetStyle = (typeof WIDGET_STYLES)[number]["key"]

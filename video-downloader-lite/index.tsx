@@ -477,6 +477,8 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               {styleCell("blueprint", "蓝图")}
               <Spacer />
               {styleCell("neon", "霓虹")}
+              <Spacer />
+              {styleCell("cyberpunk", "赛博朋克")}
             </HStack>
           )
         })()}

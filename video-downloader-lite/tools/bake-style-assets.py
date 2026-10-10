@@ -217,6 +217,70 @@ def bake_neon():
 
 
 # -------------------------------------------------------------
+# 赛博朋克：警示黄 + 青色电路走线 + 扫描线 + 切角框 + 故障条纹
+# -------------------------------------------------------------
+CYBER_YELLOW = (252, 238, 10)
+CYBER_CYAN = (0, 240, 255)
+
+
+def bake_cyberpunk():
+    for fam, size in SIZES.items():
+        w, h = size
+        img = diag_gradient(size, (11, 6, 24), (27, 16, 51))
+
+        ov = Image.new("RGBA", size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        # 扫描线（4px 间隔）
+        for yy in range(0, h, 4):
+            d.line([(0, yy), (w, yy)], fill=(255, 255, 255, 6), width=1)
+        # 电路走线（45° 折线 + 节点方块）
+        traces = [
+            [(0, int(h * 0.22)), (int(w * 0.20), int(h * 0.22)), (int(w * 0.30), int(h * 0.34)), (int(w * 0.46), int(h * 0.34))],
+            [(w, int(h * 0.70)), (int(w * 0.72), int(h * 0.70)), (int(w * 0.62), int(h * 0.58)), (int(w * 0.50), int(h * 0.58))],
+            [(int(w * 0.08), h), (int(w * 0.08), int(h * 0.78)), (int(w * 0.18), int(h * 0.66)), (int(w * 0.34), int(h * 0.66))],
+        ]
+        for pts in traces:
+            d.line(pts, fill=CYBER_CYAN + (50,), width=3, joint="curve")
+            for px, py in (pts[1], pts[2]):
+                d.rectangle([px - 4, py - 4, px + 4, py + 4], outline=CYBER_CYAN + (80,), width=2)
+        # 故障条纹（短横条，黄/品红）
+        rng = np.random.default_rng(11)
+        for _ in range(5):
+            yy = int(rng.integers(int(h * 0.1), int(h * 0.9)))
+            x0 = int(rng.integers(0, int(w * 0.7)))
+            ln = int(rng.integers(int(w * 0.06), int(w * 0.18)))
+            col = CYBER_YELLOW if rng.random() < 0.6 else (255, 46, 136)
+            d.rectangle([x0, yy, x0 + ln, yy + 3], fill=col + (110,))
+        # 切角框线（四角 L 型括号）
+        m, ln2 = 10, 26
+        for ox, oy, sx, sy in [(m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)]:
+            d.line([(ox, oy), (ox + sx * ln2, oy)], fill=CYBER_YELLOW + (130,), width=3)
+            d.line([(ox, oy), (ox, oy + sy * ln2)], fill=CYBER_YELLOW + (130,), width=3)
+        # 右下角警示斜纹带
+        for i in range(6):
+            x0 = w - 90 + i * 16
+            d.polygon([(x0, h), (x0 + 8, h), (x0 + 8 - 24, h - 24), (x0 - 24, h - 24)], fill=CYBER_YELLOW + (26,))
+        img = Image.alpha_composite(img, ov)
+
+        # 左侧文字区暗色衬底（同蓝图处理）
+        scrim_w = int(w * 0.62)
+        xs = np.linspace(0, 1, scrim_w)[None, :, None]
+        scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
+        scrim_arr[..., 0] = 8
+        scrim_arr[..., 1] = 4
+        scrim_arr[..., 2] = 20
+        scrim_arr[..., 3] = np.repeat((1 - xs) * 90, h, axis=0)[..., 0].astype(np.uint8)
+        img = Image.alpha_composite(img, Image.fromarray(scrim_arr, "RGBA").resize(size))
+
+        if fam == "medium":
+            ov2 = Image.new("RGBA", size, (0, 0, 0, 0))
+            ImageDraw.Draw(ov2).text((w - 16, 12), "CYBER.DL // SECTOR 07", font=mono_font(13),
+                                     fill=CYBER_CYAN + (110,), anchor="rs")
+            img = Image.alpha_composite(img, ov2)
+        img.save(os.path.join(ASSETS, f"widget-style-cyberpunk-{fam}.png"))
+
+
+# -------------------------------------------------------------
 # 主题徽章：3 风格 × 10 主题色（点缀色跟随配色主题，背景不动）
 # -------------------------------------------------------------
 def theme_accents():
@@ -335,6 +399,22 @@ def bake_theme_badges():
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{glyph}-{theme}.png"))
 
+            # 赛博朋克：切角方牌（主题色描边 + 深色半透明底 + 黄色角标）+ 主题色字形
+            c = int(S * 0.09)  # 切角量
+            m0, m1 = int(S * 0.10), int(S * 0.90)
+            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            d = ImageDraw.Draw(base)
+            chamfer = [(m0 + c, m0), (m1, m0), (m1, m1 - c), (m1 - c, m1), (m0, m1), (m0, m0 + c)]
+            d.polygon(chamfer, fill=(11, 6, 24, 200))
+            d.line(chamfer + [chamfer[0]], fill=hex_rgba(accent), width=11 * SS, joint="curve")
+            # 左上角黄色小角标（风格识别色）
+            d.polygon([(m0, m0 + c), (m0 + c, m0), (m0 + int(c * 2.2), m0), (m0, m0 + int(c * 2.2))],
+                      fill=CYBER_YELLOW + (255,))
+            ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
+            badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
+            badge.save(os.path.join(ASSETS, f"widget-style-badge-cyberpunk-{glyph}-{theme}.png"))
+
 
 if __name__ == "__main__":
     bake_poster()
@@ -343,5 +423,7 @@ if __name__ == "__main__":
     print("blueprint ok")
     bake_neon()
     print("neon ok")
+    bake_cyberpunk()
+    print("cyberpunk ok")
     bake_theme_badges()
     print("theme badges ok")
