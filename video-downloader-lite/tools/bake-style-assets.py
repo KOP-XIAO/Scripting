@@ -232,7 +232,7 @@ def bake_cyberpunk():
         d = ImageDraw.Draw(ov)
         # 扫描线（4px 间隔）
         for yy in range(0, h, 4):
-            d.line([(0, yy), (w, yy)], fill=(255, 255, 255, 6), width=1)
+            d.line([(0, yy), (w, yy)], fill=(255, 255, 255, 10), width=1)
         # 电路走线（45° 折线 + 节点方块）
         traces = [
             [(0, int(h * 0.22)), (int(w * 0.20), int(h * 0.22)), (int(w * 0.30), int(h * 0.34)), (int(w * 0.46), int(h * 0.34))],
@@ -240,9 +240,9 @@ def bake_cyberpunk():
             [(int(w * 0.08), h), (int(w * 0.08), int(h * 0.78)), (int(w * 0.18), int(h * 0.66)), (int(w * 0.34), int(h * 0.66))],
         ]
         for pts in traces:
-            d.line(pts, fill=CYBER_CYAN + (50,), width=3, joint="curve")
+            d.line(pts, fill=CYBER_CYAN + (95,), width=3, joint="curve")
             for px, py in (pts[1], pts[2]):
-                d.rectangle([px - 4, py - 4, px + 4, py + 4], outline=CYBER_CYAN + (80,), width=2)
+                d.rectangle([px - 4, py - 4, px + 4, py + 4], outline=CYBER_CYAN + (130,), width=2)
         # 故障条纹（短横条，黄/品红）
         rng = np.random.default_rng(11)
         for _ in range(5):
@@ -250,16 +250,16 @@ def bake_cyberpunk():
             x0 = int(rng.integers(0, int(w * 0.7)))
             ln = int(rng.integers(int(w * 0.06), int(w * 0.18)))
             col = CYBER_YELLOW if rng.random() < 0.6 else (255, 46, 136)
-            d.rectangle([x0, yy, x0 + ln, yy + 3], fill=col + (110,))
+            d.rectangle([x0, yy, x0 + ln, yy + 3], fill=col + (150,))
         # 切角框线（四角 L 型括号）
         m, ln2 = 10, 26
         for ox, oy, sx, sy in [(m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)]:
-            d.line([(ox, oy), (ox + sx * ln2, oy)], fill=CYBER_YELLOW + (130,), width=3)
-            d.line([(ox, oy), (ox, oy + sy * ln2)], fill=CYBER_YELLOW + (130,), width=3)
+            d.line([(ox, oy), (ox + sx * ln2, oy)], fill=CYBER_YELLOW + (210,), width=4)
+            d.line([(ox, oy), (ox, oy + sy * ln2)], fill=CYBER_YELLOW + (210,), width=4)
         # 右下角警示斜纹带
         for i in range(6):
             x0 = w - 90 + i * 16
-            d.polygon([(x0, h), (x0 + 8, h), (x0 + 8 - 24, h - 24), (x0 - 24, h - 24)], fill=CYBER_YELLOW + (26,))
+            d.polygon([(x0, h), (x0 + 8, h), (x0 + 8 - 24, h - 24), (x0 - 24, h - 24)], fill=CYBER_YELLOW + (55,))
         img = Image.alpha_composite(img, ov)
 
         # 左侧文字区暗色衬底（同蓝图处理）
@@ -275,7 +275,7 @@ def bake_cyberpunk():
         if fam == "medium":
             ov2 = Image.new("RGBA", size, (0, 0, 0, 0))
             ImageDraw.Draw(ov2).text((w - 16, 12), "CYBER.DL // SECTOR 07", font=mono_font(13),
-                                     fill=CYBER_CYAN + (110,), anchor="rs")
+                                     fill=CYBER_CYAN + (160,), anchor="rs")
             img = Image.alpha_composite(img, ov2)
         img.save(os.path.join(ASSETS, f"widget-style-cyberpunk-{fam}.png"))
 
