@@ -5,11 +5,10 @@
 //   来源感水印（play/video 图标与 YT·IG·WX·XHS 字样，表达“下载各平台视频”）。
 // 全局对象（禁止从 scripting 导入）：Storage
 
-import { Button, HStack, Image, Link, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
+import { HStack, Image, Link, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
 import { getTheme, getBadgeGlyph, getWidgetStyle } from "./services/theme"
 import { formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
-import { ReloadWidgetIntent } from "./app_intents"
 
 const SCRIPT_NAME = "Video Downloader Lite"
 // 官方构造器：scripting://run_single/<name>?autopaste=1
@@ -132,23 +131,6 @@ function DownloadBadge({ size, accent }: { size: number; accent: string }) {
   )
 }
 
-// 角落悬浮刷新按钮：plain 无底色；图标内缩避开圆角裁切（cmhk 真机教训）
-function RefreshButton({ offsetX, offsetY, color }: { offsetX: number; offsetY: number; color: string }) {
-  return (
-    <Button intent={ReloadWidgetIntent(undefined)} buttonStyle="plain">
-      <ZStack frame={{ width: 26, height: 26 }}>
-        <Image
-          systemName="arrow.clockwise"
-          font={10}
-          foregroundStyle={color}
-          frame={{ width: 10, height: 10 }}
-          offset={{ x: offsetX, y: offsetY }}
-        />
-      </ZStack>
-    </Button>
-  )
-}
-
 // 背景层：主题渐变打底 + 主题 PNG 纹理 + 散乱图标堆 + 底部平台字样
 function BackgroundLayer({ family }: { family: "small" | "medium" }) {
   const theme = getTheme()
@@ -203,8 +185,6 @@ function SmallView({ snap }: { snap: WidgetSnapshot | null }) {
         {/* 入口：纯图标（文字会让高度爆预算，标题两行优先） */}
         <DownloadBadge size={30} accent={theme.accent} />
       </VStack>
-      {/* 右上角刷新 */}
-      <RefreshButton offsetX={-3} offsetY={3} color={theme.accentSoft} />
     </ZStack>
   )
 }
@@ -239,8 +219,6 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <Spacer />
         </VStack>
       </HStack>
-      {/* 左下角刷新：信息区下方空白角 */}
-      <RefreshButton offsetX={3} offsetY={-3} color={theme.accentSoft} />
     </ZStack>
   )
 }
@@ -309,7 +287,6 @@ function PosterSmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <Spacer />
         <PosterBadge size={30} />
       </VStack>
-      <RefreshButton offsetX={-3} offsetY={3} color={POSTER.sub} />
     </ZStack>
   )
 }
@@ -342,7 +319,6 @@ function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <Spacer />
         </VStack>
       </HStack>
-      <RefreshButton offsetX={3} offsetY={-3} color={POSTER.sub} />
     </ZStack>
   )
 }
@@ -439,7 +415,6 @@ function BlueprintSmallView({ snap }: { snap: WidgetSnapshot | null }) {
         <Spacer />
         <BlueprintBadge size={30} />
       </VStack>
-      <RefreshButton offsetX={-3} offsetY={3} color={BLUEPRINT.sub} />
     </ZStack>
   )
 }
@@ -472,7 +447,127 @@ function BlueprintMediumView({ snap }: { snap: WidgetSnapshot | null }) {
           <Spacer />
         </VStack>
       </HStack>
-      <RefreshButton offsetX={3} offsetY={-3} color={BLUEPRINT.sub} />
+    </ZStack>
+  )
+}
+
+// -------------------------------------------------------------
+// 霓虹风：近黑底 + 青→品红霓虹底线 + 辉光圆环下载钮
+// -------------------------------------------------------------
+const NEON = {
+  bgTop: "#05050A",
+  bgBottom: "#0B0B1A",
+  ink: "#F2F5FF",
+  sub: "rgba(242,245,255,0.50)",
+  accent: "#00E5FF", // 霓虹青
+  accent2: "#FF2E88", // 霓虹品红
+  core: "#0B0B1A",
+}
+
+function NeonBackground({ family }: { family: "small" | "medium" }) {
+  return (
+    <ZStack>
+      <VStack
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+        background={{
+          gradient: [
+            { color: NEON.bgTop, location: 0 },
+            { color: NEON.bgBottom, location: 1 },
+          ],
+          startPoint: { x: 0, y: 0 },
+          endPoint: { x: 1, y: 1 },
+        } as any}
+      >
+        <Spacer />
+      </VStack>
+      {/* 底部霓虹渐变光带（青 -> 品红，合成波招牌） */}
+      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+        <Spacer />
+        <RoundedRectangle
+          cornerRadius={1.5}
+          frame={{ maxWidth: "infinity", height: 3 } as never}
+          fill={{
+            gradient: [
+              { color: NEON.accent, location: 0 },
+              { color: NEON.accent2, location: 1 },
+            ],
+            startPoint: { x: 0, y: 0 },
+            endPoint: { x: 1, y: 0 },
+          } as any}
+          opacity={0.8}
+        />
+      </VStack>
+      {family === "medium" ? (
+        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+          <Text font="caption2" monospaced foregroundStyle="rgba(0,229,255,0.30)">
+            NEON.DL // READY
+          </Text>
+        </VStack>
+      ) : null}
+    </ZStack>
+  )
+}
+
+// 霓虹风下载钮：外层辉光 + 青色圆环 + 深色内芯 + 青色箭头
+function NeonBadge({ size }: { size: number }) {
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      <RoundedRectangle cornerRadius={(size + 10) / 2} fill={NEON.accent} opacity={0.18}
+        frame={{ width: size + 10, height: size + 10 }} />
+      <RoundedRectangle cornerRadius={size / 2} fill={NEON.accent} frame={{ width: size, height: size }} />
+      <RoundedRectangle cornerRadius={(size - 5) / 2} fill={NEON.core} frame={{ width: size - 5, height: size - 5 }} />
+      <Image systemName="arrow.down" font={size * 0.38} foregroundStyle={NEON.accent} />
+    </ZStack>
+  )
+}
+
+function NeonSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack>
+      <NeonBackground family="small" />
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
+        <HStack spacing={6}>
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={NEON.accent} />
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={NEON.ink} monospaced>
+            VIDEO DOWNLOADER
+          </Text>
+        </HStack>
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={NEON.accent} ink={NEON.ink} sub={NEON.sub} />
+        <Spacer />
+        <NeonBadge size={30} />
+      </VStack>
+    </ZStack>
+  )
+}
+
+function NeonMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack>
+      <NeonBackground family="medium" />
+      <HStack spacing={4} padding>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
+          <HStack spacing={6}>
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={NEON.accent} />
+            <Text font="headline" fontWeight="bold" foregroundStyle={NEON.ink} monospaced>
+              VIDEO DOWNLOADER
+            </Text>
+          </HStack>
+          <VStack padding={{ top: 12 }}>
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={NEON.accent} ink={NEON.ink} sub={NEON.sub} />
+          </VStack>
+          <VStack padding={{ top: 6 }}>
+            <SecondRow item={snap?.second ?? null} color={NEON.accent2} />
+          </VStack>
+          <Spacer />
+        </VStack>
+        <VStack padding={{ top: 28 }}>
+          <Spacer />
+          <Link url={RUN_URL}>
+            <NeonBadge size={64} />
+          </Link>
+          <Spacer />
+        </VStack>
+      </HStack>
     </ZStack>
   )
 }
@@ -484,9 +579,11 @@ function run() {
   const view = medium
     ? style === "poster" ? <PosterMediumView snap={snap} />
       : style === "blueprint" ? <BlueprintMediumView snap={snap} />
+      : style === "neon" ? <NeonMediumView snap={snap} />
       : <MediumView snap={snap} />
     : style === "poster" ? <PosterSmallView snap={snap} />
       : style === "blueprint" ? <BlueprintSmallView snap={snap} />
+      : style === "neon" ? <NeonSmallView snap={snap} />
       : <SmallView snap={snap} />
   Widget.present(view, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()

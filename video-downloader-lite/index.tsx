@@ -424,6 +424,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             texture: { bg: THEMES[themeKey].bgTop, ink: "#F0F3F6", dot: THEMES[themeKey].accent },
             poster: { bg: "#F7F2E7", ink: "#1B1B1B", dot: "#C0392B" },
             blueprint: { bg: "#10305C", ink: "#EAF2FF", dot: "#FFC82E" },
+            neon: { bg: "#05050A", ink: "#F2F5FF", dot: "#00E5FF" },
           }
           const styleCell = (key: WidgetStyle, label: string) => {
             const selected = key === widgetStyle
@@ -481,7 +482,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               <Spacer />
               {styleCell("blueprint", "蓝图")}
               <Spacer />
-              <Spacer />
+              {styleCell("neon", "霓虹")}
             </HStack>
           )
         })()}
