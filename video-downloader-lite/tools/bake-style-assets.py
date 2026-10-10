@@ -472,23 +472,29 @@ def bake_theme_badges():
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-anime-{glyph}-{theme}.png"))
 
-            # 蓝图：白圆环 + 主题色字形
+            # 蓝图：八边形白环（工程制图感）+ 主题色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             d = ImageDraw.Draw(base)
-            d.ellipse([22, 22, S - 22, S - 22], outline=(234, 242, 255, 255), width=13 * SS)
-            d.ellipse([48, 48, S - 48, S - 48], outline=(234, 242, 255, 60), width=2 * SS)
+            def octagon(cx, cy, r):
+                return [(cx + r * math.cos(math.radians(22.5 + 45 * k)),
+                         cy + r * math.sin(math.radians(22.5 + 45 * k))) for k in range(8)]
+            octo = octagon(S / 2, S / 2, S * 0.42)
+            d.line(octo + [octo[0]], fill=(234, 242, 255, 255), width=13 * SS, joint="curve")
+            octo2 = octagon(S / 2, S / 2, S * 0.32)
+            d.line(octo2 + [octo2[0]], fill=(234, 242, 255, 60), width=2 * SS, joint="curve")
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 118 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
-            # 霓虹：主题色辉光环 + 深色内芯 + 主题色字形
+            # 霓虹：主题色圆角矩形辉光牌（霓虹灯招牌形）+ 深色内芯 + 主题色字形
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.ellipse([40, 40, S - 40, S - 40], fill=hex_rgba(accent, 200)), 16 * SS))
+                (S, S), lambda dd: dd.rounded_rectangle([40, 40, S - 40, S - 40], radius=30 * SS,
+                                                        fill=hex_rgba(accent, 200)), 16 * SS))
             d = ImageDraw.Draw(base)
-            d.ellipse([30, 30, S - 30, S - 30], outline=hex_rgba(accent), width=11 * SS)
-            d.ellipse([44, 44, S - 44, S - 44], fill=(11, 11, 26, 200))
+            d.rounded_rectangle([30, 30, S - 30, S - 30], radius=28 * SS, outline=hex_rgba(accent), width=11 * SS)
+            d.rounded_rectangle([44, 44, S - 44, S - 44], radius=22 * SS, fill=(11, 11, 26, 200))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
