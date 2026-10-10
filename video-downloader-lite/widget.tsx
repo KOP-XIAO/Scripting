@@ -244,15 +244,23 @@ function PosterBackground({ family }: { family: "small" | "medium" }) {
   )
 }
 
-// 海报风下载钮：烘焙 PNG（红圆 + 投影 + 顶部高光 + 白箭头）
+// 海报风下载钮：烘焙 PNG（主题色圆 + 字形）+ 手指角标（浅底用压暗主题色）
 function PosterBadge({ size }: { size: number }) {
   return (
-    <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-poster-${getBadgeGlyph()}-${getThemeKey()}.png`}
-      resizable={true}
-      scaleToFit={true}
-      frame={{ width: size, height: size }}
-    />
+    <ZStack frame={{ width: size, height: size }}>
+      <Image
+        filePath={`${Script.directory}/assets/widget-style-badge-poster-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: size, height: size }}
+      />
+      <Image
+        systemName="hand.tap.fill"
+        font={size * 0.42}
+        foregroundStyle={accentOn("light")}
+        offset={{ x: size * 0.42, y: size * 0.42 }}
+      />
+    </ZStack>
   )
 }
 
@@ -328,15 +336,24 @@ function BlueprintBackground({ family }: { family: "small" | "medium" }) {
   )
 }
 
-// 蓝图风下载钮：烘焙 PNG（白圆环 + 琥珀箭头）
+// 蓝图风下载钮：烘焙 PNG（白圆环 + 主题色字形）+ 手指角标（深底随机亮色）
 function BlueprintBadge({ size }: { size: number }) {
+  const dotColor = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
   return (
-    <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-blueprint-${getBadgeGlyph()}-${getThemeKey()}.png`}
-      resizable={true}
-      scaleToFit={true}
-      frame={{ width: size, height: size }}
-    />
+    <ZStack frame={{ width: size, height: size }}>
+      <Image
+        filePath={`${Script.directory}/assets/widget-style-badge-blueprint-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: size, height: size }}
+      />
+      <Image
+        systemName="hand.tap.fill"
+        font={size * 0.42}
+        foregroundStyle={dotColor}
+        offset={{ x: size * 0.42, y: size * 0.42 }}
+      />
+    </ZStack>
   )
 }
 
@@ -412,15 +429,24 @@ function NeonBackground({ family }: { family: "small" | "medium" }) {
   )
 }
 
-// 霓虹风下载钮：烘焙 PNG（青色辉光环 + 深色内芯 + 青箭头）
+// 霓虹风下载钮：烘焙 PNG（主题色辉光环 + 字形）+ 手指角标（深底随机亮色）
 function NeonBadge({ size }: { size: number }) {
+  const dotColor = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
   return (
-    <Image
-      filePath={`${Script.directory}/assets/widget-style-badge-neon-${getBadgeGlyph()}-${getThemeKey()}.png`}
-      resizable={true}
-      scaleToFit={true}
-      frame={{ width: size, height: size }}
-    />
+    <ZStack frame={{ width: size, height: size }}>
+      <Image
+        filePath={`${Script.directory}/assets/widget-style-badge-neon-${getBadgeGlyph()}-${getThemeKey()}.png`}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: size, height: size }}
+      />
+      <Image
+        systemName="hand.tap.fill"
+        font={size * 0.42}
+        foregroundStyle={dotColor}
+        offset={{ x: size * 0.42, y: size * 0.42 }}
+      />
+    </ZStack>
   )
 }
 
