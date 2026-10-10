@@ -5,9 +5,9 @@
 //   来源感水印（play/video 图标与 YT·IG·WX·XHS 字样，表达“下载各平台视频”）。
 // 全局对象（禁止从 scripting 导入）：Storage
 
-import { Button, HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
+import { Button, HStack, Image, Link, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
-import { getTheme, getBadgeGlyph } from "./services/theme"
+import { getTheme, getBadgeGlyph, getWidgetStyle } from "./services/theme"
 import { formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
 import { ReloadWidgetIntent } from "./app_intents"
 
@@ -31,18 +31,22 @@ function LatestInfo({
   item,
   lines,
   accent,
+  ink = TEXT_PRIMARY,
+  sub = TEXT_SECONDARY,
 }: {
   item: WidgetSnapshotItem | null
   lines: number
   accent: string
+  ink?: string
+  sub?: string
 }) {
   if (!item) {
     return (
       <VStack alignment="leading" spacing={4}>
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle={TEXT_PRIMARY}>
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle={ink}>
           暂无下载记录
         </Text>
-        <Text font="caption" foregroundStyle={TEXT_SECONDARY}>
+        <Text font="caption" foregroundStyle={sub}>
           复制视频链接后点下方按钮
         </Text>
       </VStack>
@@ -62,18 +66,18 @@ function LatestInfo({
         font="subheadline"
         fontWeight="semibold"
         lineLimit={{ min: 2, max: 2, reservesSpace: true }}
-        foregroundStyle={TEXT_PRIMARY}
+        foregroundStyle={ink}
       >
         {item.title || item.fileName}
       </Text>
-      <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+      <Text font="caption2" monospaced foregroundStyle={sub} lineLimit={1}>
         {line1}
       </Text>
       <HStack spacing={4}>
-        <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY} lineLimit={1}>
+        <Text font="caption2" monospaced foregroundStyle={sub} lineLimit={1}>
           {formatDate(item.createdAt).slice(5)}
         </Text>
-        <Text font="caption2" monospaced foregroundStyle={TEXT_SECONDARY}>
+        <Text font="caption2" monospaced foregroundStyle={sub}>
           |
         </Text>
         <Text font="caption2" monospaced foregroundStyle={accent} lineLimit={1}>
@@ -90,9 +94,9 @@ function LatestInfo({
 // 「前一条」用一枚随机的鲜亮强调色（每次渲染随机，给深色底一点跳色）
 const SECOND_ROW_COLORS = ["#FF9F0A", "#FF6B9D", "#5AC8FA", "#BF5AF2", "#FFD60A", "#30D158", "#64D2FF", "#FF8A65"]
 
-function SecondRow({ item }: { item: WidgetSnapshotItem | null }) {
+function SecondRow({ item, color }: { item: WidgetSnapshotItem | null; color?: string }) {
   if (!item) return null
-  const accent2 = SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
+  const accent2 = color ?? SECOND_ROW_COLORS[Math.floor(Math.random() * SECOND_ROW_COLORS.length)]
   return (
     <HStack spacing={6}>
       <Image systemName="clock" font={9} foregroundStyle={accent2} />
@@ -241,10 +245,116 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
   )
 }
 
+// -------------------------------------------------------------
+// 海报大字风：米色纸感渐变 + 深墨字 + 正红圆形下载钮（纯色绘制，无需烘焙 PNG）
+// -------------------------------------------------------------
+const POSTER = {
+  bgTop: "#F7F2E7",
+  bgBottom: "#E9E0CC",
+  ink: "#1B1B1B",
+  sub: "rgba(27,27,27,0.55)",
+  accent: "#C0392B",
+}
+
+function PosterBackground({ family }: { family: "small" | "medium" }) {
+  return (
+    <ZStack>
+      <VStack
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+        background={{
+          gradient: [
+            { color: POSTER.bgTop, location: 0 },
+            { color: POSTER.bgBottom, location: 1 },
+          ],
+          startPoint: { x: 0, y: 0 },
+          endPoint: { x: 1, y: 1 },
+        } as any}
+      >
+        <Spacer />
+      </VStack>
+      {family === "medium" ? (
+        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
+          <Spacer />
+          <Text font="caption2" monospaced foregroundStyle="rgba(27,27,27,0.12)">
+            YT · IG · WX · XHS
+          </Text>
+        </VStack>
+      ) : null}
+    </ZStack>
+  )
+}
+
+// 海报风下载钮：正红圆形 + 白色箭头（替代烘焙徽章 PNG）
+function PosterBadge({ size }: { size: number }) {
+  return (
+    <ZStack frame={{ width: size, height: size }}>
+      <RoundedRectangle cornerRadius={size / 2} fill={POSTER.accent} frame={{ width: size, height: size }} />
+      <Image systemName="arrow.down" font={size * 0.42} foregroundStyle="#FFFFFF" />
+    </ZStack>
+  )
+}
+
+function PosterSmallView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack alignment="topTrailing">
+      <PosterBackground family="small" />
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
+        <HStack spacing={6}>
+          <Image systemName="play.rectangle.fill" font={13} foregroundStyle={POSTER.accent} />
+          <Text font="subheadline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
+            VIDEO DOWNLOADER
+          </Text>
+        </HStack>
+        <LatestInfo item={snap?.latest ?? null} lines={2} accent={POSTER.accent} ink={POSTER.ink} sub={POSTER.sub} />
+        <Spacer />
+        <PosterBadge size={30} />
+      </VStack>
+      <RefreshButton offsetX={-3} offsetY={3} color={POSTER.sub} />
+    </ZStack>
+  )
+}
+
+function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
+  return (
+    <ZStack alignment="bottomLeading">
+      <PosterBackground family="medium" />
+      <HStack spacing={4} padding>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
+          <HStack spacing={6}>
+            <Image systemName="play.rectangle.fill" font={14} foregroundStyle={POSTER.accent} />
+            <Text font="headline" fontWeight="bold" foregroundStyle={POSTER.ink} monospaced>
+              VIDEO DOWNLOADER
+            </Text>
+          </HStack>
+          <VStack padding={{ top: 12 }}>
+            <LatestInfo item={snap?.latest ?? null} lines={2} accent={POSTER.accent} ink={POSTER.ink} sub={POSTER.sub} />
+          </VStack>
+          <VStack padding={{ top: 6 }}>
+            <SecondRow item={snap?.second ?? null} color={POSTER.accent} />
+          </VStack>
+          <Spacer />
+        </VStack>
+        <VStack padding={{ top: 28 }}>
+          <Spacer />
+          <Link url={RUN_URL}>
+            <PosterBadge size={64} />
+          </Link>
+          <Spacer />
+        </VStack>
+      </HStack>
+      <RefreshButton offsetX={3} offsetY={-3} color={POSTER.sub} />
+    </ZStack>
+  )
+}
+
 function run() {
   const snap = getWidgetSnapshot()
   const medium = Widget.family === "systemMedium"
-  Widget.present(medium ? <MediumView snap={snap} /> : <SmallView snap={snap} />, {
+  const poster = getWidgetStyle() === "poster"
+  const view = medium
+    ? poster ? <PosterMediumView snap={snap} /> : <MediumView snap={snap} />
+    : poster ? <PosterSmallView snap={snap} /> : <SmallView snap={snap} />
+  Widget.present(view, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()
     reloadPolicy: { policy: "after", date: new Date(Date.now() + 15 * 60 * 1000) },
   })

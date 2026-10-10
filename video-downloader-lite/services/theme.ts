@@ -128,6 +128,34 @@ export function setThemeKey(key: ThemeKey) {
 }
 
 // -------------------------------------------------------------
+// 小组件视觉风格（独立于配色主题）：暗色纹理（烘焙 PNG）/ 海报大字（纯色绘制）
+// -------------------------------------------------------------
+export const WIDGET_STYLE_KEY = "vdl.widgetStyle"
+
+export const WIDGET_STYLES = [
+  { key: "texture", label: "暗色纹理" },
+  { key: "poster", label: "海报大字" },
+] as const
+
+export type WidgetStyle = (typeof WIDGET_STYLES)[number]["key"]
+
+export function getWidgetStyle(): WidgetStyle {
+  try {
+    const v = Storage.get<string>(WIDGET_STYLE_KEY)
+    const found = WIDGET_STYLES.find((w) => w.key === v)
+    if (found) return found.key
+  } catch {}
+  return "texture"
+}
+
+export function setWidgetStyle(key: WidgetStyle) {
+  Storage.set(WIDGET_STYLE_KEY, key)
+  try {
+    Widget.reloadAll()
+  } catch {}
+}
+
+// -------------------------------------------------------------
 // 小组件入口徽章款式（烘焙 PNG：assets/widget-badge-<款式>-<主题>.png）
 // -------------------------------------------------------------
 export const BADGE_GLYPH_KEY = "vdl.badgeGlyph"

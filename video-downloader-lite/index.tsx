@@ -75,6 +75,7 @@ import { resolutionLabel } from "./services/media-probe"
 import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
 import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
 import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./services/theme"
+import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/theme"
 
 // Safari 为全局对象（禁止从 scripting 导入），用 Safari.openURL 打开链接
 
@@ -221,6 +222,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
   const [cookieDraft, setCookieDraft] = useState<string>(getYuanbaoCookie())
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
   const [badgeGlyph, setBadgeGlyphLocal] = useState<BadgeGlyph>(getBadgeGlyph())
+  const [widgetStyle, setWidgetStyleLocal] = useState<WidgetStyle>(getWidgetStyle())
 
   return (
     <List navigationTitle="设置" navigationBarTitleDisplayMode="inline">
@@ -415,6 +417,66 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               })}
             </HStack>
           ))
+        })()}
+        {/* 小组件风格：暗色纹理（烘焙 PNG 徽章）/ 海报大字（纯色绘制圆形钮） */}
+        {(() => {
+          const styleCell = (key: WidgetStyle, label: string) => {
+            const selected = key === widgetStyle
+            const poster = key === "poster"
+            return (
+              <Button
+                buttonStyle="plain"
+                action={() => {
+                  setWidgetStyleLocal(key)
+                  setWidgetStyle(key) // 内部会 Widget.reloadAll()
+                }}
+              >
+                <VStack spacing={4}>
+                  <ZStack frame={{ width: 64, height: 64 }}>
+                    <RoundedRectangle
+                      frame={{ width: 64, height: 64 }}
+                      cornerRadius={10}
+                      fill={poster ? "#F7F2E7" : THEMES[themeKey].bgTop}
+                    />
+                    <Text
+                      font="caption2"
+                      fontWeight="bold"
+                      foregroundStyle={poster ? "#1B1B1B" : "#F0F3F6"}
+                      offset={{ x: -10, y: -12 }}
+                    >
+                      Aa
+                    </Text>
+                    <RoundedRectangle
+                      frame={{ width: 16, height: 16 }}
+                      cornerRadius={8}
+                      fill={poster ? "#C0392B" : THEMES[themeKey].accent}
+                      offset={{ x: 14, y: 14 }}
+                    />
+                    {selected ? (
+                      <Image
+                        systemName="checkmark.circle.fill"
+                        font={14}
+                        foregroundStyle={THEMES[themeKey].accent}
+                        offset={{ x: 22, y: -22 }}
+                      />
+                    ) : null}
+                  </ZStack>
+                  <Text font="caption2" foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}>
+                    {selected ? `● ${label}` : label}
+                  </Text>
+                </VStack>
+              </Button>
+            )
+          }
+          return (
+            <HStack spacing={0}>
+              {styleCell("texture", "暗色纹理")}
+              <Spacer />
+              {styleCell("poster", "海报大字")}
+              <Spacer />
+              <Spacer />
+            </HStack>
+          )
         })()}
         <HStack spacing={6}>
           <Text font="caption" foregroundStyle="secondaryLabel">
@@ -811,6 +873,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [history, setHistory] = useState<HistoryRecord[]>(props.initialHistory)
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
+  // 顶部链接输入区默认隐藏：首次通过底部按钮下载后（输入框有内容）或剪贴板无链接时才展开
+  const [showInput, setShowInput] = useState(false)
 
 
   const refreshHistory = async () => {
@@ -884,7 +948,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       void handleDownload()
       return
     }
-    await Dialog.alert({ message: "剪贴板和输入框里都没有 http(s) 链接" })
+    setShowInput(true)
+    setStatus("剪贴板没有链接，请在上方粘贴或手动输入")
   }
 
   const handleDownload = async (directUrl?: string) => {
@@ -1052,22 +1117,24 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           ),
         }}
       >
-        <Section
-          footer={
-            <Text font="caption" foregroundStyle="secondaryLabel">
-              {inputURL.trim()
-                ? `当前识别：${kindHint}`
-                : "支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接，复制链接后点底部按钮即可"}
-            </Text>
-          }
-        >
-          <TextField
-            title="视频链接"
-            value={inputURL}
-            onChanged={setInputURL}
-            prompt="粘贴或输入链接（也可手动编辑）"
-          />
-        </Section>
+        {showInput || inputURL.trim() ? (
+          <Section
+            footer={
+              <Text font="caption" foregroundStyle="secondaryLabel">
+                {inputURL.trim()
+                  ? `当前识别：${kindHint}`
+                  : "支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接，复制链接后点底部按钮即可"}
+              </Text>
+            }
+          >
+            <TextField
+              title="视频链接"
+              value={inputURL}
+              onChanged={setInputURL}
+              prompt="粘贴或输入链接（也可手动编辑）"
+            />
+          </Section>
+        ) : null}
 
         <Section title="状态">
           {loading ? (
@@ -1219,18 +1286,18 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           header={<Text>{`下载历史 (${history.length})`}</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              仅显示最近 5 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
+              仅显示最近 8 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
             </Text>
           }
         >
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
-            history.slice(0, 5).map((item, i) => (
+            history.slice(0, 8).map((item, i) => (
               <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
             ))
           )}
-          {history.length > 5 ? (
+          {history.length > 8 ? (
             <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
               <Text>{`查看全部 ${history.length} 条`}</Text>
             </NavigationLink>
