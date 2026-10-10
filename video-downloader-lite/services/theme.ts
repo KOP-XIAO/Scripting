@@ -140,12 +140,11 @@ export function accentOn(mode: "light" | "dark"): string {
   const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
   const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
   if (lum(rgb[0], rgb[1], rgb[2]) <= 0.15) return hex
-  // gamma 2.2 保色相压暗；达不到目标再线性缩放（红色系单靠 gamma 压不下去）
-  let out = rgb.map((c) => c ** 2.2)
+  // 纯线性缩放：三通道同比缩小，色相严格不变
+  // （gamma 会压垮绿色通道把橙色压成红色，已弃用）
   let k = 1.0
-  while (lum(out[0] * k, out[1] * k, out[2] * k) > 0.15 && k > 0.3) k -= 0.05
-  out = out.map((c) => c * k)
-  return "#" + out.map((c) => Math.round(c * 255).toString(16).padStart(2, "0")).join("")
+  while (lum(rgb[0] * k, rgb[1] * k, rgb[2] * k) > 0.15 && k > 0.25) k -= 0.02
+  return "#" + rgb.map((c) => Math.round(c * k * 255).toString(16).padStart(2, "0")).join("")
 }
 export const WIDGET_STYLE_KEY = "vdl.widgetStyle"
 

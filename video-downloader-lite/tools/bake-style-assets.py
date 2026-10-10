@@ -391,12 +391,12 @@ def darken_for_light(hex_color, target_l=0.15):
     lum = lambda rr, gg, bb: 0.2126 * lin(rr) + 0.7152 * lin(gg) + 0.0722 * lin(bb)
     if lum(r, g, b) <= target_l:
         return hex_color
-    rr, gg, bb = r ** 2.2, g ** 2.2, b ** 2.2
+    # 纯线性缩放：三通道同比缩小，色相严格不变
+    # （此前 gamma 2.2 会压垮绿色通道，把橙色压成红色）
     k = 1.0
-    while lum(rr * k, gg * k, bb * k) > target_l and k > 0.3:
-        k -= 0.05
-    rr, gg, bb = rr * k, gg * k, bb * k
-    return "#{:02X}{:02X}{:02X}".format(round(rr * 255), round(gg * 255), round(bb * 255))
+    while lum(r * k, g * k, b * k) > target_l and k > 0.25:
+        k -= 0.02
+    return "#{:02X}{:02X}{:02X}".format(round(r * k * 255), round(g * k * 255), round(b * k * 255))
 
 
 def hex_rgba(hex_color, a=255):
