@@ -5,7 +5,7 @@
 //   来源感水印（play/video 图标与 YT·IG·WX·XHS 字样，表达“下载各平台视频”）。
 // 全局对象（禁止从 scripting 导入）：Storage
 
-import { HStack, Image, Link, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
+import { HStack, Image, Link, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import { getWidgetSnapshot, type WidgetSnapshot, type WidgetSnapshotItem } from "./services/history"
 import { getTheme, getBadgeGlyph, getWidgetStyle } from "./services/theme"
 import { formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
@@ -226,49 +226,33 @@ function MediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // -------------------------------------------------------------
 // 海报大字风：米色纸感渐变 + 深墨字 + 正红圆形下载钮（纯色绘制，无需烘焙 PNG）
 // -------------------------------------------------------------
+// 视觉资产全部烘焙为 PNG（见各 Background/Badge），此处仅保留文字/点缀配色
 const POSTER = {
-  bgTop: "#F7F2E7",
-  bgBottom: "#E9E0CC",
   ink: "#1B1B1B",
   sub: "rgba(27,27,27,0.55)",
   accent: "#C0392B",
 }
 
+// 背景为烘焙 PNG（tools/bake-style-assets.py）：纸感噪点 + 半调圆点 + 水印箭头
 function PosterBackground({ family }: { family: "small" | "medium" }) {
   return (
-    <ZStack>
-      <VStack
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        background={{
-          gradient: [
-            { color: POSTER.bgTop, location: 0 },
-            { color: POSTER.bgBottom, location: 1 },
-          ],
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: 1, y: 1 },
-        } as any}
-      >
-        <Spacer />
-      </VStack>
-      {family === "medium" ? (
-        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-          <Spacer />
-          <Text font="caption2" monospaced foregroundStyle="rgba(27,27,27,0.12)">
-            YT · IG · WX · XHS
-          </Text>
-        </VStack>
-      ) : null}
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-poster-${family}.png`}
+      resizable={true}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+    />
   )
 }
 
-// 海报风下载钮：正红圆形 + 白色箭头（替代烘焙徽章 PNG）
+// 海报风下载钮：烘焙 PNG（红圆 + 投影 + 顶部高光 + 白箭头）
 function PosterBadge({ size }: { size: number }) {
   return (
-    <ZStack frame={{ width: size, height: size }}>
-      <RoundedRectangle cornerRadius={size / 2} fill={POSTER.accent} frame={{ width: size, height: size }} />
-      <Image systemName="arrow.down" font={size * 0.42} foregroundStyle="#FFFFFF" />
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-badge-poster.png`}
+      resizable={true}
+      scaleToFit={true}
+      frame={{ width: size, height: size }}
+    />
   )
 }
 
@@ -327,76 +311,31 @@ function PosterMediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // 蓝图风：深蓝图纸底 + 细网格线 + 白蓝图字 + 琥珀点缀 + 白色圆环下载钮
 // -------------------------------------------------------------
 const BLUEPRINT = {
-  bgTop: "#10305C",
-  bgBottom: "#0A1F3D",
   ink: "#EAF2FF",
   sub: "rgba(234,242,255,0.55)",
   accent: "#FFC82E",
-  line: "rgba(234,242,255,0.07)",
-  ringCore: "#12345F", // 圆环内芯（近似渐变中值，视觉上与背景融为一体）
 }
 
-// 网格：4 横 6 纵细线，Spacer 均分（图纸坐标格）
-function BlueprintGrid() {
-  const hLine = (
-    <RoundedRectangle cornerRadius={0} fill={BLUEPRINT.line}
-      frame={{ maxWidth: "infinity", height: 0.5 } as never} />
-  )
-  const vLine = (
-    <RoundedRectangle cornerRadius={0} fill={BLUEPRINT.line}
-      frame={{ width: 0.5, maxHeight: "infinity" } as never} />
-  )
-  return (
-    <ZStack>
-      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-        <Spacer />{hLine}<Spacer />{hLine}<Spacer />{hLine}<Spacer />{hLine}<Spacer />
-      </VStack>
-      <HStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-        <Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />{vLine}<Spacer />
-      </HStack>
-    </ZStack>
-  )
-}
-
+// 背景为烘焙 PNG（tools/bake-style-assets.py）：细/主网格 + 罗盘圆弧 + 准星 + 图签
 function BlueprintBackground({ family }: { family: "small" | "medium" }) {
   return (
-    <ZStack>
-      <VStack
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        background={{
-          gradient: [
-            { color: BLUEPRINT.bgTop, location: 0 },
-            { color: BLUEPRINT.bgBottom, location: 1 },
-          ],
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: 1, y: 1 },
-        } as any}
-      >
-        <Spacer />
-      </VStack>
-      <BlueprintGrid />
-      {family === "medium" ? (
-        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-          <Spacer />
-          <Text font="caption2" monospaced foregroundStyle="rgba(234,242,255,0.18)">
-            DWG.NO VDL-2508 · SCALE 1:1
-          </Text>
-        </VStack>
-      ) : null}
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-blueprint-${family}.png`}
+      resizable={true}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+    />
   )
 }
 
-// 蓝图风下载钮：白色圆环（外圆 - 内芯）+ 琥珀箭头
+// 蓝图风下载钮：烘焙 PNG（白圆环 + 琥珀箭头）
 function BlueprintBadge({ size }: { size: number }) {
-  const ring = 3
   return (
-    <ZStack frame={{ width: size, height: size }}>
-      <RoundedRectangle cornerRadius={size / 2} fill={BLUEPRINT.ink} frame={{ width: size, height: size }} />
-      <RoundedRectangle cornerRadius={(size - ring * 2) / 2} fill={BLUEPRINT.ringCore}
-        frame={{ width: size - ring * 2, height: size - ring * 2 }} />
-      <Image systemName="arrow.down" font={size * 0.38} foregroundStyle={BLUEPRINT.accent} />
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-badge-blueprint.png`}
+      resizable={true}
+      scaleToFit={true}
+      frame={{ width: size, height: size }}
+    />
   )
 }
 
@@ -455,69 +394,32 @@ function BlueprintMediumView({ snap }: { snap: WidgetSnapshot | null }) {
 // 霓虹风：近黑底 + 青→品红霓虹底线 + 辉光圆环下载钮
 // -------------------------------------------------------------
 const NEON = {
-  bgTop: "#05050A",
-  bgBottom: "#0B0B1A",
   ink: "#F2F5FF",
   sub: "rgba(242,245,255,0.50)",
   accent: "#00E5FF", // 霓虹青
   accent2: "#FF2E88", // 霓虹品红
-  core: "#0B0B1A",
 }
 
+// 背景为烘焙 PNG（tools/bake-style-assets.py）：星空 + 落日 + 透视网格 + 辉光
 function NeonBackground({ family }: { family: "small" | "medium" }) {
   return (
-    <ZStack>
-      <VStack
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        background={{
-          gradient: [
-            { color: NEON.bgTop, location: 0 },
-            { color: NEON.bgBottom, location: 1 },
-          ],
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: 1, y: 1 },
-        } as any}
-      >
-        <Spacer />
-      </VStack>
-      {/* 底部霓虹渐变光带（青 -> 品红，合成波招牌） */}
-      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-        <Spacer />
-        <RoundedRectangle
-          cornerRadius={1.5}
-          frame={{ maxWidth: "infinity", height: 3 } as never}
-          fill={{
-            gradient: [
-              { color: NEON.accent, location: 0 },
-              { color: NEON.accent2, location: 1 },
-            ],
-            startPoint: { x: 0, y: 0 },
-            endPoint: { x: 1, y: 0 },
-          } as any}
-          opacity={0.8}
-        />
-      </VStack>
-      {family === "medium" ? (
-        <VStack alignment="trailing" padding={14} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-          <Text font="caption2" monospaced foregroundStyle="rgba(0,229,255,0.30)">
-            NEON.DL // READY
-          </Text>
-        </VStack>
-      ) : null}
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-neon-${family}.png`}
+      resizable={true}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+    />
   )
 }
 
-// 霓虹风下载钮：外层辉光 + 青色圆环 + 深色内芯 + 青色箭头
+// 霓虹风下载钮：烘焙 PNG（青色辉光环 + 深色内芯 + 青箭头）
 function NeonBadge({ size }: { size: number }) {
   return (
-    <ZStack frame={{ width: size, height: size }}>
-      <RoundedRectangle cornerRadius={(size + 10) / 2} fill={NEON.accent} opacity={0.18}
-        frame={{ width: size + 10, height: size + 10 }} />
-      <RoundedRectangle cornerRadius={size / 2} fill={NEON.accent} frame={{ width: size, height: size }} />
-      <RoundedRectangle cornerRadius={(size - 5) / 2} fill={NEON.core} frame={{ width: size - 5, height: size - 5 }} />
-      <Image systemName="arrow.down" font={size * 0.38} foregroundStyle={NEON.accent} />
-    </ZStack>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-badge-neon.png`}
+      resizable={true}
+      scaleToFit={true}
+      frame={{ width: size, height: size }}
+    />
   )
 }
 
