@@ -491,15 +491,18 @@ def bake_theme_badges():
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
-            # 霓虹：主题色圆角矩形辉光牌（霓虹灯招牌形）+ 深色内芯 + 主题色字形
-            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            base = Image.alpha_composite(base, glow_layer(
-                (S, S), lambda dd: dd.rounded_rectangle([30, 30, S - 30, S - 30], radius=32 * SS,
-                                                        fill=hex_rgba(accent, 200)), 16 * SS))
+            # 霓虹：空心霓虹灯管（辉光晕 + 主题色灯管 + 白热内芯），中心透明透出背景，
+            # 字形也带辉光——与纹理风实心 squircle 彻底区分开
+            box = [int(S * 0.09), int(S * 0.09), S - int(S * 0.09), S - int(S * 0.09)]
+            tube_r = 30 * SS
+            base = Image.alpha_composite(Image.new("RGBA", (S, S), (0, 0, 0, 0)), glow_layer(
+                (S, S), lambda dd: dd.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(accent),
+                                                        width=18 * SS), 14 * SS))
             d = ImageDraw.Draw(base)
-            d.rounded_rectangle([22, 22, S - 22, S - 22], radius=30 * SS, outline=hex_rgba(accent), width=11 * SS)
-            d.rounded_rectangle([36, 36, S - 36, S - 36], radius=24 * SS, fill=(11, 11, 26, 200))
-            ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            d.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(accent), width=9 * SS)
+            d.rounded_rectangle(box, radius=tube_r, outline=(255, 255, 255, 230), width=3 * SS)
+            ov = glow_layer(
+                (S, S), lambda dd: draw_glyph(dd, glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent, 180)), 5 * SS)
             draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{glyph}-{theme}.png"))
