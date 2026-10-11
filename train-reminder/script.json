@@ -1,0 +1,31 @@
+{
+  "name": "Train Reminder",
+  "icon": "tram.fill",
+  "color": "rgba(44, 123, 229, 1)",
+  "version": "1.0.0",
+  "entry": "index.tsx",
+  "runInApp": true,
+  "permissions": null,
+  "contributors": [],
+  "intentInputTypes": [
+    "Text"
+  ],
+  "description": "高铁行程提醒（本地版）：从 12306 行程截图本机识别车次/车站/时间/座位/检票口，存本机并显示在主屏幕小组件。全程离线，不上传任何数据。",
+  "localizedNames": {
+    "zh": "高铁提醒",
+    "en": "Train Reminder"
+  },
+  "localizedDescriptions": {
+    "zh": "截图识别行程，小组件显示车次、车站、发车时间倒计时、检票口与座位号。数据仅存本机，脚本不联网。",
+    "en": "Recognize your rail trip from a screenshot on-device and show it on the Home Screen widget. All data stays local; no network."
+  },
+  "author": {
+    "name": "KOP-XIAO",
+    "email": null,
+    "homepage": "https://github.com/KOP-XIAO"
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/KOP-XIAO/Scripting/refs/heads/main/train-reminder.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
