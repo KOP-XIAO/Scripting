@@ -53,13 +53,18 @@ const RAIL_HINTS = /车次|检票口|候车|车厢|站台|复兴号|和谐号/
 
 export function detectMode(text: string): TripMode {
   const up = text.toUpperCase()
-  const flight = FLIGHT_HINTS.test(text)
-  const rail = RAIL_HINTS.test(text)
-  if (flight && !rail) return "flight"
-  if (rail && !flight) return "rail"
-  // 都有线索时看号码形态：两字符航司码（CA1234 / 3U8888）优先判为航班
-  if (/\b(?:[A-Z]{2}|\d[A-Z]|[A-Z]\d)\d{3,4}\b/.test(up)) return "flight"
-  if (/\b[GDCZTKY]\d{1,4}\b/.test(up)) return "rail"
+  const flightHint = FLIGHT_HINTS.test(text)
+  const railHint = RAIL_HINTS.test(text)
+  // 号码形态：火车是单字母前缀（G1234/D2288…），航班是两字符航司码（CA1234 / 3U8888）
+  const railCode = /\b[GDCZTKY]\s?\d{3,4}\b/.test(up)
+  const flightCode = /\b(?:[A-Z]{2}|[0-9][A-Z])\s?\d{3,4}\b/.test(up)
+
+  if (flightHint && !railHint) return "flight"
+  if (railHint && !flightHint) return "rail"
+  // 无明确线索时先认火车号码（避免「G1234」被 [A-Z]\d 形态误判成航班）
+  if (railCode) return "rail"
+  if (flightCode) return "flight"
+  if (flightHint) return "flight"
   return "rail"
 }
 
@@ -116,20 +121,41 @@ export function parseDuration(text: string): number {
 const cleanPlace = (s: string) =>
   s.replace(/[（(].*?[)）]/g, "").replace(/[站\s]+$/, "").replace(/^[过终始发到]\s*[·.、]?\s*/, "").trim()
 
-// 火车车站：优先「过/终/始 + 站名」逐行规则，其次站点分隔符兜底
+// 火车车站：支持三种写法——
+//   ① 「过 北京南」同一行；② 「过」「北京南」被 OCR 拆成两行；③ 「出发站：北京南」标签式
+// 都找不到时再用 A → B 兜底
 function parseRailPlaces(text: string): { from: string; to: string } {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
   const fromList: string[] = []
   const toList: string[] = []
-  for (const line of text.split("\n")) {
-    const m = line.trim().match(/^([过终始发到])\s*[·.、]?\s*([\u4e00-\u9fa5]{2,12})/)
-    if (!m) continue
-    const name = cleanPlace(m[2])
-    if (!name) continue
-    if (m[1] === "终" || m[1] === "到") toList.push(name)
+  const push = (marker: string, raw: string) => {
+    const name = cleanPlace(raw)
+    if (!name) return
+    if (marker === "终" || marker === "到") toList.push(name)
     else fromList.push(name)
   }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const labeled = line.match(/^(出发站|始发站|乘车站|到达站|终到站)\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+    if (labeled) {
+      push(/到达|终到/.test(labeled[1]) ? "终" : "过", labeled[2])
+      continue
+    }
+    const sameLine = line.match(/^([过终始发到])\s*[·.、:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+    if (sameLine) {
+      push(sameLine[1], sameLine[2])
+      continue
+    }
+    // 标记单独一行：取下一行的开头中文片段作为站名
+    if (/^[过终始发到]$/.test(line) && i + 1 < lines.length) {
+      const next = lines[i + 1].match(/^([\u4e00-\u9fa5]{2,12})/)
+      if (next) {
+        push(line, next[1])
+        i += 1
+      }
+    }
+  }
   if (fromList.length && toList.length) return { from: fromList[0], to: toList[0] }
-  // 两侧都用贪婪匹配：懒惰匹配会把「广州南」截成「广州」（离线测试抓到的真 bug）
   const sep = text.match(/([\u4e00-\u9fa5]{2,12})\s*[→\-—~至]\s*([\u4e00-\u9fa5]{2,12})/)
   if (sep) return { from: cleanPlace(sep[1]), to: cleanPlace(sep[2]) }
   return { from: fromList[0] ?? "", to: toList[0] ?? "" }
@@ -285,6 +311,7 @@ export function arriveTimestamp(trip: { departDate: string; departTime: string; 
   return dep + Math.max(0, trip.durationMin) * 60000
 }
 
+// 倒计时文案：分级压缩，避免「14 小时 22 分后出发」这类长文本在小组件里被截断
 export function countdownText(trip: TimeLike, now = Date.now()): string {
   const dep = departTimestamp(trip)
   if (!dep) return "待补全时间"
@@ -296,7 +323,10 @@ export function countdownText(trip: TimeLike, now = Date.now()): string {
   if (min < 60) return `${min} 分钟后出发`
   const h = Math.floor(min / 60)
   const m = min % 60
-  return m === 0 ? `${h} 小时后出发` : `${h} 小时 ${m} 分后出发`
+  if (min < 10 * 60) return m === 0 ? `${h} 小时后出发` : `${h} 小时 ${m} 分后出发`
+  if (min < 20 * 60) return `${h} 小时后出发` // 10~20 小时只报到小时，控制长度
+  if (min < 36 * 60) return "明天出发"
+  return `${Math.floor(min / (60 * 24))} 天后出发`
 }
 
 export function weekdayText(dateStr: string): string {
@@ -339,4 +369,17 @@ export function routeText(trip: { fromPlace: string; toPlace: string }): string 
 
 export function modeLabel(mode: TripMode): string {
   return mode === "flight" ? "航班" : "火车"
+}
+
+// 识别后自检：返回缺失的关键字段名，供 App 提示手动补全
+export function missingFields(trip: ParsedTrip): string[] {
+  const out: string[] = []
+  const placeLabel = trip.mode === "flight" ? "机场" : "车站"
+  if (!trip.code) out.push(trip.mode === "flight" ? "航班号" : "车次")
+  if (!trip.fromPlace) out.push(`出发${placeLabel}`)
+  if (!trip.toPlace) out.push(`到达${placeLabel}`)
+  if (!trip.departTime) out.push("出发时间")
+  if (!trip.gate) out.push(gateLabel(trip.mode))
+  if (!trip.seatNo) out.push("座位号")
+  return out
 }

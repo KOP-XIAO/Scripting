@@ -33,6 +33,7 @@ import {
   countdownText,
   departTimestamp,
   gateLabel,
+  missingFields,
   monthDayText,
   modeLabel,
   parseTripText,
@@ -102,6 +103,8 @@ function View() {
   const [draftId, setDraftId] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState("")
   const [rawText, setRawText] = useState("")
+  const [showRaw, setShowRaw] = useState(false)
+  const [notice, setNotice] = useState("")
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(Date.now())
 
@@ -122,13 +125,27 @@ function View() {
     try {
       const res = from === "photos" ? await recognizeFromPickedScreenshot() : await recognizeFromCamera()
       if (!res.ok) {
-        if (res.reason !== "cancelled") await Dialog.alert({ title: "识别未完成", message: res.message })
+        if (res.reason === "cancelled") {
+          setNotice("") // 用户主动取消：静默返回，不当失败
+          return
+        }
+        await Dialog.alert({
+          title: res.reason === "unsupported" ? "当前版本不支持" : "识别未完成",
+          message: res.message,
+        })
         return
       }
+      const parsed = parseTripText(res.text) // 自动判别火车 / 航班
       setRawText(res.text)
-      setDraft(parseTripText(res.text)) // 自动判别火车 / 航班
+      setDraft(parsed)
       setDraftId(null)
       setDraftNote("")
+      const miss = missingFields(parsed)
+      setNotice(
+        miss.length
+          ? `已识别。这些字段没认出来，请手动补：${miss.join("、")}`
+          : "已识别，请核对一遍后保存",
+      )
     } finally {
       setBusy(false)
     }
@@ -136,6 +153,8 @@ function View() {
 
   const startManual = (mode: TripMode) => {
     setRawText("")
+    setShowRaw(false)
+    setNotice("")
     setDraft({ ...EMPTY_DRAFT, mode })
     setDraftId(null)
     setDraftNote("")
@@ -143,6 +162,8 @@ function View() {
 
   const editTrip = (t: TripRecord) => {
     setRawText("")
+    setShowRaw(false)
+    setNotice("")
     setDraft({ ...t })
     setDraftId(t.id)
     setDraftNote(t.note ?? "")
@@ -166,6 +187,8 @@ function View() {
     setDraftId(null)
     setDraftNote("")
     setRawText("")
+    setShowRaw(false)
+    setNotice("")
     refresh()
   }
 
@@ -286,11 +309,17 @@ function View() {
             </Text>
           }
         >
-          <HStack>
-            <Button title={busy ? "识别中…" : "从截图识别"} disabled={busy} action={() => void runOCR("photos")} />
-            <Spacer />
+          <VStack alignment="leading" spacing={8}>
+            <Button
+              title={busy ? "识别中…" : "从相册选行程截图识别"}
+              disabled={busy}
+              action={() => void runOCR("photos")}
+            />
+            <Text font="caption2" foregroundStyle="tertiaryLabel">
+              也可在下面用相机扫描纸质票，或直接手动填写
+            </Text>
             <Button title="相机扫描" disabled={busy} action={() => void runOCR("camera")} />
-          </HStack>
+          </VStack>
           <HStack spacing={0}>
             {TRIP_MODES.flatMap((m, i) => {
               const chip = (
@@ -354,6 +383,15 @@ function View() {
                   return i === 0 ? [chip] : [<Spacer key={`sm-${m}`} />, chip]
                 })}
               </HStack>
+
+              {notice ? (
+                <HStack spacing={6}>
+                  <Image systemName="info.circle" font={11} foregroundStyle={theme.warn} />
+                  <Text font="caption2" foregroundStyle={theme.ink} lineLimit={3}>
+                    {notice}
+                  </Text>
+                </HStack>
+              ) : null}
 
               <HStack spacing={10}>
                 <Field label={isFlight ? "航班号" : "车次"} value={draft.code} prompt={isFlight ? "CA1234" : "G1234"}
@@ -422,6 +460,28 @@ function View() {
                 <Field label="备注" value={draftNote} prompt="如：接人 / 报销" onChanged={setDraftNote} />
               </HStack>
 
+              {rawText ? (
+                <VStack alignment="leading" spacing={6}>
+                  <Toggle
+                    title="查看识别原文（用于排查识别不准）"
+                    value={showRaw}
+                    onChanged={setShowRaw}
+                  />
+                  {showRaw ? (
+                    <Text
+                      font="caption2"
+                      monospaced
+                      foregroundStyle={theme.ink}
+                      padding={8}
+                      background="rgba(127,127,127,0.10)"
+                      clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+                    >
+                      {rawText}
+                    </Text>
+                  ) : null}
+                </VStack>
+              ) : null}
+
               <HStack>
                 <Button title="保存行程" action={saveDraft} />
                 <Spacer />
@@ -433,6 +493,8 @@ function View() {
                     setDraftId(null)
                     setDraftNote("")
                     setRawText("")
+                    setShowRaw(false)
+                    setNotice("")
                   }}
                 />
               </HStack>

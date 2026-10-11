@@ -102,6 +102,34 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   ok("火车：跨年日期自动进位到下一年")
 }
 
+// R4：「过」「终」标记被 OCR 拆成两行（真机常见）
+{
+  const text = [
+    "G5678",
+    "复兴号",
+    "08:00",
+    "过",
+    "北京南",
+    "终",
+    "上海虹桥",
+    "检票口 3B",
+    "5车06F 二等座",
+  ].join("\n")
+  const t = P.parseTripText(text, new Date("2026-10-01T09:00:00"))
+  assert.strictEqual(t.fromPlace, "北京南")
+  assert.strictEqual(t.toPlace, "上海虹桥")
+  ok("火车：标记单独成行（过 / 终 换行）也能解析出站点")
+}
+
+// R5：标签式「出发站 / 到达站」
+{
+  const text = ["D3300", "出发站：北京南", "到达站：天津南", "07:00", "07:35", "检票口 A2", "3车08D 一等座"].join("\n")
+  const t = P.parseTripText(text, new Date("2026-10-01T09:00:00"))
+  assert.strictEqual(t.fromPlace, "北京南")
+  assert.strictEqual(t.toPlace, "天津南")
+  ok("火车：出发站/到达站 标签式写法可解析")
+}
+
 // ============ 航班 ============
 // F1：航司 App 行程详情（航站楼 + 登机口 + 值机柜台 + 登机时间 + 舱位 + 行李转盘）
 {
@@ -165,14 +193,33 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
 }
 
 // ============ 通用 ============
-// G1：倒计时文案
+// G1：倒计时文案分级（长时段必须压缩，否则小组件会被截断）
 {
   const trip = { departDate: "2026-10-12", departTime: "08:32", durationMin: 80 }
-  assert.strictEqual(P.countdownText(trip, new Date("2026-10-12T08:00:00").getTime()), "32 分钟后出发")
-  assert.strictEqual(P.countdownText(trip, new Date("2026-10-12T06:00:00").getTime()), "2 小时 32 分后出发")
-  assert.strictEqual(P.countdownText(trip, new Date("2026-10-12T08:40:00").getTime()), "行程中")
-  assert.strictEqual(P.countdownText(trip, new Date("2026-10-12T10:30:00").getTime()), "行程已结束")
-  ok("倒计时 / 行程中 / 已结束 文案正确")
+  const at = (s) => new Date(s).getTime()
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:00:00")), "32 分钟后出发")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T06:00:00")), "2 小时 32 分后出发")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-11T18:10:00")), "14 小时后出发", "10~20 小时只报到小时")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-11T06:00:00")), "明天出发", "20~36 小时说「明天」")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-10T08:00:00")), "2 天后出发", "更远按天数")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:40:00")), "行程中")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T10:30:00")), "行程已结束")
+  ok("倒计时分级文案正确（短时精确 / 长时压缩 / 行程中 / 已结束）")
+}
+
+// G3：识别后缺失字段自检（用于提示用户手动补全）
+{
+  const t = P.parseTripText("G1234\n08:32\n08:50", new Date("2026-10-01T09:00:00"))
+  const miss = P.missingFields(t)
+  assert.ok(miss.includes("出发车站"), "应提示缺出发车站，实际：" + miss.join("/"))
+  assert.ok(miss.includes("到达车站"), "应提示缺到达车站")
+  assert.ok(miss.includes("座位号"))
+  const full = P.parseTripText(
+    "G1234\n过 北京南\n终 上海虹桥\n08:32\n08:50\n检票口 6A\n5车12A 二等座",
+    new Date("2026-10-01T09:00:00"),
+  )
+  assert.deepStrictEqual(P.missingFields(full), [])
+  ok("缺失字段自检可用（字段齐全时为空）")
 }
 
 // G2：展示辅助与缺字段兜底

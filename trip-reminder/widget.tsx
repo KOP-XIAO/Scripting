@@ -5,7 +5,7 @@
 // 隐私：小组件只读本机 Storage，页面本身不含任何网络请求；不读取、不上传任何图片。
 // 全局对象（禁止从 scripting 导入）：Storage
 
-import { HStack, Image, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
+import { HStack, Image, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import {
   countdownText,
   gateLabel,
@@ -73,7 +73,10 @@ function EmptyView() {
         暂无行程
       </Text>
       <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>
-        打开脚本，用「从截图识别」导入火车票或机票截图即可
+        打开脚本，用「从相册选行程截图识别」导入火车票或机票截图即可
+      </Text>
+      <Text font="caption2" monospaced foregroundStyle={theme.sub}>
+        本机数据 · 不联网
       </Text>
     </VStack>
   )
@@ -82,11 +85,10 @@ function EmptyView() {
 function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: boolean }) {
   const theme = getTheme()
   const countdown = countdownText(trip)
-  const soon =
-    countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
+  const soon = countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
   return (
-    <VStack alignment="leading" spacing={8}>
-      {/* 抬头：号码徽标 + 承运人/车型 + 日期 */}
+    <VStack alignment="leading" spacing={6}>
+      {/* 1) 抬头：图标 + 号码徽标 + 承运方 …… 日期 */}
       <HStack spacing={6}>
         <Image systemName={modeIcon(trip.mode)} font={13} foregroundStyle={theme.accent} />
         <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
@@ -96,58 +98,70 @@ function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: bo
           </Text>
         ) : null}
         <Spacer />
-        <Text font="caption" foregroundStyle={theme.sub}>
+        <Text font="caption" foregroundStyle={theme.sub} lineLimit={1}>
           {`${monthDayText(trip.departDate)} ${weekdayText(trip.departDate)}`.trim()}
         </Text>
       </HStack>
 
-      {/* 时间与地点 */}
-      <HStack spacing={10} frame={{ maxWidth: "infinity" } as never}>
-        <VStack alignment="leading" spacing={1}>
-          <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
-            {trip.departTime || "--:--"}
-          </Text>
-          <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
-            {trip.fromPlace || "—"}
-          </Text>
-        </VStack>
+      {/* 2) 时间独占一行（大字） */}
+      <HStack spacing={8}>
+        <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
+          {trip.departTime || "--:--"}
+        </Text>
         <Image systemName="arrow.right" font={13} foregroundStyle={theme.sub} />
-        <VStack alignment="leading" spacing={1}>
-          <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
-            {trip.arriveTime || "--:--"}
-          </Text>
-          <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
-            {trip.toPlace || "—"}
-          </Text>
-        </VStack>
+        <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
+          {trip.arriveTime || "--:--"}
+        </Text>
         <Spacer />
-        <Text font="headline" fontWeight="bold" foregroundStyle={soon ? theme.warn : theme.accent} lineLimit={1}>
+      </HStack>
+
+      {/* 3) 出发/到达站独占一行：不再和时间、倒计时抢宽度 */}
+      <HStack spacing={6} frame={{ maxWidth: "infinity" } as never}>
+        <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
+          {trip.fromPlace || "未填出发站"}
+        </Text>
+        <Image systemName="arrow.right" font={10} foregroundStyle={theme.sub} />
+        <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
+          {trip.toPlace || "未填到达站"}
+        </Text>
+        <Spacer />
+      </HStack>
+
+      {/* 4) 倒计时（左）…… 闸口 + 座位（右） */}
+      <HStack spacing={8}>
+        <Text
+          font="headline"
+          fontWeight="bold"
+          foregroundStyle={soon ? theme.warn : theme.accent}
+          lineLimit={1}
+        >
           {countdown}
+        </Text>
+        <Spacer />
+        <Text font="caption" monospaced foregroundStyle={theme.ink} lineLimit={1}>
+          {trip.gate ? `${gateLabel(trip.mode)} ${trip.gate}` : `${gateLabel(trip.mode)} —`}
+        </Text>
+        <Text font="caption" monospaced foregroundStyle={theme.ink} lineLimit={1}>
+          {seatText(trip)}
         </Text>
       </HStack>
 
-      {/* 闸口 / 座位 / 登机时间 / 乘客 */}
-      <HStack spacing={10}>
-        <HStack spacing={4}>
-          <Image systemName="ticket.fill" font={11} foregroundStyle={theme.accent} />
-          <Text font="caption" monospaced foregroundStyle={theme.ink}>
-            {trip.gate ? `${gateLabel(trip.mode)} ${trip.gate}` : `${gateLabel(trip.mode)} —`}
-          </Text>
-        </HStack>
+      {/* 5) 登机时间 / 乘客（左）…… 数据来源标注（右） */}
+      <HStack spacing={8}>
         {trip.mode === "flight" && trip.boardingTime ? (
-          <Text font="caption" monospaced foregroundStyle={theme.warn}>
+          <Text font="caption2" monospaced foregroundStyle={theme.warn} lineLimit={1}>
             {`登机 ${trip.boardingTime}`}
           </Text>
         ) : null}
-        <Text font="caption" monospaced foregroundStyle={theme.ink}>
-          {seatText(trip)}
-        </Text>
         {showPassenger && trip.passenger ? (
-          <Text font="caption" foregroundStyle={theme.sub} lineLimit={1}>
+          <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>
             {trip.passenger}
           </Text>
         ) : null}
         <Spacer />
+        <Text font="caption2" monospaced foregroundStyle={theme.sub}>
+          本机数据 · 不联网
+        </Text>
       </HStack>
     </VStack>
   )
@@ -169,13 +183,6 @@ function MediumView() {
       >
         {trip ? <TripBody trip={trip} showPassenger={showPassenger} /> : <EmptyView />}
         <Spacer />
-        <HStack spacing={4}>
-          <RoundedRectangle frame={{ width: 18, height: 3 }} cornerRadius={1.5} fill={theme.accent} />
-          <Text font="caption2" monospaced foregroundStyle={theme.sub}>
-            本机数据 · 不联网
-          </Text>
-          <Spacer />
-        </HStack>
       </VStack>
     </ZStack>
   )
@@ -207,7 +214,7 @@ function SmallView() {
             <Text font="caption2" foregroundStyle={theme.ink} lineLimit={1}>
               {trip.fromPlace || "—"}
             </Text>
-            <Text font="caption2" foregroundStyle={theme.warn} lineLimit={2}>
+            <Text font="caption2" foregroundStyle={theme.warn} lineLimit={1}>
               {countdownText(trip)}
             </Text>
           </VStack>
