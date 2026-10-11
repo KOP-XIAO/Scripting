@@ -325,13 +325,23 @@ function View() {
     fields.push([isFlight ? "乘机人" : "乘车人", draft.passenger, "可留空", (v) => patch({ passenger: v })])
     fields.push(["备注", draftNote, "如：接人 / 报销", setDraftNote])
 
-    // 官方签名：title 或 label 为必选——裸 TextField 不渲染（真机截图实证）
-    // title 版同时把标签内嵌进字段行，行高比「label 在上」减半
-    fields.forEach(([label, value, prompt, onChanged], i) => {
+    // 每两个字段一行。注意：本运行时 title 是 TextField 渲染的必要条件（否则不渲染），
+    // 但 title 本身不显示——可见标签由上方 Text 提供（真机截图实证）
+    for (let i = 0; i < fields.length; i += 2) {
+      const pair = fields.slice(i, i + 2)
       rows.push(
-        <TextField key={`f${i}`} title={label} value={value} prompt={prompt} onChanged={onChanged} />,
+        <HStack key={`row${i}`} spacing={10}>
+          {pair.map(([label, value, prompt, onChanged], j) => (
+            <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
+              <Text font="caption" foregroundStyle="secondaryLabel">
+                {label}
+              </Text>
+              <TextField title={label} value={value} prompt={prompt} onChanged={onChanged} />
+            </VStack>
+          ))}
+        </HStack>,
       )
-    })
+    }
 
     if (rawText) {
       rows.push(

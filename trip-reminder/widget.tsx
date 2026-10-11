@@ -87,8 +87,9 @@ function TripBody({ trip }: { trip: TripRecord }) {
   const theme = getTheme()
   const countdown = countdownText(trip)
   const soon = countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
+  // Spacer 分到各行之间，让内容垂直撑满小组件（不再顶部堆叠、底部大片空白）
   return (
-    <VStack alignment="leading" spacing={6}>
+    <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
       {/* 1) 抬头：图标 + 号码徽标 + 承运方 …… 日期 */}
       <HStack spacing={6}>
         <Image systemName={modeIcon(trip.mode)} font={13} foregroundStyle={theme.accent} />
@@ -104,6 +105,8 @@ function TripBody({ trip }: { trip: TripRecord }) {
         </Text>
       </HStack>
 
+      <Spacer />
+
       {/* 2) 时间独占一行（大字） */}
       <HStack spacing={8}>
         <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
@@ -116,6 +119,8 @@ function TripBody({ trip }: { trip: TripRecord }) {
         <Spacer />
       </HStack>
 
+      <Spacer />
+
       {/* 3) 出发/到达站独占一行：不再和时间、倒计时抢宽度 */}
       <HStack spacing={6} frame={{ maxWidth: "infinity" } as never}>
         <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
@@ -127,6 +132,8 @@ function TripBody({ trip }: { trip: TripRecord }) {
         </Text>
         <Spacer />
       </HStack>
+
+      <Spacer />
 
       {/* 4) 倒计时（左）…… 闸口 + 座位（右） */}
       <HStack spacing={8}>
@@ -146,6 +153,8 @@ function TripBody({ trip }: { trip: TripRecord }) {
           {seatText(trip)}
         </Text>
       </HStack>
+
+      {trip.mode === "flight" && trip.boardingTime ? <Spacer /> : null}
 
       {/* 5) 仅航班：登机时间（姓名不显示在小组件上，主屏幕易被旁人看到） */}
       {trip.mode === "flight" && trip.boardingTime ? (
@@ -174,7 +183,6 @@ function MediumView() {
         widgetURL={RUN_URL}
       >
         {trip ? <TripBody trip={trip} /> : <EmptyView />}
-        <Spacer />
       </VStack>
     </ZStack>
   )
