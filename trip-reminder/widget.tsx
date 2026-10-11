@@ -14,7 +14,7 @@ import {
   weekdayText,
   type TripMode,
 } from "./services/parse"
-import { getShowPassenger, nextTrip, type TripRecord } from "./services/trips"
+import { displayPassenger, nextTrip, type TripRecord } from "./services/trips"
 import { getTheme } from "./services/theme"
 
 const SCRIPT_NAME = "Trip Reminder"
@@ -82,7 +82,7 @@ function EmptyView() {
   )
 }
 
-function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: boolean }) {
+function TripBody({ trip }: { trip: TripRecord }) {
   const theme = getTheme()
   const countdown = countdownText(trip)
   const soon = countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
@@ -153,9 +153,9 @@ function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: bo
             {`登机 ${trip.boardingTime}`}
           </Text>
         ) : null}
-        {showPassenger && trip.passenger ? (
+        {displayPassenger(trip.passenger) ? (
           <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>
-            {trip.passenger}
+            {displayPassenger(trip.passenger)}
           </Text>
         ) : null}
         <Spacer />
@@ -170,7 +170,6 @@ function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: bo
 function MediumView() {
   const theme = getTheme()
   const trip = nextTrip()
-  const showPassenger = getShowPassenger()
   return (
     <ZStack>
       <Background />
@@ -181,7 +180,7 @@ function MediumView() {
         frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
         widgetURL={RUN_URL}
       >
-        {trip ? <TripBody trip={trip} showPassenger={showPassenger} /> : <EmptyView />}
+        {trip ? <TripBody trip={trip} /> : <EmptyView />}
         <Spacer />
       </VStack>
     </ZStack>

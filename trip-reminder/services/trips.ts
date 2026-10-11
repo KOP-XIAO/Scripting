@@ -69,22 +69,49 @@ export function nextTrip(now = Date.now()): TripRecord | null {
   return upcoming ?? list[list.length - 1]
 }
 
-export function getShowPassenger(): boolean {
+// -------------------------------------------------------------
+// 乘客姓名显示模式：完整 / 打码 / 隐藏（旧版布尔开关自动迁移）
+// -------------------------------------------------------------
+export type PassengerMode = "full" | "masked" | "hidden"
+
+const PASSENGER_MODE_KEY = "rail.passengerMode"
+
+export function getPassengerMode(): PassengerMode {
   try {
-    const v = Storage.get<boolean>(SHOW_PASSENGER_KEY)
-    return v !== false // 默认显示
+    const v = Storage.get<string>(PASSENGER_MODE_KEY)
+    if (v === "full" || v === "masked" || v === "hidden") return v
+    const legacy = Storage.get<boolean>(SHOW_PASSENGER_KEY)
+    return legacy === false ? "hidden" : "full"
   } catch {
-    return true
+    return "full"
   }
 }
 
-export function setShowPassenger(on: boolean) {
+export function setPassengerMode(mode: PassengerMode) {
   try {
-    Storage.set(SHOW_PASSENGER_KEY, on)
+    Storage.set(PASSENGER_MODE_KEY, mode)
   } catch {}
   try {
     Widget.reloadAll()
   } catch {}
+}
+
+// 打码：张三 -> 张×；John -> J***
+export function maskPassenger(name: string): string {
+  const n = name.trim()
+  if (!n) return ""
+  return /^[A-Za-z]/.test(n) ? n[0] + "***" : n[0] + "×"
+}
+
+// 按模式输出要显示的姓名（hidden 时返回空串，调用方应跳过渲染）
+export function displayPassenger(name: string, mode: PassengerMode = getPassengerMode()): string {
+  if (mode === "hidden") return ""
+  if (mode === "masked") return maskPassenger(name)
+  return name
+}
+
+export function passengerModeLabel(mode: PassengerMode): string {
+  return mode === "full" ? "完整显示" : mode === "masked" ? "打码显示（张×）" : "隐藏"
 }
 
 // 小组件与 App 共享的轻量快照

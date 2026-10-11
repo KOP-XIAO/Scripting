@@ -297,4 +297,20 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   ok("日期/星期/区间/空值兜底都正常")
 }
 
+// G4：乘客姓名打码
+{
+  const tripsMod = (() => {
+    const out2 = require("os").tmpdir() + "/trip-trips.bundle.cjs"
+    esbuild.buildSync({
+      entryPoints: [path.join(ROOT, "services", "trips.ts")],
+      bundle: true, format: "cjs", platform: "node", outfile: out2,
+    })
+    return require(out2)
+  })()
+  assert.strictEqual(tripsMod.maskPassenger("张三"), "张×")
+  assert.strictEqual(tripsMod.maskPassenger("John"), "J***")
+  assert.strictEqual(tripsMod.maskPassenger("  "), "")
+  ok("乘客姓名打码（张× / J*** / 空值）正确")
+}
+
 console.log(`\n全部通过：${n} 组断言`)
