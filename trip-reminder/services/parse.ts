@@ -119,7 +119,12 @@ export function parseDuration(text: string): number {
 }
 
 const cleanPlace = (s: string) =>
-  s.replace(/[（(].*?[)）]/g, "").replace(/[站\s]+$/, "").replace(/^[过终始发到]\s*[·.、]?\s*/, "").trim()
+  s
+    .replace(/[（(].*?[)）]/g, "")
+    .replace(/^[过终始发到]\s*[·.、:：]?\s*/, "")
+    .replace(/[^\u4e00-\u9fa5A-Z0-9]+$/g, "") // 尾部垃圾字符（，、〉等，OCR 常把小图标认成标点）
+    .replace(/[站\s]+$/g, "")
+    .trim()
 
 // 火车车站：支持三种写法——
 //   ① 「过 北京南」同一行；② 「过」「北京南」被 OCR 拆成两行；③ 「出发站：北京南」标签式
@@ -189,13 +194,49 @@ function parseFlightPlaces(text: string): { from: string; to: string; terminal: 
   return { from: found[0] ?? "", to: found[1] ?? "", terminal: terminalOf(found[0] ?? "", found[1] ?? "") }
 }
 
-function parseRail(text: string, flat: string, now: Date): ParsedTrip {
-  const places = parseRailPlaces(text)
+// 车站块停用词：长得像站名但不是站名
+const PLACE_STOPWORDS = /^(过|终|始|发|到|改签|退票|灵活行|乘车码|复兴号|和谐号|智能动车组|绿巨人)$/
+const PLACE_BAD_PART = /[0-9:：]|乘车|检票|座位|历时|出发|到达/
+
+// 用候选块位置兜底车站：站名在时间行下方（±0.14 内）左右各一个中文块
+function placesFromCandidates(candidates: OCRCandidateBlock[]): { from: string; to: string } {
+  if (!candidates.length) return { from: "", to: "" }
+  const timed = candidates.filter((c) => /^\d{2}:\d{2}$/.test(c.content.trim()))
+  if (!timed.length) return { from: "", to: "" }
+  const timeY = timed[0].y + timed[0].h / 2
+
+  const stationish = candidates.filter((c) => {
+    const t = c.content.trim()
+    if (!/^[\u4e00-\u9fa5][\u4e00-\u9fa5]{1,9}[^\u4e00-\u9fa5]{0,2}$/.test(t)) return false
+    if (PLACE_STOPWORDS.test(cleanPlace(t)) || PLACE_BAD_PART.test(t)) return false
+    const dy = Math.abs(c.y + c.h / 2 - timeY)
+    return dy > 0.04 && dy < 0.14
+  })
+  if (!stationish.length) return { from: "", to: "" }
+  stationish.sort((a, b) => a.x + a.w / 2 - (b.x + b.w / 2))
+  const from = cleanPlace(stationish[0].content)
+  const to = cleanPlace(stationish[stationish.length - 1].content)
+  return { from, to }
+}
+
+function parseRail(text: string, flat: string, now: Date, candidates: OCRCandidateBlock[] = []): ParsedTrip {
+  let places = parseRailPlaces(text)
+  if (!places.from || !places.to) {
+    const positional = placesFromCandidates(candidates)
+    places = {
+      from: places.from || positional.from,
+      to: places.to || positional.to,
+    }
+  }
   const times = pickTime(flat)
   const code = (flat.match(/\b([GDCZTKY]\s?\d{1,4})\b/) ?? ["", ""])[1].replace(/\s+/g, "")
   const carrier = (flat.match(/(复兴号|和谐号|智能动车组|绿巨人)/) ?? ["", ""])[1]
 
-  const gateM = flat.match(/检票口\s*[:\s]*([0-9]{1,2}\s*[A-Za-z]{1,2}|[A-Za-z]{1,2}\s*[0-9]{1,2}|[0-9]{1,3})/)
+  // 「检票口:11B」「检票口Q：11B检票口」（信息图标被认成字母）「11B检票口」三种形态
+  let gateM = flat.match(
+    /检票口\s*[:：]?\s*(?:[A-Za-z]{1,2}\s*[:：]\s*)?([0-9]{1,2}\s*[A-Za-z]{1,2}|[A-Za-z]{1,2}\s*[0-9]{1,2}|[0-9]{1,3})/,
+  )
+  if (!gateM) gateM = flat.match(/([0-9]{1,2}\s*[A-Za-z]{1,2})\s*检票口/)
   const gate = gateM ? gateM[1].replace(/\s+/g, "").toUpperCase() : ""
 
   let seatCar = ""
@@ -287,11 +328,25 @@ function parseFlight(text: string, flat: string, now: Date): ParsedTrip {
   }
 }
 
-export function parseTripText(rawText: string, now = new Date(), modeHint: TripMode | "auto" = "auto"): ParsedTrip {
+// Vision 识别块（含位置），OCR 层把 boundingBox 打平后传入
+export type OCRCandidateBlock = {
+  content: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function parseTripText(
+  rawText: string,
+  now = new Date(),
+  modeHint: TripMode | "auto" = "auto",
+  candidates: OCRCandidateBlock[] = [],
+): ParsedTrip {
   const text = normalizeOCR(rawText)
   const flat = text.replace(/\n/g, " ")
   const mode = modeHint === "auto" ? detectMode(flat) : modeHint
-  return mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now)
+  return mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now, candidates)
 }
 
 // -------------------------------------------------------------
@@ -320,11 +375,11 @@ export function countdownText(trip: TimeLike, now = Date.now()): string {
   if (now >= dep) return "行程中"
   const min = Math.round((dep - now) / 60000)
   if (min <= 0) return "即将出发"
-  if (min < 60) return `${min} 分钟后出发`
+  if (min < 60) return `${min}分钟后出发`
   const h = Math.floor(min / 60)
   const m = min % 60
-  if (min < 10 * 60) return m === 0 ? `${h} 小时后出发` : `${h} 小时 ${m} 分后出发`
-  if (min < 20 * 60) return `${h} 小时后出发` // 10~20 小时只报到小时，控制长度
+  if (min < 10 * 60) return m === 0 ? `${h}小时后出发` : `${h}小时${m}分后出发`
+  if (min < 20 * 60) return `${h}小时后出发` // 10~20 小时只报到小时，控制长度
   if (min < 36 * 60) return "明天出发"
   return `${Math.floor(min / (60 * 24))} 天后出发`
 }

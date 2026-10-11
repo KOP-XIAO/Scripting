@@ -130,6 +130,66 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   ok("火车：出发站/到达站 标签式写法可解析")
 }
 
+// R6：真机实跑的 Vision 输出（12306 行程详情截图，已脱敏）。
+// 关键陷阱：①「过」与站名拆行且站名带垃圾字符（深圳北，）②「终」徽章完全没识别出来
+// ③检票口的信息图标被认成字母（检票口Q：）④站名尾部带「〉」
+{
+  const text = [
+    "G7654",
+    "复兴号",
+    "08:32",
+    "过",
+    "深圳北，",
+    "： 乘车人：李四",
+    "检票口Q：11B检票口",
+    "座位号：05车05B二等座",
+    "10月12日（周一）",
+    "历时18分",
+    "3分后出发 请以实际",
+    "08:50",
+    "香港西九龙〉",
+    "改签",
+    "灵活行",
+    "乘车码",
+    "退票",
+  ].join("\n")
+  const candidates = [
+    { content: "G7654", x: 0.12, y: 0.87, w: 0.16, h: 0.06 },
+    { content: "复兴号", x: 0.3, y: 0.88, w: 0.07, h: 0.04 },
+    { content: "08:32", x: 0.06, y: 0.68, w: 0.17, h: 0.08 },
+    { content: "过", x: 0.06, y: 0.58, w: 0.03, h: 0.05 },
+    { content: "深圳北，", x: 0.1, y: 0.58, w: 0.13, h: 0.06 },
+    { content: "： 乘车人：李四", x: 0.06, y: 0.48, w: 0.29, h: 0.06 },
+    { content: "检票口Q：11B检票口", x: 0.08, y: 0.34, w: 0.32, h: 0.05 },
+    { content: "座位号：05车05B二等座", x: 0.08, y: 0.25, w: 0.38, h: 0.05 },
+    { content: "10月12日（周一）", x: 0.38, y: 0.66, w: 0.23, h: 0.07 },
+    { content: "历时18分", x: 0.44, y: 0.6, w: 0.12, h: 0.05 },
+    { content: "3分后出发 请以实际", x: 0.58, y: 0.86, w: 0.33, h: 0.06 },
+    { content: "08:50", x: 0.76, y: 0.68, w: 0.17, h: 0.08 },
+    { content: "香港西九龙〉", x: 0.72, y: 0.58, w: 0.22, h: 0.05 },
+    { content: "改签", x: 0.41, y: 0.08, w: 0.07, h: 0.06 },
+    { content: "灵活行", x: 0.59, y: 0.08, w: 0.1, h: 0.06 },
+    { content: "乘车码", x: 0.83, y: 0.23, w: 0.1, h: 0.05 },
+    { content: "退票", x: 0.81, y: 0.08, w: 0.07, h: 0.05 },
+  ]
+  const t = P.parseTripText(text, new Date("2026-10-11T09:00:00"), "auto", candidates)
+  assert.strictEqual(t.mode, "rail")
+  assert.strictEqual(t.code, "G7654")
+  assert.strictEqual(t.carrier, "复兴号")
+  assert.strictEqual(t.fromPlace, "深圳北", "站名尾部垃圾字符应被清掉")
+  assert.strictEqual(t.toPlace, "香港西九龙", "「终」徽章丢失时应用位置兜底拿到到达站")
+  assert.strictEqual(t.gate, "11B", "检票口后的图标字母不应干扰")
+  assert.strictEqual(t.seatCar, "5")
+  assert.strictEqual(t.seatNo, "05B")
+  assert.strictEqual(t.seatClass, "二等座")
+  assert.strictEqual(t.passenger, "李四")
+  assert.strictEqual(t.departDate, "2026-10-12")
+  assert.strictEqual(t.departTime, "08:32")
+  assert.strictEqual(t.arriveTime, "08:50")
+  assert.strictEqual(t.durationMin, 18)
+  ok("火车：真实 Vision 输出（拆行/垃圾字符/徽章丢失/图标污染）全部解析正确")
+}
+
 // ============ 航班 ============
 // F1：航司 App 行程详情（航站楼 + 登机口 + 值机柜台 + 登机时间 + 舱位 + 行李转盘）
 {
@@ -197,9 +257,9 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
 {
   const trip = { departDate: "2026-10-12", departTime: "08:32", durationMin: 80 }
   const at = (s) => new Date(s).getTime()
-  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:00:00")), "32 分钟后出发")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-12T06:00:00")), "2 小时 32 分后出发")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-11T18:10:00")), "14 小时后出发", "10~20 小时只报到小时")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:00:00")), "32分钟后出发")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T06:00:00")), "2小时32分后出发")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-11T18:10:00")), "14小时后出发", "10~20 小时只报到小时")
   assert.strictEqual(P.countdownText(trip, at("2026-10-11T06:00:00")), "明天出发", "20~36 小时说「明天」")
   assert.strictEqual(P.countdownText(trip, at("2026-10-10T08:00:00")), "2 天后出发", "更远按天数")
   assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:40:00")), "行程中")

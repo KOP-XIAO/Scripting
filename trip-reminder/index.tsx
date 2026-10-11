@@ -129,13 +129,21 @@ function View() {
           setNotice("") // 用户主动取消：静默返回，不当失败
           return
         }
+        setNotice(res.message) // 同时留在提示条里，方便你把这个错误发给我
         await Dialog.alert({
           title: res.reason === "unsupported" ? "当前版本不支持" : "识别未完成",
           message: res.message,
         })
         return
       }
-      const parsed = parseTripText(res.text) // 自动判别火车 / 航班
+      const blocks = (res.candidates ?? []).map((c) => ({
+        content: String(c?.content ?? ""),
+        x: c?.boundingBox?.x ?? 0,
+        y: c?.boundingBox?.y ?? 0,
+        w: c?.boundingBox?.width ?? 0,
+        h: c?.boundingBox?.height ?? 0,
+      }))
+      const parsed = parseTripText(res.text, undefined, "auto", blocks) // 自动判别 + 位置兜底
       setRawText(res.text)
       setDraft(parsed)
       setDraftId(null)
