@@ -153,11 +153,20 @@ function View() {
       setDraftId(null)
       setDraftNote("")
       const miss = missingFields(parsed)
-      setNotice(
-        miss.length
-          ? `已识别。这些字段没认出来，请手动补：${miss.join("、")}`
-          : "已识别，请核对一遍后保存",
-      )
+      const coreEmpty = !parsed.code && !parsed.fromPlace && !parsed.toPlace && !parsed.departTime
+      if (coreEmpty) {
+        // 一个字段都没解析出来：自动展开识别原文，避免看起来像"静默失败"
+        setShowRaw(true)
+        setNotice(
+          `识别到 ${res.text.length} 个字符，但一个字段都没解析出来。已为你展开识别原文——请把它发给我，或换一张更清晰的截图`,
+        )
+      } else {
+        setNotice(
+          miss.length
+            ? `已识别。这些字段没认出来，请手动补：${miss.join("、")}`
+            : "已识别，请核对一遍后保存",
+        )
+      }
     } finally {
       setBusy(false)
     }
@@ -584,7 +593,14 @@ function View() {
         </Section>
 
         {/* ---------------- 设置 ---------------- */}
-        <Section title="设置">
+        <Section
+          title="设置"
+          footer={
+            <Text font="caption" foregroundStyle="secondaryLabel">
+              若更改后小组件没有立即变化，长按小组件移除后重新添加即可（iOS 会缓存小组件画面）。
+            </Text>
+          }
+        >
           <Button
             title={`乘客姓名：${passengerModeLabel(passengerMode)}`}
             action={() => void choosePassengerMode()}
@@ -636,6 +652,13 @@ function View() {
             <Spacer />
             <Text monospaced foregroundStyle="secondaryLabel">
               v{VERSION}
+            </Text>
+          </HStack>
+          <HStack>
+            <Text>本机行程</Text>
+            <Spacer />
+            <Text monospaced foregroundStyle="secondaryLabel">
+              {`${trips.length} 条`}
             </Text>
           </HStack>
           <VStack alignment="leading" spacing={4}>

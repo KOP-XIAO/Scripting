@@ -1,5 +1,10 @@
 # 行程提醒（Trip Reminder）
 
+> ⚠️ **重要**：本项目原名 `train-reminder`（高铁提醒，v1.0.0）。如果设备上装有旧的
+> 「Train Reminder / 高铁提醒」，请**先删除它**（它的远程更新地址已失效，永远不会再更新），
+> 只保留本「Trip Reminder / 行程提醒」。
+
+
 iOS [Scripting App](https://scriptingapp.github.io) 脚本：把**火车**与**航班**行程放到主屏幕小组件上——
 车次/航班号、出发到达、出发时间倒计时、检票口/登机口、座位号、登机时间、乘客姓名。
 

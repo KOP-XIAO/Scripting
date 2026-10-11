@@ -19,7 +19,11 @@ import { getTheme } from "./services/theme"
 
 const SCRIPT_NAME = "Trip Reminder"
 // 官方构造器：scripting://run_single/<name>（保证每次点按都重新执行入口文件）
-const RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME)
+// 某些预览上下文里该 API 可能不可用，失败则退化为不带跳转
+let RUN_URL = ""
+try {
+  RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME)
+} catch {}
 
 const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
 
@@ -74,9 +78,6 @@ function EmptyView() {
       </Text>
       <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>
         打开脚本，用「从相册选行程截图识别」导入火车票或机票截图即可
-      </Text>
-      <Text font="caption2" monospaced foregroundStyle={theme.sub}>
-        本机数据 · 不联网
       </Text>
     </VStack>
   )
@@ -159,9 +160,6 @@ function TripBody({ trip }: { trip: TripRecord }) {
           </Text>
         ) : null}
         <Spacer />
-        <Text font="caption2" monospaced foregroundStyle={theme.sub}>
-          本机数据 · 不联网
-        </Text>
       </HStack>
     </VStack>
   )
