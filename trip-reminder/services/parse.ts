@@ -1,0 +1,342 @@
+// services/parse.ts — 行程截图 OCR 文本 -> 结构化行程（火车 / 航班通用）
+// 纯函数模块：不引用任何 Scripting 全局对象，可在 Node 里直接跑断言（tools/test-parse.cjs）。
+// 隐私：本模块只做字符串处理，不含任何网络请求；识别结果仅交给调用方写入本机 Storage。
+
+export type TripMode = "rail" | "flight"
+
+export type ParsedTrip = {
+  mode: TripMode
+  code: string // 车次 G1234 / 航班号 CA1234
+  carrier: string // 复兴号 / 中国国际航空
+  fromPlace: string // 出发站 / 出发机场（含航站楼时如 北京首都T3）
+  toPlace: string // 到达站 / 到达机场
+  departDate: string // yyyy-MM-dd
+  departTime: string // HH:mm
+  arriveTime: string // HH:mm
+  durationMin: number
+  gate: string // 检票口（火车）/ 登机口（航班）
+  terminal: string // 航站楼（航班），火车留空
+  checkIn: string // 值机柜台（航班）
+  boardingTime: string // 登机时间（航班）
+  baggage: string // 行李转盘（航班）
+  seatCar: string // 车厢号（火车）
+  seatNo: string // 座位号，如 12A
+  seatClass: string // 二等座 / 经济舱
+  passenger: string
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0")
+const stripLeadingZero = (s: string) => s.replace(/^0+(\d)/, "$1")
+
+// 全角 -> 半角（OCR 常见混排），仅处理会干扰解析的符号与数字
+export function normalizeOCR(text: string): string {
+  return text
+    .replace(/[：]/g, ":")
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")")
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[ \t\u00a0]+/g, " ")
+    .replace(/\r/g, "")
+}
+
+// 航司名（含常见简称）
+const AIRLINES = [
+  "中国国际航空", "中国东方航空", "中国南方航空", "海南航空", "厦门航空", "深圳航空",
+  "四川航空", "吉祥航空", "春秋航空", "山东航空", "天津航空", "首都航空", "河北航空",
+  "国泰航空", "香港航空", "澳门航空", "中华航空", "长荣航空", "全日空", "日本航空",
+  "大韩航空", "韩亚航空", "新加坡航空", "酷航", "亚洲航空", "国航", "东航", "南航",
+  "海航", "厦航", "深航", "川航", "山航",
+]
+
+const FLIGHT_HINTS = /航班|登机口|登机时间|值机|航站楼|机场|承运人|舱|行李转盘/
+const RAIL_HINTS = /车次|检票口|候车|车厢|站台|复兴号|和谐号/
+
+export function detectMode(text: string): TripMode {
+  const up = text.toUpperCase()
+  const flight = FLIGHT_HINTS.test(text)
+  const rail = RAIL_HINTS.test(text)
+  if (flight && !rail) return "flight"
+  if (rail && !flight) return "rail"
+  // 都有线索时看号码形态：两字符航司码（CA1234 / 3U8888）优先判为航班
+  if (/\b(?:[A-Z]{2}|\d[A-Z]|[A-Z]\d)\d{3,4}\b/.test(up)) return "flight"
+  if (/\b[GDCZTKY]\d{1,4}\b/.test(up)) return "rail"
+  return "rail"
+}
+
+function pickTime(text: string): string[] {
+  const out: string[] = []
+  const re = /\b([01]?\d|2[0-3]):([0-5]\d)\b/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const t = `${pad2(Number(m[1]))}:${m[2]}`
+    if (!out.includes(t)) out.push(t)
+  }
+  return out
+}
+
+// 日期：2026-10-12 / 10月12日 / 10-12；缺年时用当年，若已过去 90 天以上则视为次年
+export function parseDate(text: string, now = new Date()): string {
+  let y = 0
+  let mo = 0
+  let d = 0
+  let m = text.match(/(\d{4})\s*[-/年]\s*(\d{1,2})\s*[-/月]\s*(\d{1,2})/)
+  if (m) {
+    y = Number(m[1])
+    mo = Number(m[2])
+    d = Number(m[3])
+  } else if ((m = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日?/))) {
+    mo = Number(m[1])
+    d = Number(m[2])
+  } else if ((m = text.match(/\b(\d{1,2})-(\d{1,2})\b/))) {
+    mo = Number(m[1])
+    d = Number(m[2])
+  }
+  if (!mo || !d) return ""
+  if (!y) {
+    y = now.getFullYear()
+    const guess = new Date(y, mo - 1, d, 23, 59, 59)
+    if (guess.getTime() < now.getTime() - 90 * 86400000) y += 1 // 跨年票据
+  }
+  return `${y}-${pad2(mo)}-${pad2(d)}`
+}
+
+// 历时：历时18分 / 历时 1小时20分 / 飞行时间 2小时15分
+export function parseDuration(text: string): number {
+  let m = text.match(/(?:历时|飞行时间|航程|时长)\s*(\d{1,3})\s*分(?:钟)?/)
+  if (m) return Number(m[1])
+  m = text.match(/(?:历时|飞行时间|航程|时长)\s*(?:(\d{1,2})\s*(?:小时|时))?\s*(\d{1,3})\s*分/)
+  if (m) return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)
+  m = text.match(/(?:历时|飞行时间|航程|时长)\s*(\d{1,2})\s*(?:小时|时)/)
+  if (m) return Number(m[1]) * 60
+  m = text.match(/\b(\d{1,2})\s*小时\s*(\d{1,3})\s*分/)
+  if (m) return Number(m[1]) * 60 + Number(m[2])
+  return 0
+}
+
+const cleanPlace = (s: string) =>
+  s.replace(/[（(].*?[)）]/g, "").replace(/[站\s]+$/, "").replace(/^[过终始发到]\s*[·.、]?\s*/, "").trim()
+
+// 火车车站：优先「过/终/始 + 站名」逐行规则，其次站点分隔符兜底
+function parseRailPlaces(text: string): { from: string; to: string } {
+  const fromList: string[] = []
+  const toList: string[] = []
+  for (const line of text.split("\n")) {
+    const m = line.trim().match(/^([过终始发到])\s*[·.、]?\s*([\u4e00-\u9fa5]{2,12})/)
+    if (!m) continue
+    const name = cleanPlace(m[2])
+    if (!name) continue
+    if (m[1] === "终" || m[1] === "到") toList.push(name)
+    else fromList.push(name)
+  }
+  if (fromList.length && toList.length) return { from: fromList[0], to: toList[0] }
+  // 两侧都用贪婪匹配：懒惰匹配会把「广州南」截成「广州」（离线测试抓到的真 bug）
+  const sep = text.match(/([\u4e00-\u9fa5]{2,12})\s*[→\-—~至]\s*([\u4e00-\u9fa5]{2,12})/)
+  if (sep) return { from: cleanPlace(sep[1]), to: cleanPlace(sep[2]) }
+  return { from: fromList[0] ?? "", to: toList[0] ?? "" }
+}
+
+// 机场：优先逐行找「出发 - 到达」区间（覆盖 北京首都T3 → 上海虹桥T2、成都天府T2 - 北京大兴），
+// 其次按「机场/航站楼/三字码」关键词扫描
+function parseFlightPlaces(text: string): { from: string; to: string; terminal: string } {
+  const norm = (v: string) => v.replace(/[（(].*?[)）]/g, "").replace(/[，,。;；、]+$/, "").trim()
+  // 两侧都得像地名：至少两字中文，或三字机场码（防止把 2026-10-12 这种日期当成区间）
+  const looksPlace = (v: string) => /[\u4e00-\u9fa5]{2}/.test(v) || /^[A-Z]{3}$/.test(v.trim())
+  const terminalOf = (a: string, b: string) => (a.match(/T[1-4]/) ?? b.match(/T[1-4]/) ?? [""])[0]
+
+  for (const line of text.split("\n")) {
+    const m = line.trim().match(/^(.{2,24}?)\s*(?:→|->|—|–|~|至|-)\s*(.{2,24})$/)
+    if (!m) continue
+    const from = norm(m[1])
+    const to = norm(m[2])
+    if (looksPlace(from) && looksPlace(to)) {
+      return { from, to, terminal: terminalOf(from, to) }
+    }
+  }
+
+  const airportish = /([\u4e00-\u9fa5]{2,10}(?:国际)?机场|\b[A-Z]{3}\b|[\u4e00-\u9fa5]{2,8}(?=T[1-4]))(T[1-4])?/g
+  const found: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = airportish.exec(text)) !== null) {
+    const name = (m[1] + (m[2] ?? "")).trim()
+    if (name && !found.includes(name)) found.push(name)
+  }
+  return { from: found[0] ?? "", to: found[1] ?? "", terminal: terminalOf(found[0] ?? "", found[1] ?? "") }
+}
+
+function parseRail(text: string, flat: string, now: Date): ParsedTrip {
+  const places = parseRailPlaces(text)
+  const times = pickTime(flat)
+  const code = (flat.match(/\b([GDCZTKY]\s?\d{1,4})\b/) ?? ["", ""])[1].replace(/\s+/g, "")
+  const carrier = (flat.match(/(复兴号|和谐号|智能动车组|绿巨人)/) ?? ["", ""])[1]
+
+  const gateM = flat.match(/检票口\s*[:\s]*([0-9]{1,2}\s*[A-Za-z]{1,2}|[A-Za-z]{1,2}\s*[0-9]{1,2}|[0-9]{1,3})/)
+  const gate = gateM ? gateM[1].replace(/\s+/g, "").toUpperCase() : ""
+
+  let seatCar = ""
+  let seatNo = ""
+  const seatM = flat.match(/(\d{1,2})\s*车(?:厢)?\s*([0-9]{1,3}\s*[A-Fa-f]?)/)
+  if (seatM) {
+    seatCar = stripLeadingZero(seatM[1])
+    seatNo = seatM[2].replace(/\s+/g, "").toUpperCase()
+  } else {
+    const carOnly = flat.match(/(\d{1,2})\s*车(?:厢)?/)
+    if (carOnly) seatCar = stripLeadingZero(carOnly[1])
+  }
+  const seatClass = (flat.match(/(商务座|特等座|一等座|二等座|无座|硬座|软座|硬卧|软卧|动卧)/) ?? ["", ""])[1]
+
+  const passenger = (flat.match(/乘车人\s*[:\s]*([\u4e00-\u9fa5]{1,6}|[A-Za-z]{2,20})/) ?? ["", ""])[1]
+
+  return {
+    mode: "rail",
+    code,
+    carrier,
+    fromPlace: places.from,
+    toPlace: places.to,
+    departDate: parseDate(flat, now),
+    departTime: times[0] ?? "",
+    arriveTime: times[1] ?? "",
+    durationMin: parseDuration(flat),
+    gate,
+    terminal: "",
+    checkIn: "",
+    boardingTime: "",
+    baggage: "",
+    seatCar,
+    seatNo,
+    seatClass,
+    passenger,
+  }
+}
+
+function parseFlight(text: string, flat: string, now: Date): ParsedTrip {
+  const up = flat.toUpperCase() // 号码/闸口等拉丁字段大小写无关
+  const places = parseFlightPlaces(text)
+
+  // 先摘出登机时间，避免被当成起飞/到达时间
+  const boardingTime = (up.match(/登机时间\s*[:\s]*([01]?\d|2[0-3]):([0-5]\d)/) ?? []).slice(1)
+  let timesSource = flat
+  if (boardingTime.length === 2) {
+    timesSource = flat.replace(/登机时间\s*[:\s]*[01]?\d:[0-5]\d/, " ")
+  }
+  const times = pickTime(timesSource)
+
+  const code = (up.match(/\b((?:[A-Z]{2}|\d[A-Z]|[A-Z]\d)\s?\d{3,4})\b/) ?? ["", ""])[1].replace(/\s+/g, "")
+  const carrier =
+    AIRLINES.find((a) => flat.includes(a)) ??
+    (flat.match(/([\u4e00-\u9fa5]{2,8}航空(?:公司)?)/) ?? ["", ""])[1]
+
+  const gateM = up.match(/登机口\s*[:\s]*([A-Z]?\d{1,3}[A-Z]?)/)
+  const gate = gateM ? gateM[1].toUpperCase() : ""
+
+  const checkM = up.match(/值机柜台\s*[:\s]*([A-Z]?\d{1,3}\s*[-~—]\s*[A-Z]?\d{1,3}|[A-Z]?\d{1,3})/)
+  const checkIn = checkM ? checkM[1].replace(/\s+/g, "") : ""
+
+  const seatM = up.match(/座位\s*(?:号)?\s*[:\s]*(\d{1,3}\s*[A-Z])/)
+  const seatNo = seatM ? seatM[1].replace(/\s+/g, "") : ""
+  const seatClass = (flat.match(/(超级经济舱|经济舱|公务舱|商务舱|头等舱)/) ?? ["", ""])[1]
+
+  const baggage = (flat.match(/行李(?:转盘|提取处|转盘号)\s*[:\s]*(\d{1,2})/) ?? ["", ""])[1]
+  const passenger = (flat.match(/(?:乘机人|旅客|乘客)\s*[:\s]*([\u4e00-\u9fa5]{1,6}|[A-Za-z]{2,20})/) ?? ["", ""])[1]
+  const terminal = places.terminal || (flat.match(/\b(T[1-4])\b/) ?? ["", ""])[1]
+
+  return {
+    mode: "flight",
+    code,
+    carrier,
+    fromPlace: places.from,
+    toPlace: places.to,
+    departDate: parseDate(flat, now),
+    departTime: times[0] ?? "",
+    arriveTime: times[1] ?? "",
+    durationMin: parseDuration(flat),
+    gate,
+    terminal,
+    checkIn,
+    boardingTime: boardingTime.length === 2 ? `${boardingTime[0]}:${boardingTime[1]}` : "",
+    baggage,
+    seatCar: "",
+    seatNo,
+    seatClass,
+    passenger,
+  }
+}
+
+export function parseTripText(rawText: string, now = new Date(), modeHint: TripMode | "auto" = "auto"): ParsedTrip {
+  const text = normalizeOCR(rawText)
+  const flat = text.replace(/\n/g, " ")
+  const mode = modeHint === "auto" ? detectMode(flat) : modeHint
+  return mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now)
+}
+
+// -------------------------------------------------------------
+// 展示辅助（纯函数，widget 与 App 共用）
+// -------------------------------------------------------------
+type TimeLike = { departDate: string; departTime: string; durationMin: number }
+
+export function departTimestamp(trip: { departDate: string; departTime: string }): number {
+  if (!trip.departDate || !trip.departTime) return 0
+  const t = new Date(`${trip.departDate}T${trip.departTime}:00`).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+export function arriveTimestamp(trip: { departDate: string; departTime: string; durationMin: number }): number {
+  const dep = departTimestamp(trip)
+  if (!dep) return 0
+  return dep + Math.max(0, trip.durationMin) * 60000
+}
+
+export function countdownText(trip: TimeLike, now = Date.now()): string {
+  const dep = departTimestamp(trip)
+  if (!dep) return "待补全时间"
+  const arr = arriveTimestamp(trip)
+  if (arr && now >= arr) return "行程已结束"
+  if (now >= dep) return "行程中"
+  const min = Math.round((dep - now) / 60000)
+  if (min <= 0) return "即将出发"
+  if (min < 60) return `${min} 分钟后出发`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m === 0 ? `${h} 小时后出发` : `${h} 小时 ${m} 分后出发`
+}
+
+export function weekdayText(dateStr: string): string {
+  if (!dateStr) return ""
+  const d = new Date(`${dateStr}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return ""
+  return "周" + "日一二三四五六"[d.getDay()]
+}
+
+export function monthDayText(dateStr: string): string {
+  if (!dateStr) return ""
+  const m = dateStr.match(/^\d{4}-(\d{2})-(\d{2})$/)
+  if (!m) return dateStr
+  return `${Number(m[1])}月${Number(m[2])}日`
+}
+
+export function gateLabel(mode: TripMode): string {
+  return mode === "flight" ? "登机口" : "检票口"
+}
+
+export function carrierLabel(mode: TripMode): string {
+  return mode === "flight" ? "航空公司" : "车型"
+}
+
+export function placeLabel(mode: TripMode): string {
+  return mode === "flight" ? "机场" : "车站"
+}
+
+export function seatText(trip: { mode: TripMode; seatCar: string; seatNo: string; seatClass: string }): string {
+  if (trip.mode === "flight") {
+    return [trip.seatNo, trip.seatClass].filter(Boolean).join(" ") || "—"
+  }
+  const seat = [trip.seatCar ? `${trip.seatCar}车` : "", trip.seatNo].filter(Boolean).join("")
+  return [seat, trip.seatClass].filter(Boolean).join(" ") || "—"
+}
+
+export function routeText(trip: { fromPlace: string; toPlace: string }): string {
+  return `${trip.fromPlace || "—"} → ${trip.toPlace || "—"}`
+}
+
+export function modeLabel(mode: TripMode): string {
+  return mode === "flight" ? "航班" : "火车"
+}

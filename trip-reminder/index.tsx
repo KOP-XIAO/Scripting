@@ -1,5 +1,5 @@
-// index.tsx — 高铁提醒（App 内页面）
-// 结构：NavigationStack + List 分 Section：下一班 / 识别行程 / 行程列表 / 设置 / 关于
+// index.tsx — 行程提醒（火车 + 航班，App 内页面）
+// 结构：NavigationStack + List 分 Section：下一班 / 识别录入 / 行程列表 / 设置 / 关于
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()
 //
 // 隐私：本脚本不发起任何网络请求。行程数据只写入本机 Storage（rail.* 键），
@@ -28,15 +28,20 @@ import {
   useState,
 } from "scripting"
 import {
-  parseTripText,
+  arriveTimestamp,
+  carrierLabel,
   countdownText,
   departTimestamp,
-  arriveTimestamp,
+  gateLabel,
   monthDayText,
+  modeLabel,
+  parseTripText,
+  placeLabel,
   routeText,
   seatText,
   weekdayText,
   type ParsedTrip,
+  type TripMode,
 } from "./services/parse"
 import {
   clearTrips,
@@ -47,35 +52,37 @@ import {
   nextTrip,
   setShowPassenger,
   upsertTrip,
-  type TrainTrip,
+  type TripRecord,
 } from "./services/trips"
 import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/ocr"
 import { THEMES, getTheme, getThemeKey, setThemeKey, type ThemeKey } from "./services/theme"
 import { VERSION } from "./utils/common"
 
+const TRIP_MODES: TripMode[] = ["rail", "flight"]
+
 const EMPTY_DRAFT: ParsedTrip = {
-  trainNo: "",
-  trainType: "",
-  fromStation: "",
-  toStation: "",
+  mode: "rail",
+  code: "",
+  carrier: "",
+  fromPlace: "",
+  toPlace: "",
   departDate: "",
   departTime: "",
   arriveTime: "",
   durationMin: 0,
   gate: "",
+  terminal: "",
+  checkIn: "",
+  boardingTime: "",
+  baggage: "",
   seatCar: "",
   seatNo: "",
   seatClass: "",
   passenger: "",
 }
 
-// 表单字段：标签 + 输入框（上一项目的可靠排版方式）
-function Field(props: {
-  label: string
-  value: string
-  prompt?: string
-  onChanged: (v: string) => void
-}) {
+// 表单字段：标签 + 输入框
+function Field(props: { label: string; value: string; prompt?: string; onChanged: (v: string) => void }) {
   return (
     <VStack alignment="leading" spacing={2}>
       <Text font="caption" foregroundStyle="secondaryLabel">
@@ -90,8 +97,7 @@ function View() {
   const dismiss = Navigation.useDismiss()
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
   const [showPassenger, setShowPassengerLocal] = useState<boolean>(getShowPassenger())
-  const [trips, setTrips] = useState<TrainTrip[]>(listTrips())
-  // 草稿：OCR 识别或编辑既有行程后进入待保存状态
+  const [trips, setTrips] = useState<TripRecord[]>(listTrips())
   const [draft, setDraft] = useState<ParsedTrip | null>(null)
   const [draftId, setDraftId] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState("")
@@ -106,6 +112,7 @@ function View() {
 
   const theme = getTheme()
   const upcoming = nextTrip(now)
+  const isFlight = draft?.mode === "flight"
 
   const refresh = () => setTrips(listTrips())
   const patch = (p: Partial<ParsedTrip>) => setDraft((d) => (d ? { ...d, ...p } : d))
@@ -118,9 +125,8 @@ function View() {
         if (res.reason !== "cancelled") await Dialog.alert({ title: "识别未完成", message: res.message })
         return
       }
-      const parsed = parseTripText(res.text)
       setRawText(res.text)
-      setDraft(parsed)
+      setDraft(parseTripText(res.text)) // 自动判别火车 / 航班
       setDraftId(null)
       setDraftNote("")
     } finally {
@@ -128,14 +134,14 @@ function View() {
     }
   }
 
-  const startManual = () => {
+  const startManual = (mode: TripMode) => {
     setRawText("")
-    setDraft({ ...EMPTY_DRAFT })
+    setDraft({ ...EMPTY_DRAFT, mode })
     setDraftId(null)
     setDraftNote("")
   }
 
-  const editTrip = (t: TrainTrip) => {
+  const editTrip = (t: TripRecord) => {
     setRawText("")
     setDraft({ ...t })
     setDraftId(t.id)
@@ -144,12 +150,12 @@ function View() {
 
   const saveDraft = () => {
     if (!draft) return
-    if (!draft.trainNo && !draft.departTime) {
-      void Dialog.alert({ message: "至少要有车次或发车时间，否则小组件没东西可显示" })
+    if (!draft.code && !draft.departTime) {
+      void Dialog.alert({ message: "至少要有车次/航班号或出发时间，否则小组件没东西可显示" })
       return
     }
     const existing = draftId ? trips.find((t) => t.id === draftId) : undefined
-    const trip: TrainTrip = {
+    const trip: TripRecord = {
       ...draft,
       id: draftId ?? newTripId(),
       note: draftNote,
@@ -163,9 +169,9 @@ function View() {
     refresh()
   }
 
-  const removeTrip = async (t: TrainTrip) => {
+  const tripActions = async (t: TripRecord) => {
     const idx = await Dialog.actionSheet({
-      title: `${t.trainNo || "行程"} ${routeText(t)}`,
+      title: `${t.code || modeLabel(t.mode)} ${routeText(t)}`,
       message: `${monthDayText(t.departDate)} ${weekdayText(t.departDate)} ${t.departTime}`.trim(),
       actions: [{ label: "编辑" }, { label: "删除", destructive: true }],
       cancelButton: true,
@@ -179,12 +185,13 @@ function View() {
     refresh()
   }
 
-  const draftTrainLabel = draft?.trainNo || (draftId ? "编辑行程" : "新行程")
+  const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
+  const draftTitle = draft?.code || (draftId ? "编辑行程" : `新${isFlight ? "航班" : "火车"}行程`)
 
   return (
     <NavigationStack>
       <List
-        navigationTitle={`高铁提醒 | v${VERSION}`}
+        navigationTitle={`行程提醒 | v${VERSION}`}
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
@@ -192,12 +199,12 @@ function View() {
       >
         {/* ---------------- 下一班 ---------------- */}
         <Section
-          title="下一班"
+          title="下一段行程"
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
               {upcoming
                 ? countdownText(upcoming, now) + "　·　小组件显示的就是这一条"
-                : "还没有行程。用下面的「截图识别」导一张 12306 行程截图即可。"}
+                : "还没有行程。用下面的「从截图识别」导入 12306 或航司行程截图即可。"}
             </Text>
           }
         >
@@ -211,12 +218,13 @@ function View() {
               clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
             >
               <HStack spacing={6}>
+                <Image systemName={modeIcon(upcoming.mode)} font={13} foregroundStyle={theme.accent} />
                 <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.accent}>
-                  {upcoming.trainNo || "—"}
+                  {upcoming.code || "—"}
                 </Text>
-                {upcoming.trainType ? (
+                {upcoming.carrier ? (
                   <Text font="caption2" foregroundStyle={theme.warn}>
-                    {upcoming.trainType}
+                    {upcoming.carrier}
                   </Text>
                 ) : null}
                 <Spacer />
@@ -229,8 +237,8 @@ function View() {
                   <Text font="title3" monospaced foregroundStyle={theme.ink}>
                     {upcoming.departTime || "--:--"}
                   </Text>
-                  <Text font="caption" foregroundStyle={theme.ink}>
-                    {upcoming.fromStation || "—"}
+                  <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
+                    {upcoming.fromPlace || "—"}
                   </Text>
                 </VStack>
                 <Image systemName="arrow.right" font={12} foregroundStyle={theme.sub} />
@@ -238,19 +246,24 @@ function View() {
                   <Text font="title3" monospaced foregroundStyle={theme.ink}>
                     {upcoming.arriveTime || "--:--"}
                   </Text>
-                  <Text font="caption" foregroundStyle={theme.ink}>
-                    {upcoming.toStation || "—"}
+                  <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
+                    {upcoming.toPlace || "—"}
                   </Text>
                 </VStack>
                 <Spacer />
               </HStack>
               <HStack spacing={12}>
                 <Text font="caption" foregroundStyle={theme.ink}>
-                  检票口 {upcoming.gate || "—"}
+                  {gateLabel(upcoming.mode)} {upcoming.gate || "—"}
                 </Text>
                 <Text font="caption" foregroundStyle={theme.ink}>
                   座位 {seatText(upcoming)}
                 </Text>
+                {upcoming.mode === "flight" && upcoming.boardingTime ? (
+                  <Text font="caption" foregroundStyle={theme.warn}>
+                    登机 {upcoming.boardingTime}
+                  </Text>
+                ) : null}
                 {showPassenger && upcoming.passenger ? (
                   <Text font="caption" foregroundStyle={theme.sub}>
                     {upcoming.passenger}
@@ -268,20 +281,30 @@ function View() {
           title="识别行程"
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              在本机完成识别（iOS Vision），图片不落盘、不上传；也可以直接手填。识别后请核对一遍再保存。
+              本机识别（iOS Vision），图片不落盘、不上传；火车票与机票截图都能认，也可以手填。
+              识别后请核对一遍再保存。
             </Text>
           }
         >
           <HStack>
-            <Button
-              title={busy ? "识别中…" : "从截图识别"}
-              disabled={busy}
-              action={() => void runOCR("photos")}
-            />
+            <Button title={busy ? "识别中…" : "从截图识别"} disabled={busy} action={() => void runOCR("photos")} />
             <Spacer />
             <Button title="相机扫描" disabled={busy} action={() => void runOCR("camera")} />
-            <Spacer />
-            <Button title="手动新建" disabled={busy} action={startManual} />
+          </HStack>
+          <HStack spacing={0}>
+            {TRIP_MODES.flatMap((m, i) => {
+              const chip = (
+                <Button key={m} buttonStyle="plain" action={() => startManual(m)}>
+                  <HStack spacing={5}>
+                    <Image systemName={modeIcon(m)} font={12} foregroundStyle={theme.accent} />
+                    <Text font="caption" foregroundStyle={theme.accent}>
+                      {`手动新建${modeLabel(m)}`}
+                    </Text>
+                  </HStack>
+                </Button>
+              )
+              return i === 0 ? [chip] : [<Spacer key={`sp-${m}`} />, chip]
+            })}
           </HStack>
 
           {draft ? (
@@ -293,10 +316,10 @@ function View() {
               background={theme.accentSoft}
               clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
             >
-              <HStack>
-                <Image systemName="checklist" font={12} foregroundStyle={theme.accent} />
+              <HStack spacing={6}>
+                <Image systemName={isFlight ? "airplane.departure" : "tram.fill"} font={12} foregroundStyle={theme.accent} />
                 <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.ink}>
-                  {`核对 ${draftTrainLabel}`}
+                  {`核对 ${draftTitle}`}
                 </Text>
                 <Spacer />
                 <Text font="caption2" foregroundStyle={theme.sub}>
@@ -304,17 +327,45 @@ function View() {
                 </Text>
               </HStack>
 
+              {/* 类型切换 */}
+              <HStack spacing={0}>
+                {TRIP_MODES.flatMap((m, i) => {
+                  const selected = draft.mode === m
+                  const chip = (
+                    <Button
+                      key={m}
+                      buttonStyle="plain"
+                      action={() =>
+                        patch({ mode: m, ...(m === "rail" ? { terminal: "", checkIn: "", boardingTime: "", baggage: "" } : { seatCar: "" }) })
+                      }
+                    >
+                      <Text
+                        font="caption"
+                        fontWeight={selected ? "semibold" : "regular"}
+                        foregroundStyle={selected ? theme.accent : theme.sub}
+                        padding={{ top: 2, bottom: 2, leading: 8, trailing: 8 }}
+                        background={selected ? theme.accentSoft : "rgba(127,127,127,0.10)"}
+                        clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
+                      >
+                        {modeLabel(m)}
+                      </Text>
+                    </Button>
+                  )
+                  return i === 0 ? [chip] : [<Spacer key={`sm-${m}`} />, chip]
+                })}
+              </HStack>
+
               <HStack spacing={10}>
-                <Field label="车次" value={draft.trainNo} prompt="G1234"
-                  onChanged={(v) => patch({ trainNo: v.replace(/\s+/g, "").toUpperCase() })} />
-                <Field label="车型" value={draft.trainType} prompt="复兴号"
-                  onChanged={(v) => patch({ trainType: v })} />
+                <Field label={isFlight ? "航班号" : "车次"} value={draft.code} prompt={isFlight ? "CA1234" : "G1234"}
+                  onChanged={(v) => patch({ code: v.replace(/\s+/g, "").toUpperCase() })} />
+                <Field label={carrierLabel(draft.mode)} value={draft.carrier} prompt={isFlight ? "中国国际航空" : "复兴号"}
+                  onChanged={(v) => patch({ carrier: v })} />
               </HStack>
               <HStack spacing={10}>
-                <Field label="出发站" value={draft.fromStation} prompt="北京南"
-                  onChanged={(v) => patch({ fromStation: v })} />
-                <Field label="到达站" value={draft.toStation} prompt="上海虹桥"
-                  onChanged={(v) => patch({ toStation: v })} />
+                <Field label={`出发${placeLabel(draft.mode)}`} value={draft.fromPlace}
+                  prompt={isFlight ? "北京首都T3" : "北京南"} onChanged={(v) => patch({ fromPlace: v })} />
+                <Field label={`到达${placeLabel(draft.mode)}`} value={draft.toPlace}
+                  prompt={isFlight ? "上海虹桥T2" : "上海虹桥"} onChanged={(v) => patch({ toPlace: v })} />
               </HStack>
               <HStack spacing={10}>
                 <Field label="日期" value={draft.departDate} prompt="2026-10-12"
@@ -323,28 +374,52 @@ function View() {
                   onChanged={(v) => patch({ durationMin: Math.max(0, Number(v) || 0) })} />
               </HStack>
               <HStack spacing={10}>
-                <Field label="发车" value={draft.departTime} prompt="08:32"
+                <Field label={isFlight ? "起飞" : "发车"} value={draft.departTime} prompt="08:32"
                   onChanged={(v) => patch({ departTime: v.trim() })} />
-                <Field label="到达" value={draft.arriveTime} prompt="08:50"
+                <Field label={isFlight ? "到达" : "到达"} value={draft.arriveTime} prompt="08:50"
                   onChanged={(v) => patch({ arriveTime: v.trim() })} />
               </HStack>
+
+              {/* 航班专属字段 */}
+              {isFlight ? (
+                <HStack spacing={10}>
+                  <Field label="登机口" value={draft.gate} prompt="C12"
+                    onChanged={(v) => patch({ gate: v.trim().toUpperCase() })} />
+                  <Field label="航站楼" value={draft.terminal} prompt="T3"
+                    onChanged={(v) => patch({ terminal: v.trim().toUpperCase() })} />
+                </HStack>
+              ) : (
+                <HStack spacing={10}>
+                  <Field label="检票口" value={draft.gate} prompt="6A"
+                    onChanged={(v) => patch({ gate: v.trim().toUpperCase() })} />
+                  <Field label="车厢" value={draft.seatCar} prompt="5"
+                    onChanged={(v) => patch({ seatCar: v.replace(/\D/g, "") })} />
+                </HStack>
+              )}
+              {isFlight ? (
+                <HStack spacing={10}>
+                  <Field label="登机时间" value={draft.boardingTime} prompt="07:20"
+                    onChanged={(v) => patch({ boardingTime: v.trim() })} />
+                  <Field label="值机柜台" value={draft.checkIn} prompt="H01-H10"
+                    onChanged={(v) => patch({ checkIn: v.trim().toUpperCase() })} />
+                </HStack>
+              ) : null}
+
               <HStack spacing={10}>
-                <Field label="检票口" value={draft.gate} prompt="6A"
-                  onChanged={(v) => patch({ gate: v.trim().toUpperCase() })} />
-                <Field label="车厢" value={draft.seatCar} prompt="5"
-                  onChanged={(v) => patch({ seatCar: v.replace(/\D/g, "") })} />
-              </HStack>
-              <HStack spacing={10}>
-                <Field label="座位号" value={draft.seatNo} prompt="12A"
+                <Field label="座位号" value={draft.seatNo} prompt={isFlight ? "32A" : "12A"}
                   onChanged={(v) => patch({ seatNo: v.trim().toUpperCase() })} />
-                <Field label="座别" value={draft.seatClass} prompt="二等座"
+                <Field label={isFlight ? "舱位" : "座别"} value={draft.seatClass} prompt={isFlight ? "经济舱" : "二等座"}
                   onChanged={(v) => patch({ seatClass: v })} />
               </HStack>
+              {isFlight ? (
+                <Field label="行李转盘" value={draft.baggage} prompt="可留空"
+                  onChanged={(v) => patch({ baggage: v.replace(/\D/g, "") })} />
+              ) : null}
+
               <HStack spacing={10}>
-                <Field label="乘车人" value={draft.passenger} prompt="可留空"
+                <Field label={isFlight ? "乘机人" : "乘车人"} value={draft.passenger} prompt="可留空"
                   onChanged={(v) => patch({ passenger: v })} />
-                <Field label="备注" value={draftNote} prompt="如：接人 / 报销"
-                  onChanged={setDraftNote} />
+                <Field label="备注" value={draftNote} prompt="如：接人 / 报销" onChanged={setDraftNote} />
               </HStack>
 
               <HStack>
@@ -370,7 +445,7 @@ function View() {
           title={`行程列表 (${trips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              点按行程可编辑或删除；小组件自动显示发车时间最近的一条，过期后自动切到下一条。
+              点按行程可编辑或删除；小组件自动显示时间最近的一条（火车与航班混排），过期后自动切下一条。
             </Text>
           }
         >
@@ -382,15 +457,15 @@ function View() {
               const arr = arriveTimestamp(t)
               const expired = arr > 0 && now >= arr
               return (
-                <VStack
-                  key={t.id}
-                  alignment="leading"
-                  spacing={3}
-                  onTapGesture={() => void removeTrip(t)}
-                >
+                <VStack key={t.id} alignment="leading" spacing={3} onTapGesture={() => void tripActions(t)}>
                   <HStack spacing={6}>
+                    <Image
+                      systemName={modeIcon(t.mode)}
+                      font={12}
+                      foregroundStyle={expired ? "secondaryLabel" : theme.accent}
+                    />
                     <Text font="headline" monospaced foregroundStyle={expired ? "secondaryLabel" : theme.accent}>
-                      {t.trainNo || "—"}
+                      {t.code || "—"}
                     </Text>
                     <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
                       {routeText(t)}
@@ -402,14 +477,15 @@ function View() {
                     {[
                       `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
                       `${t.departTime || "--:--"} → ${t.arriveTime || "--:--"}`,
-                      t.gate ? `检票口 ${t.gate}` : "",
+                      t.terminal ? t.terminal : "",
+                      t.gate ? `${gateLabel(t.mode)} ${t.gate}` : "",
                       seatText(t) === "—" ? "" : seatText(t),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
                   </Text>
                   <Text font="caption2" foregroundStyle={expired ? "tertiaryLabel" : theme.warn}>
-                    {dep ? countdownText(t, now) : "待补全发车时间"}
+                    {dep ? countdownText(t, now) : "待补全出发时间"}
                     {t.note ? `　·　${t.note}` : ""}
                   </Text>
                 </VStack>
@@ -423,7 +499,7 @@ function View() {
               action={async () => {
                 const ok = await Dialog.confirm({
                   title: "清空全部行程",
-                  message: "只删除本机记录，不影响 12306。",
+                  message: "只删除本机记录，不影响 12306 / 航司 App。",
                   confirmLabel: "清空",
                 })
                 if (ok) {
@@ -440,12 +516,12 @@ function View() {
           title="设置"
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              小组件会显示乘车人姓名；若不想在主屏幕展示，关掉此项即可。
+              小组件会显示乘客姓名；若不想在主屏幕展示，关掉此项即可。
             </Text>
           }
         >
           <Toggle
-            title="小组件显示乘车人"
+            title="小组件显示乘客姓名"
             value={showPassenger}
             onChanged={(v) => {
               setShowPassengerLocal(v)
@@ -467,11 +543,7 @@ function View() {
                 >
                   <VStack spacing={4}>
                     <ZStack frame={{ width: 64, height: 44 }}>
-                      <RoundedRectangle
-                        frame={{ width: 64, height: 44 }}
-                        cornerRadius={9}
-                        fill={t.cardTop}
-                      />
+                      <RoundedRectangle frame={{ width: 64, height: 44 }} cornerRadius={9} fill={t.cardTop} />
                       <RoundedRectangle
                         frame={{ width: 28, height: 8 }}
                         cornerRadius={4}

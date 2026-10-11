@@ -1,10 +1,10 @@
-// services/trips.ts — 行程的本机存储与"下一班"选择
+// services/trips.ts — 行程的本机存储与「下一班」选择（火车 / 航班通用）
 // Storage / Widget 为全局对象，禁止从 scripting 导入。
-// 隐私：数据只写入本机 Storage（vdl 无关的独立键 rail.*），不发起任何网络请求。
+// 隐私：数据只写入本机 Storage（rail.* 键），不发起任何网络请求。
 
 import { type ParsedTrip, arriveTimestamp, departTimestamp } from "./parse"
 
-export type TrainTrip = ParsedTrip & {
+export type TripRecord = ParsedTrip & {
   id: string
   note: string
   createdAt: string
@@ -13,16 +13,16 @@ export type TrainTrip = ParsedTrip & {
 const KEY = "rail.trips"
 const SHOW_PASSENGER_KEY = "rail.showPassenger"
 
-function read(): TrainTrip[] {
+function read(): TripRecord[] {
   try {
-    const v = Storage.get<TrainTrip[]>(KEY)
+    const v = Storage.get<TripRecord[]>(KEY)
     return Array.isArray(v) ? v.filter((t) => t && typeof t === "object") : []
   } catch {
     return []
   }
 }
 
-function write(list: TrainTrip[]) {
+function write(list: TripRecord[]) {
   try {
     Storage.set(KEY, list)
   } catch {}
@@ -31,11 +31,11 @@ function write(list: TrainTrip[]) {
   } catch {}
 }
 
-export function listTrips(): TrainTrip[] {
+export function listTrips(): TripRecord[] {
   return read().sort((a, b) => departTimestamp(a) - departTimestamp(b))
 }
 
-export function upsertTrip(trip: TrainTrip): TrainTrip[] {
+export function upsertTrip(trip: TripRecord): TripRecord[] {
   const list = read()
   const i = list.findIndex((t) => t.id === trip.id)
   if (i >= 0) list[i] = trip
@@ -44,12 +44,12 @@ export function upsertTrip(trip: TrainTrip): TrainTrip[] {
   return listTrips()
 }
 
-export function deleteTrip(id: string): TrainTrip[] {
+export function deleteTrip(id: string): TripRecord[] {
   write(read().filter((t) => t.id !== id))
   return listTrips()
 }
 
-export function clearTrips(): TrainTrip[] {
+export function clearTrips(): TripRecord[] {
   write([])
   return []
 }
@@ -58,8 +58,8 @@ export function newTripId(): string {
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
-// 下一班：发车时间最近的"还没结束"的行程；都结束了则返回最后一条（便于回看）
-export function nextTrip(now = Date.now()): TrainTrip | null {
+// 下一班：发车/起飞时间最近的「还没结束」的行程；都结束了则返回最后一条（便于回看）
+export function nextTrip(now = Date.now()): TripRecord | null {
   const list = listTrips()
   if (!list.length) return null
   const upcoming = list.find((t) => {
@@ -87,7 +87,7 @@ export function setShowPassenger(on: boolean) {
   } catch {}
 }
 
-// 小组件与 App 共享的轻量快照（widget 进程读 Storage 即可，这里只是语义别名）
-export function widgetSnapshot(): { trip: TrainTrip | null; showPassenger: boolean } {
+// 小组件与 App 共享的轻量快照
+export function widgetSnapshot(): { trip: TripRecord | null; showPassenger: boolean } {
   return { trip: nextTrip(), showPassenger: getShowPassenger() }
 }

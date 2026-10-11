@@ -1,4 +1,4 @@
-// widget.tsx — 主屏幕小组件（中号为主）：车次 / 区间 / 发车时间 / 倒计时 / 检票口 / 座位
+// widget.tsx — 主屏幕小组件（中号为主）：车次/航班号 · 出发到达 · 时间 · 倒计时 · 检票口/登机口 · 座位
 // 数据源：Storage 里的本机行程（rail.trips，由 app 侧写入）——widget 扩展进程读不到 App
 // 文档目录，Storage 是同脚本跨进程共享的可靠通道。
 //
@@ -6,13 +6,22 @@
 // 全局对象（禁止从 scripting 导入）：Storage
 
 import { HStack, Image, RoundedRectangle, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
-import { countdownText, monthDayText, seatText, weekdayText } from "./services/parse"
-import { nextTrip, getShowPassenger, type TrainTrip } from "./services/trips"
+import {
+  countdownText,
+  gateLabel,
+  monthDayText,
+  seatText,
+  weekdayText,
+  type TripMode,
+} from "./services/parse"
+import { getShowPassenger, nextTrip, type TripRecord } from "./services/trips"
 import { getTheme } from "./services/theme"
 
-const SCRIPT_NAME = "Train Reminder"
+const SCRIPT_NAME = "Trip Reminder"
 // 官方构造器：scripting://run_single/<name>（保证每次点按都重新执行入口文件）
 const RUN_URL = Script.createRunSingleURLScheme(SCRIPT_NAME)
+
+const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
 
 function Badge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
   return (
@@ -30,40 +39,60 @@ function Badge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
   )
 }
 
-function EmptyView({ theme }: { theme: ReturnType<typeof getTheme> }) {
+function Background() {
+  const theme = getTheme()
+  return (
+    <VStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+      background={{
+        gradient: [
+          { color: theme.cardTop, location: 0 },
+          { color: theme.cardBottom, location: 1 },
+        ],
+        startPoint: { x: 0, y: 0 },
+        endPoint: { x: 1, y: 1 },
+      } as any}
+    >
+      <Spacer />
+    </VStack>
+  )
+}
+
+function EmptyView() {
+  const theme = getTheme()
   return (
     <VStack alignment="leading" spacing={6}>
       <HStack spacing={6}>
         <Image systemName="tram.fill" font={14} foregroundStyle={theme.accent} />
+        <Image systemName="airplane.departure" font={14} foregroundStyle={theme.accent} />
         <Text font="headline" fontWeight="bold" foregroundStyle={theme.ink} monospaced>
-          TRAIN REMINDER
+          TRIP REMINDER
         </Text>
       </HStack>
       <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.ink}>
         暂无行程
       </Text>
       <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>
-        打开脚本，用「从截图识别」导入 12306 行程截图即可
+        打开脚本，用「从截图识别」导入火车票或机票截图即可
       </Text>
     </VStack>
   )
 }
 
-function TripBody({ trip, theme, showPassenger }: {
-  trip: TrainTrip
-  theme: ReturnType<typeof getTheme>
-  showPassenger: boolean
-}) {
+function TripBody({ trip, showPassenger }: { trip: TripRecord; showPassenger: boolean }) {
+  const theme = getTheme()
   const countdown = countdownText(trip)
-  const soon = countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
+  const soon =
+    countdown.includes("分钟") || countdown.includes("即将") || countdown === "行程中"
   return (
     <VStack alignment="leading" spacing={8}>
-      {/* 抬头：车次徽标 + 车型 + 日期 */}
+      {/* 抬头：号码徽标 + 承运人/车型 + 日期 */}
       <HStack spacing={6}>
-        <Badge text={trip.trainNo || "—"} bg={theme.accent} fg="#FFFFFF" />
-        {trip.trainType ? (
-          <Text font="caption2" foregroundStyle={theme.warn}>
-            {trip.trainType}
+        <Image systemName={modeIcon(trip.mode)} font={13} foregroundStyle={theme.accent} />
+        <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
+        {trip.carrier ? (
+          <Text font="caption2" foregroundStyle={theme.warn} lineLimit={1}>
+            {trip.carrier}
           </Text>
         ) : null}
         <Spacer />
@@ -72,14 +101,14 @@ function TripBody({ trip, theme, showPassenger }: {
         </Text>
       </HStack>
 
-      {/* 时间与车站 */}
+      {/* 时间与地点 */}
       <HStack spacing={10} frame={{ maxWidth: "infinity" } as never}>
         <VStack alignment="leading" spacing={1}>
           <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
             {trip.departTime || "--:--"}
           </Text>
           <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
-            {trip.fromStation || "—"}
+            {trip.fromPlace || "—"}
           </Text>
         </VStack>
         <Image systemName="arrow.right" font={13} foregroundStyle={theme.sub} />
@@ -88,7 +117,7 @@ function TripBody({ trip, theme, showPassenger }: {
             {trip.arriveTime || "--:--"}
           </Text>
           <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>
-            {trip.toStation || "—"}
+            {trip.toPlace || "—"}
           </Text>
         </VStack>
         <Spacer />
@@ -97,14 +126,19 @@ function TripBody({ trip, theme, showPassenger }: {
         </Text>
       </HStack>
 
-      {/* 检票口 / 座位 / 乘车人 */}
+      {/* 闸口 / 座位 / 登机时间 / 乘客 */}
       <HStack spacing={10}>
         <HStack spacing={4}>
           <Image systemName="ticket.fill" font={11} foregroundStyle={theme.accent} />
           <Text font="caption" monospaced foregroundStyle={theme.ink}>
-            {trip.gate ? `检票口 ${trip.gate}` : "检票口 —"}
+            {trip.gate ? `${gateLabel(trip.mode)} ${trip.gate}` : `${gateLabel(trip.mode)} —`}
           </Text>
         </HStack>
+        {trip.mode === "flight" && trip.boardingTime ? (
+          <Text font="caption" monospaced foregroundStyle={theme.warn}>
+            {`登机 ${trip.boardingTime}`}
+          </Text>
+        ) : null}
         <Text font="caption" monospaced foregroundStyle={theme.ink}>
           {seatText(trip)}
         </Text>
@@ -125,19 +159,7 @@ function MediumView() {
   const showPassenger = getShowPassenger()
   return (
     <ZStack>
-      <VStack
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        background={{
-          gradient: [
-            { color: theme.cardTop, location: 0 },
-            { color: theme.cardBottom, location: 1 },
-          ],
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: 1, y: 1 },
-        } as any}
-      >
-        <Spacer />
-      </VStack>
+      <Background />
       <VStack
         alignment="leading"
         spacing={0}
@@ -145,18 +167,10 @@ function MediumView() {
         frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
         widgetURL={RUN_URL}
       >
-        {trip ? (
-          <TripBody trip={trip} theme={theme} showPassenger={showPassenger} />
-        ) : (
-          <EmptyView theme={theme} />
-        )}
+        {trip ? <TripBody trip={trip} showPassenger={showPassenger} /> : <EmptyView />}
         <Spacer />
         <HStack spacing={4}>
-          <RoundedRectangle
-            frame={{ width: 18, height: 3 }}
-            cornerRadius={1.5}
-            fill={theme.accent}
-          />
+          <RoundedRectangle frame={{ width: 18, height: 3 }} cornerRadius={1.5} fill={theme.accent} />
           <Text font="caption2" monospaced foregroundStyle={theme.sub}>
             本机数据 · 不联网
           </Text>
@@ -167,25 +181,13 @@ function MediumView() {
   )
 }
 
-// 小号兜底（本脚本以中号为主）：只显示车次 + 倒计时，避免用户误加小号时白屏
+// 小号兜底（本脚本以中号为主）：号码 + 时间 + 倒计时，避免误加小号时白屏
 function SmallView() {
   const theme = getTheme()
   const trip = nextTrip()
   return (
     <ZStack>
-      <VStack
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        background={{
-          gradient: [
-            { color: theme.cardTop, location: 0 },
-            { color: theme.cardBottom, location: 1 },
-          ],
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: 1, y: 1 },
-        } as any}
-      >
-        <Spacer />
-      </VStack>
+      <Background />
       <VStack
         alignment="leading"
         spacing={6}
@@ -195,12 +197,15 @@ function SmallView() {
       >
         {trip ? (
           <VStack alignment="leading" spacing={4}>
-            <Badge text={trip.trainNo || "—"} bg={theme.accent} fg="#FFFFFF" />
+            <HStack spacing={5}>
+              <Image systemName={modeIcon(trip.mode)} font={11} foregroundStyle={theme.accent} />
+              <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
+            </HStack>
             <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
               {trip.departTime || "--:--"}
             </Text>
             <Text font="caption2" foregroundStyle={theme.ink} lineLimit={1}>
-              {trip.fromStation || "—"}
+              {trip.fromPlace || "—"}
             </Text>
             <Text font="caption2" foregroundStyle={theme.warn} lineLimit={2}>
               {countdownText(trip)}

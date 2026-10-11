@@ -1,0 +1,31 @@
+{
+  "name": "Trip Reminder",
+  "icon": "airplane.departure",
+  "color": "rgba(44, 123, 229, 1)",
+  "version": "1.1.0",
+  "entry": "index.tsx",
+  "runInApp": true,
+  "permissions": null,
+  "contributors": [],
+  "intentInputTypes": [
+    "Text"
+  ],
+  "description": "行程提醒（本地版）：从 12306 / 航司行程截图本机识别车次或航班号、车站机场、时间、座位、检票口/登机口，存本机并显示在主屏幕小组件。全程离线，不上传任何数据。",
+  "localizedNames": {
+    "zh": "行程提醒",
+    "en": "Trip Reminder"
+  },
+  "localizedDescriptions": {
+    "zh": "截图识别火车票与机票行程，小组件显示号码、出发到达、倒计时、检票口/登机口与座位。数据仅存本机，脚本不联网。",
+    "en": "Recognize rail and flight trips from a screenshot on-device and show them on the Home Screen widget. All data stays local; no network."
+  },
+  "author": {
+    "name": "KOP-XIAO",
+    "email": null,
+    "homepage": "https://github.com/KOP-XIAO"
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/KOP-XIAO/Scripting/refs/heads/main/trip-reminder.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
