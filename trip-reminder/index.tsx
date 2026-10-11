@@ -217,7 +217,7 @@ function View() {
   const choosePassengerMode = async () => {
     const idx = await Dialog.actionSheet({
       title: "乘客姓名显示",
-      message: "控制小组件与「下一段行程」卡片中的姓名",
+      message: "控制「下一段行程」卡片中的姓名（小组件上不显示姓名）",
       actions: [{ label: "完整显示" }, { label: "打码显示（张×）" }, { label: "隐藏" }],
       cancelButton: true,
     })
@@ -325,14 +325,11 @@ function View() {
     fields.push([isFlight ? "乘机人" : "乘车人", draft.passenger, "可留空", (v) => patch({ passenger: v })])
     fields.push(["备注", draftNote, "如：接人 / 报销", setDraftNote])
 
+    // 官方签名：title 或 label 为必选——裸 TextField 不渲染（真机截图实证）
+    // title 版同时把标签内嵌进字段行，行高比「label 在上」减半
     fields.forEach(([label, value, prompt, onChanged], i) => {
       rows.push(
-        <VStack key={`f${i}`} alignment="leading" spacing={2}>
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {label}
-          </Text>
-          <TextField value={value} prompt={prompt} onChanged={onChanged} />
-        </VStack>,
+        <TextField key={`f${i}`} title={label} value={value} prompt={prompt} onChanged={onChanged} />,
       )
     })
 

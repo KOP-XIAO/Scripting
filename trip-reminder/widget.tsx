@@ -14,7 +14,7 @@ import {
   weekdayText,
   type TripMode,
 } from "./services/parse"
-import { displayPassenger, nextTrip, type TripRecord } from "./services/trips"
+import { nextTrip, type TripRecord } from "./services/trips"
 import { getTheme } from "./services/theme"
 
 const SCRIPT_NAME = "Trip Reminder"
@@ -147,20 +147,15 @@ function TripBody({ trip }: { trip: TripRecord }) {
         </Text>
       </HStack>
 
-      {/* 5) 登机时间 / 乘客（左）…… 数据来源标注（右） */}
-      <HStack spacing={8}>
-        {trip.mode === "flight" && trip.boardingTime ? (
+      {/* 5) 仅航班：登机时间（姓名不显示在小组件上，主屏幕易被旁人看到） */}
+      {trip.mode === "flight" && trip.boardingTime ? (
+        <HStack spacing={8}>
           <Text font="caption2" monospaced foregroundStyle={theme.warn} lineLimit={1}>
             {`登机 ${trip.boardingTime}`}
           </Text>
-        ) : null}
-        {displayPassenger(trip.passenger) ? (
-          <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>
-            {displayPassenger(trip.passenger)}
-          </Text>
-        ) : null}
-        <Spacer />
-      </HStack>
+          <Spacer />
+        </HStack>
+      ) : null}
     </VStack>
   )
 }
