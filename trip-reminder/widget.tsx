@@ -46,6 +46,15 @@ function Badge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
 
 function Background() {
   const theme = getTheme()
+  if (theme.backgroundAsset) {
+    return (
+      <Image
+        filePath={`${Script.directory}/assets/${theme.backgroundAsset}`}
+        resizable={true}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
+      />
+    )
+  }
   return (
     <VStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
@@ -100,7 +109,7 @@ function TripBody({ trip, width, height }: { trip: TripRecord; width: number; he
     <VStack alignment="leading" spacing={0} frame={{ width, height }}>
       <HStack spacing={6} frame={{ width, height: 24 }}>
         <Image systemName={modeIcon(trip.mode)} font={14} foregroundStyle={theme.accent} />
-        <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
+        <Badge text={trip.code || "—"} bg={theme.accent} fg={theme.badgeInk ?? "#FFFFFF"} />
         {trip.carrier ? <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.carrier}</Text> : null}
         <Spacer />
         <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>
@@ -197,7 +206,7 @@ function SmallView() {
           <VStack alignment="leading" spacing={4}>
             <HStack spacing={5}>
               <Image systemName={modeIcon(trip.mode)} font={11} foregroundStyle={theme.accent} />
-              <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
+              <Badge text={trip.code || "—"} bg={theme.accent} fg={theme.badgeInk ?? "#FFFFFF"} />
             </HStack>
             <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
               {trip.departTime || "--:--"}

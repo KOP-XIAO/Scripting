@@ -626,44 +626,46 @@ function View() {
             title={`乘客姓名：${passengerModeLabel(passengerMode)}`}
             action={() => void choosePassengerMode()}
           />
-          <HStack spacing={0}>
-            {(Object.keys(THEMES) as ThemeKey[]).flatMap((k, i) => {
-              const t = THEMES[k]
-              const selected = k === themeKey
-              const chip = (
-                <Button
-                  key={k}
-                  buttonStyle="plain"
-                  action={() => {
-                    setThemeKeyLocal(k)
-                    setThemeKey(k)
-                  }}
-                >
-                  <VStack spacing={4}>
-                    <ZStack frame={{ width: 64, height: 44 }}>
-                      <RoundedRectangle frame={{ width: 64, height: 44 }} cornerRadius={9} fill={t.cardTop} />
-                      <RoundedRectangle
-                        frame={{ width: 28, height: 8 }}
-                        cornerRadius={4}
-                        fill={t.accent}
-                        offset={{ x: -14, y: -8 }}
-                      />
-                      <RoundedRectangle
-                        frame={{ width: 44, height: 6 }}
-                        cornerRadius={3}
-                        fill={t.sub}
-                        offset={{ x: -6, y: 6 }}
-                      />
-                    </ZStack>
-                    <Text font="caption2" foregroundStyle={selected ? t.accent : "secondaryLabel"}>
-                      {selected ? `● ${t.label}` : t.label}
-                    </Text>
-                  </VStack>
-                </Button>
-              )
-              return i === 0 ? [chip] : [<Spacer key={`sp-${k}`} />, chip]
-            })}
-          </HStack>
+          {/* 两列选择器，避免五套主题塞在一行；直接展示实际背景资源。 */}
+          {Array.from({ length: Math.ceil(Object.keys(THEMES).length / 2) }, (_, row) => (
+            <HStack key={`theme-row-${row}`} spacing={12}>
+              {(Object.keys(THEMES) as ThemeKey[]).slice(row * 2, row * 2 + 2).flatMap((k, i) => {
+                const t = THEMES[k]
+                const selected = k === themeKey
+                const chip = (
+                  <Button
+                    key={k}
+                    buttonStyle="plain"
+                    action={() => { setThemeKeyLocal(k); setThemeKey(k) }}
+                  >
+                    <VStack alignment="leading" spacing={5}>
+                      <ZStack frame={{ width: 132, height: 66 }}
+                        clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}>
+                        {t.backgroundAsset ? (
+                          <Image filePath={`${Script.directory}/assets/${t.backgroundAsset}`}
+                            resizable={true} frame={{ width: 132, height: 66 }} />
+                        ) : (
+                          <RoundedRectangle frame={{ width: 132, height: 66 }} cornerRadius={10} fill={t.cardTop} />
+                        )}
+                        <Text font="caption2" fontWeight="bold" foregroundStyle={t.badgeInk ?? "#FFFFFF"}
+                          padding={3} background={t.accent}
+                          clipShape={{ type: "rect", cornerRadius: 4, style: "continuous" }}
+                          offset={{ x: -36, y: -18 }}>G1234</Text>
+                        <Text font="caption2" monospaced foregroundStyle={t.ink}
+                          offset={{ x: -12, y: 2 }}>09:00 → 10:24</Text>
+                        <Text font="caption2" fontWeight="semibold" foregroundStyle={t.warn}
+                          offset={{ x: -18, y: 20 }}>检票口 A1</Text>
+                      </ZStack>
+                      <Text font="caption" foregroundStyle="label">
+                        {selected ? `✓ ${t.label}` : t.label}
+                      </Text>
+                    </VStack>
+                  </Button>
+                )
+                return i === 0 ? [chip] : [<Spacer key={`theme-gap-${k}`} />, chip]
+              })}
+            </HStack>
+          ))}
         </Section>
 
         {/* ---------------- 关于 ---------------- */}
