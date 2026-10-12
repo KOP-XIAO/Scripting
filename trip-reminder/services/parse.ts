@@ -352,7 +352,12 @@ export function parseTripText(
 // -------------------------------------------------------------
 // 展示辅助（纯函数，widget 与 App 共用）
 // -------------------------------------------------------------
-type TimeLike = { departDate: string; departTime: string; durationMin: number }
+type TimeLike = {
+  departDate: string
+  departTime: string
+  durationMin: number
+  arriveTime?: string
+}
 
 export function departTimestamp(trip: { departDate: string; departTime: string }): number {
   if (!trip.departDate || !trip.departTime) return 0
@@ -360,28 +365,43 @@ export function departTimestamp(trip: { departDate: string; departTime: string }
   return Number.isFinite(t) ? t : 0
 }
 
-export function arriveTimestamp(trip: { departDate: string; departTime: string; durationMin: number }): number {
-  const dep = departTimestamp(trip)
-  if (!dep) return 0
-  return dep + Math.max(0, trip.durationMin) * 60000
+// 实际历时优先；否则按钟点差推算，早于出发视为跨午夜。
+// 跨时区航班需要填写实际历时，避免本地钟点差误导。
+export function tripDurationMinutes(trip: { durationMin: number; departTime: string; arriveTime?: string }): number {
+  if (Number.isFinite(trip.durationMin) && trip.durationMin > 0) return Math.round(trip.durationMin)
+  const clock = (value: string) => {
+    const m = value.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null
+  }
+  const start = clock(trip.departTime)
+  const end = clock(trip.arriveTime ?? "")
+  return start == null || end == null ? 0 : (end - start + 1440) % 1440
 }
 
-// 倒计时文案：分级压缩，避免「14 小时 22 分后出发」这类长文本在小组件里被截断
+export function durationText(trip: { durationMin: number; departTime: string; arriveTime?: string }): string {
+  const total = tripDurationMinutes(trip)
+  if (!total) return "时长待补"
+  const h = Math.floor(total / 60), m = total % 60
+  if (!h) return `${m} 分`
+  return m ? `${h} 小时 ${m} 分` : `${h} 小时`
+}
+
+export function arriveTimestamp(trip: TimeLike): number {
+  const dep = departTimestamp(trip)
+  return dep ? dep + tripDurationMinutes(trip) * 60000 : 0
+}
+
+// 双单位倒计时：>=24h 显示天｜小时；<24h 显示小时｜分钟。
 export function countdownText(trip: TimeLike, now = Date.now()): string {
   const dep = departTimestamp(trip)
   if (!dep) return "待补全时间"
   const arr = arriveTimestamp(trip)
   if (arr && now >= arr) return "行程已结束"
   if (now >= dep) return "行程中"
-  const min = Math.round((dep - now) / 60000)
-  if (min <= 0) return "即将出发"
-  if (min < 60) return `${min}分钟后出发`
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  if (min < 10 * 60) return m === 0 ? `${h}小时后出发` : `${h}小时${m}分后出发`
-  if (min < 20 * 60) return `${h}小时后出发` // 10~20 小时只报到小时，控制长度
-  if (min < 36 * 60) return "明天出发"
-  return `${Math.floor(min / (60 * 24))} 天后出发`
+  const minutes = Math.floor((dep - now) / 60000)
+  if (minutes < 1) return "即将出发"
+  if (minutes >= 1440) return `${Math.floor(minutes / 1440)} 天｜${Math.floor((minutes % 1440) / 60)} 小时`
+  return `${Math.floor(minutes / 60)} 小时｜${minutes % 60} 分`
 }
 
 export function weekdayText(dateStr: string): string {

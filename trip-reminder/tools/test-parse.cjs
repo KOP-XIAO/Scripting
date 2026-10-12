@@ -130,8 +130,8 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   ok("火车：出发站/到达站 标签式写法可解析")
 }
 
-// R6：真机实跑的 Vision 输出（12306 行程详情截图，已脱敏）。
-// 关键陷阱：①「过」与站名拆行且站名带垃圾字符（深圳北，）②「终」徽章完全没识别出来
+// R6：仿照 OCR 错误结构构造的合成票据文本。
+// 关键陷阱：①「过」与站名拆行且站名带垃圾字符（北京南，）②「终」徽章完全没识别出来
 // ③检票口的信息图标被认成字母（检票口Q：）④站名尾部带「〉」
 {
   const text = [
@@ -139,15 +139,15 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
     "复兴号",
     "08:32",
     "过",
-    "深圳北，",
+    "北京南，",
     "： 乘车人：李四",
-    "检票口Q：11B检票口",
-    "座位号：05车05B二等座",
+    "检票口Q：6A检票口",
+    "座位号：08车12A二等座",
     "10月12日（周一）",
     "历时18分",
     "3分后出发 请以实际",
     "08:50",
-    "香港西九龙〉",
+    "上海虹桥〉",
     "改签",
     "灵活行",
     "乘车码",
@@ -158,15 +158,15 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
     { content: "复兴号", x: 0.3, y: 0.88, w: 0.07, h: 0.04 },
     { content: "08:32", x: 0.06, y: 0.68, w: 0.17, h: 0.08 },
     { content: "过", x: 0.06, y: 0.58, w: 0.03, h: 0.05 },
-    { content: "深圳北，", x: 0.1, y: 0.58, w: 0.13, h: 0.06 },
+    { content: "北京南，", x: 0.1, y: 0.58, w: 0.13, h: 0.06 },
     { content: "： 乘车人：李四", x: 0.06, y: 0.48, w: 0.29, h: 0.06 },
-    { content: "检票口Q：11B检票口", x: 0.08, y: 0.34, w: 0.32, h: 0.05 },
-    { content: "座位号：05车05B二等座", x: 0.08, y: 0.25, w: 0.38, h: 0.05 },
+    { content: "检票口Q：6A检票口", x: 0.08, y: 0.34, w: 0.32, h: 0.05 },
+    { content: "座位号：08车12A二等座", x: 0.08, y: 0.25, w: 0.38, h: 0.05 },
     { content: "10月12日（周一）", x: 0.38, y: 0.66, w: 0.23, h: 0.07 },
     { content: "历时18分", x: 0.44, y: 0.6, w: 0.12, h: 0.05 },
     { content: "3分后出发 请以实际", x: 0.58, y: 0.86, w: 0.33, h: 0.06 },
     { content: "08:50", x: 0.76, y: 0.68, w: 0.17, h: 0.08 },
-    { content: "香港西九龙〉", x: 0.72, y: 0.58, w: 0.22, h: 0.05 },
+    { content: "上海虹桥〉", x: 0.72, y: 0.58, w: 0.22, h: 0.05 },
     { content: "改签", x: 0.41, y: 0.08, w: 0.07, h: 0.06 },
     { content: "灵活行", x: 0.59, y: 0.08, w: 0.1, h: 0.06 },
     { content: "乘车码", x: 0.83, y: 0.23, w: 0.1, h: 0.05 },
@@ -176,18 +176,18 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   assert.strictEqual(t.mode, "rail")
   assert.strictEqual(t.code, "G7654")
   assert.strictEqual(t.carrier, "复兴号")
-  assert.strictEqual(t.fromPlace, "深圳北", "站名尾部垃圾字符应被清掉")
-  assert.strictEqual(t.toPlace, "香港西九龙", "「终」徽章丢失时应用位置兜底拿到到达站")
-  assert.strictEqual(t.gate, "11B", "检票口后的图标字母不应干扰")
-  assert.strictEqual(t.seatCar, "5")
-  assert.strictEqual(t.seatNo, "05B")
+  assert.strictEqual(t.fromPlace, "北京南", "站名尾部垃圾字符应被清掉")
+  assert.strictEqual(t.toPlace, "上海虹桥", "「终」徽章丢失时应用位置兜底拿到到达站")
+  assert.strictEqual(t.gate, "6A", "检票口后的图标字母不应干扰")
+  assert.strictEqual(t.seatCar, "8")
+  assert.strictEqual(t.seatNo, "12A")
   assert.strictEqual(t.seatClass, "二等座")
   assert.strictEqual(t.passenger, "李四")
   assert.strictEqual(t.departDate, "2026-10-12")
   assert.strictEqual(t.departTime, "08:32")
   assert.strictEqual(t.arriveTime, "08:50")
   assert.strictEqual(t.durationMin, 18)
-  ok("火车：真实 Vision 输出（拆行/垃圾字符/徽章丢失/图标污染）全部解析正确")
+  ok("火车：OCR 错误结构（拆行/垃圾字符/徽章丢失/图标污染）全部解析正确")
 }
 
 // ============ 航班 ============
@@ -257,11 +257,11 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
 {
   const trip = { departDate: "2026-10-12", departTime: "08:32", durationMin: 80 }
   const at = (s) => new Date(s).getTime()
-  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:00:00")), "32分钟后出发")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-12T06:00:00")), "2小时32分后出发")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-11T18:10:00")), "14小时后出发", "10~20 小时只报到小时")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-11T06:00:00")), "明天出发", "20~36 小时说「明天」")
-  assert.strictEqual(P.countdownText(trip, at("2026-10-10T08:00:00")), "2 天后出发", "更远按天数")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:00:00")), "0 小时｜32 分")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-12T06:00:00")), "2 小时｜32 分")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-11T18:10:00")), "14 小时｜22 分", "小于24小时保留小时与分钟")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-11T06:00:00")), "1 天｜2 小时", "超过24小时保留天与小时")
+  assert.strictEqual(P.countdownText(trip, at("2026-10-10T08:00:00")), "2 天｜0 小时", "多日行程双单位")
   assert.strictEqual(P.countdownText(trip, at("2026-10-12T08:40:00")), "行程中")
   assert.strictEqual(P.countdownText(trip, at("2026-10-12T10:30:00")), "行程已结束")
   ok("倒计时分级文案正确（短时精确 / 长时压缩 / 行程中 / 已结束）")
@@ -311,6 +311,63 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   assert.strictEqual(tripsMod.maskPassenger("John"), "J***")
   assert.strictEqual(tripsMod.maskPassenger("  "), "")
   ok("乘客姓名打码（张× / J*** / 空值）正确")
+}
+
+// G5：倒计时边界、行程时长与跨午夜。
+{
+  const departure = new Date("2026-11-15T12:00:00").getTime()
+  const trip = { departDate: "2026-11-15", departTime: "12:00", durationMin: 84 }
+  const before = (minutes) => departure - minutes * 60000
+  assert.strictEqual(P.countdownText(trip, before(4 * 1440 + 11 * 60)), "4 天｜11 小时")
+  assert.strictEqual(P.countdownText(trip, before(4 * 60 + 38)), "4 小时｜38 分")
+  assert.strictEqual(P.countdownText(trip, before(1440)), "1 天｜0 小时")
+  assert.strictEqual(P.countdownText(trip, before(1439)), "23 小时｜59 分")
+  assert.strictEqual(P.countdownText(trip, before(0.5)), "即将出发")
+  assert.strictEqual(P.durationText(trip), "1 小时 24 分")
+  assert.strictEqual(P.durationText({ departTime: "09:00", arriveTime: "10:24", durationMin: 0 }), "1 小时 24 分")
+  const overnight = { departDate: "2026-11-15", departTime: "23:30", arriveTime: "00:54", durationMin: 0 }
+  assert.strictEqual(P.durationText(overnight), "1 小时 24 分")
+  assert.strictEqual(P.arriveTimestamp(overnight), new Date("2026-11-16T00:54:00").getTime())
+  assert.strictEqual(P.durationText({ departTime: "", durationMin: 0 }), "时长待补")
+  ok("倒计时24小时边界与时长推算正确")
+}
+
+// G6：归档保留原记录，且不进入小组件；清空当前行程保留归档。
+{
+  const data = new Map()
+  let reloads = 0
+  global.Storage = {
+    get: (key) => data.has(key) ? JSON.parse(JSON.stringify(data.get(key))) : undefined,
+    set: (key, value) => data.set(key, JSON.parse(JSON.stringify(value))),
+  }
+  global.Widget = { reloadAll: () => { reloads += 1 } }
+  const out2 = path.join(os.tmpdir(), "trip-archive-tests.bundle.cjs")
+  esbuild.buildSync({ entryPoints: [path.join(ROOT, "services", "trips.ts")], bundle: true,
+    format: "cjs", platform: "node", outfile: out2 })
+  const T = require(out2)
+  const base = { ...P.parseTripText("G1234\n北京南 → 天津南\n2026-11-15\n09:00\n10:24\n历时84分"),
+    id: "old-format", note: "合成测试", createdAt: "2026-11-01T00:00:00Z" }
+  T.upsertTrip(base)
+  T.upsertTrip({ ...base, id: "later", departTime: "12:00" })
+  const now = new Date("2026-11-15T08:00:00").getTime()
+  assert.strictEqual(T.nextTrip(now).id, "old-format")
+  T.archiveTrip(base.id)
+  const saved = T.listTrips().find((t) => t.id === base.id)
+  assert.ok(saved.archivedAt)
+  for (const key of Object.keys(base)) assert.deepStrictEqual(saved[key], base[key])
+  assert.strictEqual(T.nextTrip(now).id, "later")
+  const stamp = saved.archivedAt
+  T.archiveTrip(base.id)
+  assert.strictEqual(T.listTrips().find((t) => t.id === base.id).archivedAt, stamp)
+  T.clearTrips()
+  assert.strictEqual(T.listTrips().length, 1)
+  assert.strictEqual(T.listTrips()[0].id, base.id)
+  assert.strictEqual(T.nextTrip(now), null)
+  assert.strictEqual(T.widgetSnapshot().trip, null)
+  assert.ok(reloads > 0)
+  delete global.Storage
+  delete global.Widget
+  ok("旧记录兼容、归档保留、Widget排除、清空保留归档正确")
 }
 
 console.log(`\n全部通过：${n} 组断言`)

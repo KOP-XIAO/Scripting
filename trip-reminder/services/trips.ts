@@ -8,6 +8,7 @@ export type TripRecord = ParsedTrip & {
   id: string
   note: string
   createdAt: string
+  archivedAt?: string
 }
 
 const KEY = "rail.trips"
@@ -49,9 +50,16 @@ export function deleteTrip(id: string): TripRecord[] {
   return listTrips()
 }
 
+// 清空未归档记录时保留归档。
 export function clearTrips(): TripRecord[] {
-  write([])
-  return []
+  write(read().filter((t) => !!t.archivedAt))
+  return listTrips()
+}
+
+export function archiveTrip(id: string): TripRecord[] {
+  write(read().map((t) => t.id === id && !t.archivedAt
+    ? { ...t, archivedAt: new Date().toISOString() } : t))
+  return listTrips()
 }
 
 export function newTripId(): string {
@@ -60,7 +68,7 @@ export function newTripId(): string {
 
 // 下一班：发车/起飞时间最近的「还没结束」的行程；都结束了则返回最后一条（便于回看）
 export function nextTrip(now = Date.now()): TripRecord | null {
-  const list = listTrips()
+  const list = listTrips().filter((t) => !t.archivedAt)
   if (!list.length) return null
   const upcoming = list.find((t) => {
     const arr = arriveTimestamp(t)
@@ -115,6 +123,6 @@ export function passengerModeLabel(mode: PassengerMode): string {
 }
 
 // 小组件与 App 共享的轻量快照
-export function widgetSnapshot(): { trip: TripRecord | null; showPassenger: boolean } {
-  return { trip: nextTrip(), showPassenger: getShowPassenger() }
+export function widgetSnapshot(): { trip: TripRecord | null } {
+  return { trip: nextTrip() }
 }

@@ -10,7 +10,7 @@
 //
 // 布局约定（本运行时实证）：
 //  ① 同一行不放两个默认样式按钮（热区互相覆盖）——每个操作按钮独占一个 List 行
-//  ② TextField 只能作为 List 行的直接子节点，嵌进 HStack / 卡片容器会不渲染
+//  ② TextField 必须包含 title 或 label，字段采用带 title 的双列布局
 //  ③ App UI 文本用系统自适应色（label / secondaryLabel），不用固定主题色——
 //    固定色是按小组件的主题背景设计的，深色模式下会深色叠深色
 
@@ -35,6 +35,7 @@ import {
 } from "scripting"
 import {
   arriveTimestamp,
+  durationText,
   countdownText,
   departTimestamp,
   gateLabel,
@@ -50,6 +51,7 @@ import {
 } from "./services/parse"
 import {
   clearTrips,
+  archiveTrip,
   deleteTrip,
   displayPassenger,
   getPassengerMode,
@@ -94,6 +96,7 @@ function View() {
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
   const [passengerMode, setPassengerModeLocal] = useState<PassengerMode>(getPassengerMode())
   const [trips, setTrips] = useState<TripRecord[]>(listTrips())
+  const [showArchive, setShowArchive] = useState(false)
   const [draft, setDraft] = useState<ParsedTrip | null>(null)
   const [draftId, setDraftId] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState("")
@@ -110,6 +113,9 @@ function View() {
 
   const theme = getTheme()
   const upcoming = nextTrip(now)
+  const archived = trips.filter((t) => !!t.archivedAt)
+  const visibleTrips = trips.filter((t) => showArchive ? !!t.archivedAt : !t.archivedAt)
+  if (showArchive) visibleTrips.reverse()
 
   const refresh = () => setTrips(listTrips())
   const patch = (p: Partial<ParsedTrip>) => setDraft((d) => (d ? { ...d, ...p } : d))
@@ -198,18 +204,26 @@ function View() {
     }
     const existing = draftId ? trips.find((t) => t.id === draftId) : undefined
     const trip: TripRecord = {
+      ...existing,
       ...draft,
       id: draftId ?? newTripId(),
       note: draftNote,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     }
     upsertTrip(trip) // 内部会 Widget.reloadAll()
+    setShowArchive(false)
     cancelDraft()
     refresh()
   }
 
   const removeTrip = (t: TripRecord) => {
     deleteTrip(t.id)
+    if (draftId === t.id) cancelDraft()
+    refresh()
+  }
+
+  const archiveRecord = (t: TripRecord) => {
+    archiveTrip(t.id)
     if (draftId === t.id) cancelDraft()
     refresh()
   }
@@ -230,8 +244,7 @@ function View() {
   const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
   const draftIsFlight = draft?.mode === "flight"
 
-  // 草稿表单行：头部卡（提示 + 模式切换）+ 每个字段独立一行 + 保存/放弃
-  // TextField 只能是 List 行直接子节点，所以表单不再用成对 HStack / 大卡片包裹
+  // 草稿表单：提示、模式切换、带 title 的双列字段及保存/放弃。
   const draftRows = (): any[] => {
     if (!draft) return []
     const isFlight = draftIsFlight
@@ -431,6 +444,7 @@ function View() {
                     {upcoming.toPlace || "—"}
                   </Text>
                 </VStack>
+                <Text font="caption2" foregroundStyle="secondaryLabel">{`｜${durationText(upcoming)}`}</Text>
                 <Spacer />
               </HStack>
               <HStack spacing={12}>
@@ -490,19 +504,28 @@ function View() {
           </Section>
         ) : null}
 
-        {/* ---------------- 行程列表（点按原地编辑，左滑删除） ---------------- */}
+        <Section title="行程管理">
+          <Button
+            title={showArchive ? "返回未归档行程" : `查看归档记录（${archived.length}）`}
+            action={() => { cancelDraft(); setShowArchive(!showArchive) }}
+          />
+        </Section>
+
+        {/* 归档记录只读，不提供编辑和滑动操作 */}
         <Section
-          title={`行程列表 (${trips.length})`}
+          title={`${showArchive ? "归档记录" : "行程列表"} (${visibleTrips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              点按行程直接在原处展开编辑；向左滑动出现删除/编辑。小组件自动显示时间最近的一条。
+              {showArchive
+                ? "已归档行程仅供回看，不参与小组件展示。"
+                : "点按编辑；左滑可归档或删除。归档保留记录，不参与小组件展示。"}
             </Text>
           }
         >
-          {trips.length === 0 ? (
-            <Text foregroundStyle="secondaryLabel">还没有行程。</Text>
+          {visibleTrips.length === 0 ? (
+            <Text foregroundStyle="secondaryLabel">{showArchive ? "暂无归档记录。" : "暂无未归档行程。"}</Text>
           ) : (
-            trips.flatMap((t) => {
+            visibleTrips.flatMap((t) => {
               if (draft && draftId === t.id) {
                 // 原地编辑：该记录的位置直接展开为表单行
                 return draftRows()
@@ -515,10 +538,11 @@ function View() {
                   key={t.id}
                   alignment="leading"
                   spacing={3}
-                  onTapGesture={() => editTrip(t)}
-                  trailingSwipeActions={{
-                    allowsFullSwipe: true,
+                  onTapGesture={showArchive ? undefined : () => editTrip(t)}
+                  trailingSwipeActions={showArchive ? undefined : {
+                    allowsFullSwipe: false,
                     actions: [
+                      <Button title="归档" tint="systemOrange" action={() => archiveRecord(t)} />,
                       <Button title="删除" role="destructive" action={() => removeTrip(t)} />,
                       <Button title="编辑" tint="accentColor" action={() => editTrip(t)} />,
                     ],
@@ -533,13 +557,13 @@ function View() {
                     <Text font="headline" monospaced foregroundStyle={expired ? "secondaryLabel" : theme.accent}>
                       {t.code || "—"}
                     </Text>
-                    <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
+                    <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={showArchive ? undefined : 1}>
                       {routeText(t)}
                     </Text>
                     <Spacer />
-                    <Image systemName="pencil.circle" font={12} foregroundStyle="tertiaryLabel" />
+                    <Image systemName={showArchive ? "archivebox" : "pencil.circle"} font={12} foregroundStyle="tertiaryLabel" />
                   </HStack>
-                  <Text font="caption2" monospaced foregroundStyle="secondaryLabel" lineLimit={1}>
+                  <Text font="caption2" monospaced foregroundStyle="secondaryLabel" lineLimit={showArchive ? undefined : 1}>
                     {[
                       `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
                       `${t.departTime || "--:--"} → ${t.arriveTime || "--:--"}`,
@@ -551,21 +575,32 @@ function View() {
                       .join(" · ")}
                   </Text>
                   <Text font="caption2" foregroundStyle={expired ? "tertiaryLabel" : theme.warn}>
-                    {dep ? countdownText(t, now) : "待补全出发时间"}
+                    {showArchive ? `已归档 · ${durationText(t)}` : dep ? countdownText(t, now) : "待补全出发时间"}
                     {t.note ? `　·　${t.note}` : ""}
                   </Text>
+                  {showArchive ? (
+                    <Text font="caption2" foregroundStyle="secondaryLabel">
+                      {[
+                        t.carrier,
+                        t.boardingTime ? `登机 ${t.boardingTime}` : "",
+                        t.checkIn ? `值机 ${t.checkIn}` : "",
+                        t.baggage ? `行李转盘 ${t.baggage}` : "",
+                        displayPassenger(t.passenger, passengerMode),
+                      ].filter(Boolean).join(" · ")}
+                    </Text>
+                  ) : null}
                 </VStack>,
               ]
             })
           )}
-          {trips.length > 0 ? (
+          {!showArchive && visibleTrips.length > 0 ? (
             <Button
-              title="清空全部行程"
+              title="清空未归档行程"
               role="destructive"
               action={async () => {
                 const ok = await Dialog.confirm({
-                  title: "清空全部行程",
-                  message: "只删除本机记录，不影响 12306 / 航司 App。",
+                  title: "清空未归档行程",
+                  message: "归档记录将保留。只删除本机未归档行程，不影响票务 App。",
                   confirmLabel: "清空",
                 })
                 if (ok) {
