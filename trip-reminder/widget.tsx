@@ -148,14 +148,12 @@ function TripBody({ trip, width, height }: { trip: TripRecord; width: number; he
         </VStack>
         <VStack alignment="leading" spacing={0} frame={{ width: seatWidth, height: 48 }}>
           <HStack spacing={0} frame={{ width: seatWidth, height: 13 }}>
-            <Text font="caption2" foregroundStyle={theme.sub}>座位</Text><Spacer />
+            <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass ? `座位｜${trip.seatClass}` : "座位"}</Text><Spacer />
           </HStack>
           <HStack spacing={0} frame={{ width: seatWidth, height: 21 }}>
             <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{seat}</Text><Spacer />
           </HStack>
-          <HStack spacing={0} frame={{ width: seatWidth, height: 14 }}>
-            {trip.seatClass ? <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass}</Text> : null}<Spacer />
-          </HStack>
+          <Spacer />
         </VStack>
       </HStack>
     </VStack>
