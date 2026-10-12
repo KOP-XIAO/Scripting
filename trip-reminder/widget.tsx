@@ -5,7 +5,7 @@
 // 隐私：小组件只读本机 Storage，页面本身不含任何网络请求；不读取、不上传任何图片。
 // 全局对象（禁止从 scripting 导入）：Storage
 
-import { HStack, Image, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
+import { GeometryReader, HStack, Image, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"
 import {
   countdownText,
   departTimestamp,
@@ -31,7 +31,7 @@ const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram
 function Badge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
   return (
     <Text
-      font="title3"
+      font="headline"
       fontWeight="bold"
       monospaced
       foregroundStyle={fg}
@@ -84,17 +84,21 @@ function EmptyView() {
   )
 }
 
-function TripBody({ trip }: { trip: TripRecord }) {
+// 使用有界内容区，避免嵌套 infinity frame 与 padding 争抢可用高度。
+function TripBody({ trip, width, height }: { trip: TripRecord; width: number; height: number }) {
   const theme = getTheme()
-  const countdown = countdownText(trip)
   const delta = departTimestamp(trip) - Date.now()
   const soon = delta >= 0 && delta < 3600000
   const seat = trip.mode === "flight"
     ? trip.seatNo || "—"
     : [trip.seatCar ? `${trip.seatCar}车` : "", trip.seatNo].filter(Boolean).join(" ") || "—"
+  // 各列明确分宽，不能让第一列的 infinity frame 将内容推到中间。
+  const countdownWidth = Math.floor(width * 0.44)
+  const gateWidth = Math.floor(width * 0.19)
+  const seatWidth = Math.max(0, width - countdownWidth - gateWidth - 16)
   return (
-    <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}>
-      <HStack spacing={6}>
+    <VStack alignment="leading" spacing={0} frame={{ width, height }}>
+      <HStack spacing={6} frame={{ width, height: 24 }}>
         <Image systemName={modeIcon(trip.mode)} font={14} foregroundStyle={theme.accent} />
         <Badge text={trip.code || "—"} bg={theme.accent} fg="#FFFFFF" />
         {trip.carrier ? <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.carrier}</Text> : null}
@@ -104,11 +108,11 @@ function TripBody({ trip }: { trip: TripRecord }) {
         </Text>
       </HStack>
       <Spacer />
-      <VStack alignment="leading" spacing={3}>
+      <VStack alignment="leading" spacing={4} frame={{ width, height: 40 }}>
         <HStack spacing={5}>
-          <Text font="title3" fontWeight="semibold" monospaced foregroundStyle={theme.ink}>{trip.departTime || "--:--"}</Text>
-          <Image systemName="arrow.right" font={11} foregroundStyle={theme.sub} />
-          <Text font="title3" fontWeight="semibold" monospaced foregroundStyle={theme.ink}>{trip.arriveTime || "--:--"}</Text>
+          <Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink}>{trip.departTime || "--:--"}</Text>
+          <Image systemName="arrow.right" font={10} foregroundStyle={theme.sub} />
+          <Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink}>{trip.arriveTime || "--:--"}</Text>
           <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{`｜${durationText(trip)}`}</Text>
           <Spacer />
         </HStack>
@@ -120,23 +124,38 @@ function TripBody({ trip }: { trip: TripRecord }) {
         </HStack>
       </VStack>
       <Spacer />
-      {/* 检票口与座位用大字，字段名用小标签。 */}
-      <HStack spacing={8}>
-        <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity" } as never}>
-          <Text font="caption2" foregroundStyle={theme.sub}>距出发</Text>
-          <Text font="subheadline" fontWeight="semibold" foregroundStyle={soon ? theme.warn : theme.accent} lineLimit={1}>{countdown}</Text>
-          {trip.mode === "flight" && trip.boardingTime ? (
-            <Text font="caption2" foregroundStyle={theme.sub}>{`登机 ${trip.boardingTime}`}</Text>
-          ) : null}
+      {/* 三栏同高；每个标签、数值所在行同高，座别不再改变基线。 */}
+      <HStack spacing={8} frame={{ width, height: 48 }}>
+        <VStack alignment="leading" spacing={0} frame={{ width: countdownWidth, height: 48 }}>
+          <HStack spacing={0} frame={{ width: countdownWidth, height: 13 }}>
+            <Text font="caption2" foregroundStyle={theme.sub}>距出发</Text><Spacer />
+          </HStack>
+          <HStack spacing={0} frame={{ width: countdownWidth, height: 21 }}>
+            <Text font="subheadline" fontWeight="semibold" foregroundStyle={soon ? theme.warn : theme.accent} lineLimit={1}>{countdownText(trip)}</Text><Spacer />
+          </HStack>
+          <HStack spacing={0} frame={{ width: countdownWidth, height: 14 }}>
+            {trip.mode === "flight" && trip.boardingTime ? <Text font="caption2" foregroundStyle={theme.sub}>{`登机 ${trip.boardingTime}`}</Text> : null}<Spacer />
+          </HStack>
         </VStack>
-        <VStack alignment="leading" spacing={3}>
-          <Text font="caption2" foregroundStyle={theme.sub}>{gateLabel(trip.mode)}</Text>
-          <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.warn} lineLimit={1}>{trip.gate || "—"}</Text>
+        <VStack alignment="leading" spacing={0} frame={{ width: gateWidth, height: 48 }}>
+          <HStack spacing={0} frame={{ width: gateWidth, height: 13 }}>
+            <Text font="caption2" foregroundStyle={theme.sub}>{gateLabel(trip.mode)}</Text><Spacer />
+          </HStack>
+          <HStack spacing={0} frame={{ width: gateWidth, height: 21 }}>
+            <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.warn} lineLimit={1}>{trip.gate || "—"}</Text><Spacer />
+          </HStack>
+          <Spacer />
         </VStack>
-        <VStack alignment="leading" spacing={3}>
-          <Text font="caption2" foregroundStyle={theme.sub}>座位</Text>
-          <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{seat}</Text>
-          {trip.seatClass ? <Text font="caption2" foregroundStyle={theme.sub}>{trip.seatClass}</Text> : null}
+        <VStack alignment="leading" spacing={0} frame={{ width: seatWidth, height: 48 }}>
+          <HStack spacing={0} frame={{ width: seatWidth, height: 13 }}>
+            <Text font="caption2" foregroundStyle={theme.sub}>座位</Text><Spacer />
+          </HStack>
+          <HStack spacing={0} frame={{ width: seatWidth, height: 21 }}>
+            <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{seat}</Text><Spacer />
+          </HStack>
+          <HStack spacing={0} frame={{ width: seatWidth, height: 14 }}>
+            {trip.seatClass ? <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass}</Text> : null}<Spacer />
+          </HStack>
         </VStack>
       </HStack>
     </VStack>
@@ -144,21 +163,21 @@ function TripBody({ trip }: { trip: TripRecord }) {
 }
 
 function MediumView() {
-  const theme = getTheme()
   const trip = nextTrip()
+  // 内容区居中并保留安全边距；若宿主已扣除系统边距，则缩减额外内边距。
   return (
-    <ZStack>
-      <Background />
-      <VStack
-        alignment="leading"
-        spacing={0}
-        padding={16}
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never}
-        widgetURL={RUN_URL}
-      >
-        {trip ? <TripBody trip={trip} /> : <EmptyView />}
-      </VStack>
-    </ZStack>
+    <GeometryReader>
+      {proxy => (
+        <ZStack frame={{ width: proxy.size.width, height: proxy.size.height }} widgetURL={RUN_URL}>
+          <Background />
+          {trip ? (
+            <TripBody trip={trip} width={Math.max(0, proxy.size.width - (proxy.size.height >= 150 ? 28 : 12))} height={Math.max(0, proxy.size.height - (proxy.size.height >= 150 ? 28 : 12))} />
+          ) : (
+            <VStack alignment="leading" padding={14}><EmptyView /></VStack>
+          )}
+        </ZStack>
+      )}
+    </GeometryReader>
   )
 }
 
