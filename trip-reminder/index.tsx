@@ -571,14 +571,16 @@ function View() {
         <Section title="外观预览" footer={<Text font="caption" foregroundStyle="secondaryLabel">
           {upcoming ? "中号小组件预览，共用实际布局；主屏幕尺寸与 iOS 显示模式可能影响效果。" : "虚构示例行程，仅用于预览，不会保存。"}
         </Text>}>
-          <GeometryReader frame={{ height: 158 }} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
-            {proxy => <TripWidget width={proxy.size.width} height={proxy.size.height} trip={upcoming ?? {
-              ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
-              departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
-              fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
-              note: "", createdAt: "2099-06-18T00:00:00.000Z",
-            }} theme={theme} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
-          </GeometryReader>
+          <VStack spacing={0} frame={{ height: 158 }} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
+            <GeometryReader>
+              {proxy => <TripWidget width={proxy.size.width} height={158} trip={upcoming ?? {
+                ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
+                departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
+                fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
+                note: "", createdAt: "2099-06-18T00:00:00.000Z",
+              }} theme={theme} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
+            </GeometryReader>
+          </VStack>
         </Section>
         {/* ---------------- 设置 ---------------- */}
         <Section
@@ -630,7 +632,7 @@ function View() {
           用于车次／航班号、倒计时、检票口／登机口和座位。浅、深背景自动调整明度，保持文字清晰。
         </Text>}>
           {(Object.keys(ACCENTS) as AccentKey[]).map((k) => (
-            <Button key={k} buttonStyle="plain" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
+            <Button key={k} buttonStyle="automatic" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
               <HStack spacing={10} padding={{ top: 8, bottom: 8 }}
                 frame={{ maxWidth: "infinity", minHeight: 44 }}
                 contentShape={{ kind: "interaction", shape: { type: "rect" } }}>
