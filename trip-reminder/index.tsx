@@ -15,6 +15,7 @@
 
 import {
   Button,
+  GeometryReader,
   HStack,
   Image,
   List,
@@ -70,6 +71,7 @@ import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/o
 import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey, setThemeKey, type ThemeKey, type AccentKey } from "./services/theme"
 import { ThemeBackground } from "./components/theme-background"
 import { TripCard } from "./components/trip-card"
+import { TripWidget } from "./components/trip-widget"
 import { VERSION } from "./utils/common"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
@@ -567,14 +569,16 @@ function View() {
       <List navigationTitle="设置" navigationBarTitleDisplayMode="inline"
         toolbar={{ cancellationAction: <Button title="关闭" action={dismiss} /> }}>
         <Section title="外观预览" footer={<Text font="caption" foregroundStyle="secondaryLabel">
-          {upcoming ? "与首页使用同一张卡片，主题与强调色即时预览。" : "虚构示例行程，仅用于预览，不会保存。"}
+          {upcoming ? "中号小组件预览，共用实际布局；主屏幕尺寸与 iOS 显示模式可能影响效果。" : "虚构示例行程，仅用于预览，不会保存。"}
         </Text>}>
-          <TripCard trip={upcoming ?? {
-            ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
-            departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
-            fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
-            note: "", createdAt: "2099-06-18T00:00:00.000Z",
-          }} theme={theme} passengerMode={passengerMode} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />
+          <GeometryReader frame={{ height: 158 }} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
+            {proxy => <TripWidget width={proxy.size.width} height={proxy.size.height} trip={upcoming ?? {
+              ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
+              departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
+              fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
+              note: "", createdAt: "2099-06-18T00:00:00.000Z",
+            }} theme={theme} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
+          </GeometryReader>
         </Section>
         {/* ---------------- 设置 ---------------- */}
         <Section
@@ -627,7 +631,9 @@ function View() {
         </Text>}>
           {(Object.keys(ACCENTS) as AccentKey[]).map((k) => (
             <Button key={k} buttonStyle="plain" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
-              <HStack spacing={10} padding={{ top: 6, bottom: 6 }}>
+              <HStack spacing={10} padding={{ top: 8, bottom: 8 }}
+                frame={{ maxWidth: "infinity", minHeight: 44 }}
+                contentShape={{ kind: "interaction", shape: { type: "rect" } }}>
                 <RoundedRectangle cornerRadius={6} fill={k === "theme" ? THEMES[themeKey].accent : ACCENTS[k].color}
                   frame={{ width: 28, height: 28 }} />
                 <Text foregroundStyle="label">{ACCENTS[k].label}</Text>

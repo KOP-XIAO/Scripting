@@ -82,15 +82,15 @@ export const THEMES: Record<ThemeKey, Theme> = {
   },
   forest: {
     key: "forest",
-    label: "松林绿",
-    cardTop: "#102B25",
-    cardBottom: "#183E32",
-    ink: "#F0F5E9",
-    sub: "#BED0C1",
-    accent: "#C5DE9C",
-    accentSoft: "rgba(197, 222, 156, 0.14)",
-    warn: "#F4CD8A",
-    badgeInk: "#102B25",
+    label: "奶油摩卡",
+    cardTop: "#FAF6EF",
+    cardBottom: "#F6F0E6",
+    ink: "#382B25",
+    sub: "#705C50",
+    accent: "#86583C",
+    accentSoft: "rgba(134, 88, 60, 0.12)",
+    warn: "#89451D",
+    badgeInk: "#FFFFFF",
   },
 }
 
@@ -127,7 +127,7 @@ export function getAccentKey(): AccentKey {
 export function resolveTheme(key: ThemeKey, accentKey: AccentKey): Theme {
   const theme = THEMES[key]
   if (accentKey === "theme") return theme
-  const dark = key === "midnight" || key === "cyberpunk" || key === "forest"
+  const dark = key === "midnight" || key === "cyberpunk"
   const accent = dark ? ACCENTS[accentKey].dark : ACCENTS[accentKey].light
   return { ...theme, accent, warn: accent, badgeInk: dark ? "#10202A" : "#FFFFFF" }
 }
