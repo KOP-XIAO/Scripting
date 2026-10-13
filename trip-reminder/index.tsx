@@ -65,7 +65,7 @@ import {
   type TripRecord,
 } from "./services/trips"
 import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/ocr"
-import { THEMES, getTheme, getThemeKey, setThemeKey, type ThemeKey } from "./services/theme"
+import { THEMES, getThemeKey, setThemeKey, type ThemeKey } from "./services/theme"
 import { VERSION } from "./utils/common"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
@@ -111,7 +111,7 @@ function View() {
     return () => clearInterval(timer)
   }, [])
 
-  const theme = getTheme()
+  const theme = THEMES[themeKey]
   const upcoming = nextTrip(now)
   const archived = trips.filter((t) => !!t.archivedAt)
   const visibleTrips = trips.filter((t) => showArchive ? !!t.archivedAt : !t.archivedAt)
