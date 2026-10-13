@@ -34,6 +34,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
   midnight: {
     key: "midnight",
     label: "夜行蓝",
+    backgroundAsset: "theme-midnight.png",
     cardTop: "#121A28",
     cardBottom: "#0A111D",
     ink: "#EAF0F8",
@@ -83,6 +84,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
   forest: {
     key: "forest",
     label: "奶油摩卡",
+    backgroundAsset: "theme-mocha.png",
     cardTop: "#FAF6EF",
     cardBottom: "#F6F0E6",
     ink: "#382B25",

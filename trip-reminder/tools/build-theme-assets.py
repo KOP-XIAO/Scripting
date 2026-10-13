@@ -82,8 +82,41 @@ def travel():
   d.rounded_rectangle((1230,520,1400,670),radius=6,outline=(163,99,70,75),width=3)
   d.ellipse((1255,540,1375,654),outline=(163,99,70,65),width=3)
  return wash(layer(im,map_art),(246,239,223),245,.65)
+def midnight():
+ im=gradient((18,26,40),(10,17,29))
+ im=layer(im,lambda d:d.ellipse((840,-270,1610,500),fill=(41,75,119,90)),85)
+ def night(d):
+  # Keep moon and landscape dim enough for text, including custom accents.
+  d.ellipse((1180,65,1315,200),fill=(46,64,86,255))
+  d.ellipse((1208,49,1327,177),fill=(22,34,53,255))
+  for x,y in [(940,90),(1090,55),(1370,230),(1140,245),(1000,195),(1340,40)]:
+   d.ellipse((x-2,y-2,x+2,y+2),fill=(48,65,86,255))
+  d.polygon([(330,720),(900,285),(1070,395),(1250,260),(1440,380),(1440,720),(330,720)],fill=(24,39,60,255))
+  d.polygon([(350,720),(1050,420),(1220,475),(1440,350),(1440,720),(350,720)],fill=(16,29,47,255))
+  d.line([(870,650),(1130,560),(1440,538)],fill=(44,64,87,255),width=4)
+  d.line([(875,670),(1135,578),(1440,556)],fill=(35,53,75,255),width=3)
+  for i in range(12):
+   x=1160+i*25;y=558-(x-1160)*.07
+   d.line((x,y,x+4,y+21),fill=(32,49,69,255),width=3)
+ return wash(layer(im,night),(10,17,29),150,.65)
+def mocha():
+ im=gradient((250,246,239),(246,240,230))
+ a=np.asarray(im).copy()
+ a[...,:3]=np.clip(a[...,:3].astype(float)+np.random.default_rng(52).normal(0,.8,(720,1440,1)),0,255).astype('uint8')
+ im=Image.fromarray(a)
+ def paper(d):
+  d.ellipse((870,-160,1630,600),fill=(235,222,205,255))
+  d.ellipse((980,-110,1570,480),fill=(244,233,217,255))
+  d.ellipse((1070,-65,1490,355),fill=(249,242,231,255))
+  # A cropped coffee-ring motif, with soft contour lines instead of a busy photo.
+  for inset in (0,13,28):
+   d.ellipse((1150+inset,75+inset,1500-inset,425-inset),outline=(233+inset//4,220+inset//4,203+inset//4,255),width=3)
+  for i in range(4):
+   pts=[(830+x,520+i*22+math.sin(x/155+i*.15)*28) for x in range(0,620,6)]
+   d.line(pts,fill=(229,217,199,255),width=2)
+ return wash(layer(im,paper),(250,246,239),70,.65)
 if __name__=="__main__":
  ASSETS.mkdir(exist_ok=True)
- for name,build in [("cyberpunk",cyberpunk),("anime",anime),("travel",travel)]:
+ for name,build in [("cyberpunk",cyberpunk),("anime",anime),("travel",travel),("midnight",midnight),("mocha",mocha)]:
   im=build();assert im.size==SIZE and im.getextrema()[3]==(255,255)
   im.save(ASSETS/f"theme-{name}.png",optimize=True);print(f"Built {name}: {im.size}")
