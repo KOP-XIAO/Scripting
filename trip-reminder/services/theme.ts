@@ -1,7 +1,7 @@
 // services/theme.ts — 小组件与 App 的配色（Storage 持久化，两个进程共享）
 // Storage / Widget 为全局对象，禁止从 scripting 导入
 
-export type ThemeKey = "ticket" | "midnight" | "cyberpunk" | "anime" | "travel"
+export type ThemeKey = "ticket" | "midnight" | "cyberpunk" | "anime" | "travel" | "forest"
 
 export type Theme = {
   key: ThemeKey
@@ -26,10 +26,10 @@ export const THEMES: Record<ThemeKey, Theme> = {
     cardTop: "#FFFFFF",
     cardBottom: "#EEF3FB",
     ink: "#17233A",
-    sub: "rgba(23, 35, 58, 0.55)",
-    accent: "#2C7BE5",
+    sub: "#536078",
+    accent: "#2165B5",
     accentSoft: "rgba(44, 123, 229, 0.12)",
-    warn: "#E8833A",
+    warn: "#91440F",
   },
   midnight: {
     key: "midnight",
@@ -37,10 +37,11 @@ export const THEMES: Record<ThemeKey, Theme> = {
     cardTop: "#121A28",
     cardBottom: "#0A111D",
     ink: "#EAF0F8",
-    sub: "rgba(234, 240, 248, 0.55)",
+    sub: "#AAB8CD",
     accent: "#4C9AFF",
     accentSoft: "rgba(76, 154, 255, 0.18)",
     warn: "#FFB454",
+    badgeInk: "#10202A",
   },
   cyberpunk: {
     key: "cyberpunk",
@@ -79,6 +80,18 @@ export const THEMES: Record<ThemeKey, Theme> = {
     warn: "#784117",
     backgroundAsset: "theme-travel.png",
   },
+  forest: {
+    key: "forest",
+    label: "松林绿",
+    cardTop: "#102B25",
+    cardBottom: "#183E32",
+    ink: "#F0F5E9",
+    sub: "#BED0C1",
+    accent: "#C5DE9C",
+    accentSoft: "rgba(197, 222, 156, 0.14)",
+    warn: "#F4CD8A",
+    badgeInk: "#102B25",
+  },
 }
 
 export function getThemeKey(): ThemeKey {
@@ -89,8 +102,43 @@ export function getThemeKey(): ThemeKey {
   return "ticket"
 }
 
+export const ACCENT_KEY = "rail.accent"
+export const ACCENTS = {
+  theme: { label: "跟随主题", color: "#687787", light: "", dark: "" },
+  hermes: { label: "爱马仕橙", color: "#F37021", light: "#A94308", dark: "#FFAD70" },
+  tiffany: { label: "蒂芙尼蓝", color: "#81D8D0", light: "#166D68", dark: "#81D8D0" },
+  prussian: { label: "普鲁士蓝", color: "#003153", light: "#003153", dark: "#8ABFE0" },
+  klein: { label: "克莱因蓝", color: "#002FA7", light: "#002FA7", dark: "#A3B8FF" },
+  burgundy: { label: "勃艮第红", color: "#800020", light: "#800020", dark: "#F4A6BB" },
+  emerald: { label: "祖母绿", color: "#007A53", light: "#006344", dark: "#83DCB4" },
+  violet: { label: "鸢尾紫", color: "#7851A9", light: "#64408F", dark: "#D3B4F5" },
+  gold: { label: "香槟金", color: "#C5A36B", light: "#76551E", dark: "#E7C892" },
+}
+export type AccentKey = keyof typeof ACCENTS
+
+export function getAccentKey(): AccentKey {
+  try {
+    const k = Storage.get<string>(ACCENT_KEY)
+    if (k && Object.prototype.hasOwnProperty.call(ACCENTS, k)) return k as AccentKey
+  } catch {}
+  return "theme"
+}
+
+export function resolveTheme(key: ThemeKey, accentKey: AccentKey): Theme {
+  const theme = THEMES[key]
+  if (accentKey === "theme") return theme
+  const dark = key === "midnight" || key === "cyberpunk" || key === "forest"
+  const accent = dark ? ACCENTS[accentKey].dark : ACCENTS[accentKey].light
+  return { ...theme, accent, warn: accent, badgeInk: dark ? "#10202A" : "#FFFFFF" }
+}
+
 export function getTheme(): Theme {
-  return THEMES[getThemeKey()]
+  return resolveTheme(getThemeKey(), getAccentKey())
+}
+
+export function setAccentKey(key: AccentKey) {
+  try { Storage.set(ACCENT_KEY, key) } catch {}
+  try { Widget.reloadAll() } catch {}
 }
 
 export function setThemeKey(key: ThemeKey) {

@@ -1,5 +1,5 @@
 // index.tsx — 行程提醒（火车 + 航班，App 内页面）
-// 结构：NavigationStack + List 分 Section：下一段行程 / 识别录入 / 核对行程 / 行程列表 / 设置 / 关于
+// 结构：原生底部 TabView：首页行程工作流 / 设置与外观预览
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()
 //
 // 隐私：本脚本不发起任何网络请求。行程数据只写入本机 Storage（rail.* 键），
@@ -11,8 +11,7 @@
 // 布局约定（本运行时实证）：
 //  ① 同一行不放两个默认样式按钮（热区互相覆盖）——每个操作按钮独占一个 List 行
 //  ② TextField 必须包含 title 或 label，字段采用带 title 的双列布局
-//  ③ App UI 文本用系统自适应色（label / secondaryLabel），不用固定主题色——
-//    固定色是按小组件的主题背景设计的，深色模式下会深色叠深色
+//  ③ 普通列表用系统自适应色；主题卡片同时使用主题背景和配套文字色。
 
 import {
   Button,
@@ -28,6 +27,9 @@ import {
   Text,
   TextField,
   Toggle,
+  Tab,
+  TabView,
+  useObservable,
   VStack,
   ZStack,
   useEffect,
@@ -65,7 +67,9 @@ import {
   type TripRecord,
 } from "./services/trips"
 import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/ocr"
-import { THEMES, getThemeKey, setThemeKey, type ThemeKey } from "./services/theme"
+import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey, setThemeKey, type ThemeKey, type AccentKey } from "./services/theme"
+import { ThemeBackground } from "./components/theme-background"
+import { TripCard } from "./components/trip-card"
 import { VERSION } from "./utils/common"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
@@ -93,6 +97,8 @@ const EMPTY_DRAFT: ParsedTrip = {
 
 function View() {
   const dismiss = Navigation.useDismiss()
+  const selection = useObservable<string>("home")
+  const [accentKey, setAccentKeyLocal] = useState<AccentKey>(getAccentKey())
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
   const [passengerMode, setPassengerModeLocal] = useState<PassengerMode>(getPassengerMode())
   const [trips, setTrips] = useState<TripRecord[]>(listTrips())
@@ -111,7 +117,7 @@ function View() {
     return () => clearInterval(timer)
   }, [])
 
-  const theme = THEMES[themeKey]
+  const theme = resolveTheme(themeKey, accentKey)
   const upcoming = nextTrip(now)
   const archived = trips.filter((t) => !!t.archivedAt)
   const visibleTrips = trips.filter((t) => showArchive ? !!t.archivedAt : !t.archivedAt)
@@ -258,12 +264,12 @@ function View() {
         spacing={8}
         padding={10}
         frame={{ maxWidth: "infinity" } as never}
-        background={theme.accentSoft}
+        background="rgba(127,127,127,0.10)"
         clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
       >
         {notice ? (
           <HStack spacing={6}>
-            <Image systemName="info.circle" font={11} foregroundStyle={theme.warn} />
+            <Image systemName="info.circle" font={11} foregroundStyle="systemBlue" />
             <Text font="caption2" foregroundStyle="label" lineLimit={3}>
               {notice}
             </Text>
@@ -286,9 +292,9 @@ function View() {
                 <Text
                   font="caption"
                   fontWeight={selected ? "semibold" : "regular"}
-                  foregroundStyle={selected ? theme.accent : "secondaryLabel"}
+                  foregroundStyle={selected ? "systemBlue" : "secondaryLabel"}
                   padding={{ top: 3, bottom: 3, leading: 10, trailing: 10 }}
-                  background={selected ? theme.accentSoft : "rgba(127,127,127,0.10)"}
+                  background={selected ? "rgba(0,122,255,0.12)" : "rgba(127,127,127,0.10)"}
                   clipShape={{ type: "rect", cornerRadius: 7, style: "continuous" }}
                 >
                   {modeLabel(m)}
@@ -383,7 +389,9 @@ function View() {
   }
 
   return (
-    <NavigationStack>
+    <TabView selection={selection}>
+      <Tab title="首页" systemImage="house.fill" value="home">
+      <NavigationStack>
       <List
         navigationTitle={`行程提醒 | v${VERSION}`}
         navigationBarTitleDisplayMode="inline"
@@ -403,69 +411,7 @@ function View() {
           }
         >
           {upcoming ? (
-            <VStack
-              alignment="leading"
-              spacing={8}
-              padding={14}
-              frame={{ maxWidth: "infinity" } as never}
-              background={theme.accentSoft}
-              clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
-            >
-              <HStack spacing={6}>
-                <Image systemName={modeIcon(upcoming.mode)} font={13} foregroundStyle={theme.accent} />
-                <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.accent}>
-                  {upcoming.code || "—"}
-                </Text>
-                {upcoming.carrier ? (
-                  <Text font="caption2" foregroundStyle={theme.warn}>
-                    {upcoming.carrier}
-                  </Text>
-                ) : null}
-                <Spacer />
-                <Text font="caption" foregroundStyle="secondaryLabel">
-                  {monthDayText(upcoming.departDate)} {weekdayText(upcoming.departDate)}
-                </Text>
-              </HStack>
-              <HStack spacing={8}>
-                <VStack alignment="leading" spacing={2}>
-                  <Text font="title3" monospaced foregroundStyle="label">
-                    {upcoming.departTime || "--:--"}
-                  </Text>
-                  <Text font="caption" foregroundStyle="label" lineLimit={1}>
-                    {upcoming.fromPlace || "—"}
-                  </Text>
-                </VStack>
-                <Image systemName="arrow.right" font={12} foregroundStyle="secondaryLabel" />
-                <VStack alignment="leading" spacing={2}>
-                  <Text font="title3" monospaced foregroundStyle="label">
-                    {upcoming.arriveTime || "--:--"}
-                  </Text>
-                  <Text font="caption" foregroundStyle="label" lineLimit={1}>
-                    {upcoming.toPlace || "—"}
-                  </Text>
-                </VStack>
-                <Text font="caption2" foregroundStyle="secondaryLabel">{`｜${durationText(upcoming)}`}</Text>
-                <Spacer />
-              </HStack>
-              <HStack spacing={12}>
-                <Text font="caption" foregroundStyle="label">
-                  {gateLabel(upcoming.mode)} {upcoming.gate || "—"}
-                </Text>
-                <Text font="caption" foregroundStyle="label">
-                  座位 {seatText(upcoming)}
-                </Text>
-                {upcoming.mode === "flight" && upcoming.boardingTime ? (
-                  <Text font="caption" foregroundStyle={theme.warn}>
-                    登机 {upcoming.boardingTime}
-                  </Text>
-                ) : null}
-                {displayPassenger(upcoming.passenger, passengerMode) ? (
-                  <Text font="caption" foregroundStyle="secondaryLabel">
-                    {displayPassenger(upcoming.passenger, passengerMode)}
-                  </Text>
-                ) : null}
-              </HStack>
-            </VStack>
+            <TripCard trip={upcoming} theme={theme} passengerMode={passengerMode} now={now} />
           ) : (
             <Text foregroundStyle="secondaryLabel">暂无行程</Text>
           )}
@@ -552,9 +498,9 @@ function View() {
                     <Image
                       systemName={modeIcon(t.mode)}
                       font={12}
-                      foregroundStyle={expired ? "secondaryLabel" : theme.accent}
+                      foregroundStyle={expired ? "secondaryLabel" : "systemBlue"}
                     />
-                    <Text font="headline" monospaced foregroundStyle={expired ? "secondaryLabel" : theme.accent}>
+                    <Text font="headline" monospaced foregroundStyle={expired ? "secondaryLabel" : "systemBlue"}>
                       {t.code || "—"}
                     </Text>
                     <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={showArchive ? undefined : 1}>
@@ -574,7 +520,7 @@ function View() {
                       .filter(Boolean)
                       .join(" · ")}
                   </Text>
-                  <Text font="caption2" foregroundStyle={expired ? "tertiaryLabel" : theme.warn}>
+                  <Text font="caption2" foregroundStyle={expired ? "tertiaryLabel" : "systemBlue"}>
                     {showArchive ? `已归档 · ${durationText(t)}` : dep ? countdownText(t, now) : "待补全出发时间"}
                     {t.note ? `　·　${t.note}` : ""}
                   </Text>
@@ -613,24 +559,37 @@ function View() {
           ) : null}
         </Section>
 
+      </List>
+      </NavigationStack>
+      </Tab>
+      <Tab title="设置" systemImage="gearshape.fill" value="settings">
+      <NavigationStack>
+      <List navigationTitle="设置" navigationBarTitleDisplayMode="inline"
+        toolbar={{ cancellationAction: <Button title="关闭" action={dismiss} /> }}>
+        <Section title="外观预览" footer={<Text font="caption" foregroundStyle="secondaryLabel">
+          {upcoming ? "与首页使用同一张卡片，主题与强调色即时预览。" : "虚构示例行程，仅用于预览，不会保存。"}
+        </Text>}>
+          <TripCard trip={upcoming ?? {
+            ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
+            departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
+            fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
+            note: "", createdAt: "2099-06-18T00:00:00.000Z",
+          }} theme={theme} passengerMode={passengerMode} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />
+        </Section>
         {/* ---------------- 设置 ---------------- */}
         <Section
-          title="设置"
+          title="背景主题"
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              若更改后小组件没有立即变化，长按小组件移除后重新添加即可（iOS 会缓存小组件画面）。
+              首页与预览立即切换；小组件已请求刷新，显示时间由 iOS 决定。
             </Text>
           }
         >
-          <Button
-            title={`乘客姓名：${passengerModeLabel(passengerMode)}`}
-            action={() => void choosePassengerMode()}
-          />
-          {/* 两列选择器，避免五套主题塞在一行；直接展示实际背景资源。 */}
+          {/* 六套主题，两列三行；缩略图使用真实背景与当前强调色。 */}
           {Array.from({ length: Math.ceil(Object.keys(THEMES).length / 2) }, (_, row) => (
             <HStack key={`theme-row-${row}`} spacing={12}>
               {(Object.keys(THEMES) as ThemeKey[]).slice(row * 2, row * 2 + 2).flatMap((k, i) => {
-                const t = THEMES[k]
+                const t = resolveTheme(k, accentKey)
                 const selected = k === themeKey
                 const chip = (
                   <Button
@@ -639,25 +598,20 @@ function View() {
                     action={() => { setThemeKeyLocal(k); setThemeKey(k) }}
                   >
                     <VStack alignment="leading" spacing={5}>
-                      <ZStack frame={{ width: 132, height: 66 }}
+                      <ZStack frame={{ width: 112, height: 66 }}
                         clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}>
-                        {t.backgroundAsset ? (
-                          <Image filePath={`${Script.directory}/assets/${t.backgroundAsset}`}
-                            resizable={true} frame={{ width: 132, height: 66 }} />
-                        ) : (
-                          <RoundedRectangle frame={{ width: 132, height: 66 }} cornerRadius={10} fill={t.cardTop} />
-                        )}
-                        <Text font="caption2" fontWeight="bold" foregroundStyle={t.badgeInk ?? "#FFFFFF"}
+                        <VStack frame={{ width: 112, height: 66 }} background={<ThemeBackground theme={t} />}><Spacer /></VStack>
+                         <Text font="caption2" fontWeight="bold" foregroundStyle={t.badgeInk ?? "#FFFFFF"}
                           padding={3} background={t.accent}
                           clipShape={{ type: "rect", cornerRadius: 4, style: "continuous" }}
-                          offset={{ x: -36, y: -18 }}>G1234</Text>
+                          offset={{ x: -26, y: -18 }}>G1234</Text>
                         <Text font="caption2" monospaced foregroundStyle={t.ink}
-                          offset={{ x: -12, y: 2 }}>09:00 → 10:24</Text>
-                        <Text font="caption2" fontWeight="semibold" foregroundStyle={t.warn}
-                          offset={{ x: -18, y: 20 }}>检票口 A1</Text>
+                          offset={{ x: 0, y: 2 }}>09:00 → 10:24</Text>
+                        <Text font="caption2" fontWeight="semibold" foregroundStyle={t.accent}
+                          offset={{ x: -8, y: 20 }}>检票口 A1</Text>
                       </ZStack>
                       <Text font="caption" foregroundStyle="label">
-                        {selected ? `✓ ${t.label}` : t.label}
+                        {selected ? `已选 · ${t.label}` : t.label}
                       </Text>
                     </VStack>
                   </Button>
@@ -666,6 +620,25 @@ function View() {
               })}
             </HStack>
           ))}
+        </Section>
+
+        <Section title="字体强调色" footer={<Text font="caption" foregroundStyle="secondaryLabel">
+          用于车次／航班号、倒计时、检票口／登机口和座位。浅、深背景自动调整明度，保持文字清晰。
+        </Text>}>
+          {(Object.keys(ACCENTS) as AccentKey[]).map((k) => (
+            <Button key={k} buttonStyle="plain" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
+              <HStack spacing={10} padding={{ top: 6, bottom: 6 }}>
+                <RoundedRectangle cornerRadius={6} fill={k === "theme" ? THEMES[themeKey].accent : ACCENTS[k].color}
+                  frame={{ width: 28, height: 28 }} />
+                <Text foregroundStyle="label">{ACCENTS[k].label}</Text>
+                <Spacer />
+                {k === accentKey ? <Image systemName="checkmark" foregroundStyle="systemBlue" /> : null}
+              </HStack>
+            </Button>
+          ))}
+        </Section>
+        <Section title="乘客显示">
+          <Button title={`乘客姓名：${passengerModeLabel(passengerMode)}`} action={() => void choosePassengerMode()} />
         </Section>
 
         {/* ---------------- 关于 ---------------- */}
@@ -698,7 +671,9 @@ function View() {
           </VStack>
         </Section>
       </List>
-    </NavigationStack>
+      </NavigationStack>
+      </Tab>
+    </TabView>
   )
 }
 

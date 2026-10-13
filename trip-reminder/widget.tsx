@@ -160,7 +160,7 @@ function TripBody({ trip, width, height }: { trip: TripRecord; width: number; he
             <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass ? `座位｜${trip.seatClass}` : "座位"}</Text><Spacer />
           </HStack>
           <HStack spacing={0} frame={{ width: seatWidth, height: 21 }}>
-            <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{seat}</Text><Spacer />
+            <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.accent} lineLimit={1}>{seat}</Text><Spacer />
           </HStack>
           <Spacer />
         </VStack>
