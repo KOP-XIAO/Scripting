@@ -438,6 +438,18 @@ def darken_for_light(hex_color, target_l=0.15):
     return "#{:02X}{:02X}{:02X}".format(round(r * k * 255), round(g * k * 255), round(b * k * 255))
 
 
+def vivid_accent(hex_color, min_s=0.55, l_lo=0.45, l_hi=0.72):
+    """徽章用色：低饱和主题色（石墨灰/橄榄/香槟）拉饱和度地板、钳制亮度，
+    避免在深色底上发灰发虚。色相不变。"""
+    import colorsys
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    h, l, s_ = colorsys.rgb_to_hls(r, g, b)
+    s_ = max(s_, min_s)
+    l = min(max(l, l_lo), l_hi)
+    r, g, b = colorsys.hls_to_rgb(h, l, s_)
+    return "#{:02X}{:02X}{:02X}".format(round(r * 255), round(g * 255), round(b * 255))
+
+
 def hex_rgba(hex_color, a=255):
     return (int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16), a)
 
@@ -503,7 +515,7 @@ def bake_theme_badges():
             base = Image.alpha_composite(base, glow_layer(
                 (S, S), lambda dd: dd.ellipse([24, 38, S - 24, S - 10], fill=(40, 70, 40, 90)), 10 * SS))
             d = ImageDraw.Draw(base)
-            d.ellipse([16, 16, S - 16, S - 16], fill=hex_rgba(darken_for_light(accent), 225),
+            d.ellipse([16, 16, S - 16, S - 16], fill=hex_rgba(darken_for_light(vivid_accent(accent))),
                       outline=(255, 255, 255, 255), width=8 * SS)
             base = Image.alpha_composite(base, glow_layer(
                 (S, S), lambda dd: dd.ellipse([56, 30, S - 56, S // 2], fill=(255, 255, 255, 45)), 14 * SS))
@@ -523,7 +535,7 @@ def bake_theme_badges():
             octo2 = octagon(S / 2, S / 2, S * 0.36)
             d.line(octo2 + [octo2[0]], fill=(234, 242, 255, 60), width=2 * SS, joint="curve")
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 124 * SS, hex_rgba(accent))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 124 * SS, hex_rgba(vivid_accent(accent)))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
@@ -531,15 +543,16 @@ def bake_theme_badges():
             # 字形也带辉光——与纹理风实心 squircle 彻底区分开
             box = [int(S * 0.09), int(S * 0.09), S - int(S * 0.09), S - int(S * 0.09)]
             tube_r = 30 * SS
+            vivid = vivid_accent(accent)
             base = Image.alpha_composite(Image.new("RGBA", (S, S), (0, 0, 0, 0)), glow_layer(
-                (S, S), lambda dd: dd.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(accent),
+                (S, S), lambda dd: dd.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(vivid),
                                                         width=18 * SS), 14 * SS))
             d = ImageDraw.Draw(base)
-            d.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(accent), width=9 * SS)
+            d.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(vivid), width=9 * SS)
             d.rounded_rectangle(box, radius=tube_r, outline=(255, 255, 255, 230), width=3 * SS)
             ov = glow_layer(
-                (S, S), lambda dd: draw_glyph(dd, glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent, 180)), 5 * SS)
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(accent))
+                (S, S), lambda dd: draw_glyph(dd, glyph, S / 2, S / 2, 112 * SS, hex_rgba(vivid, 180)), 5 * SS)
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(vivid))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{glyph}-{theme}.png"))
 
@@ -549,13 +562,13 @@ def bake_theme_badges():
             base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             d = ImageDraw.Draw(base)
             chamfer = [(m0 + c, m0), (m1, m0), (m1, m1 - c), (m1 - c, m1), (m0, m1), (m0, m0 + c)]
-            d.polygon(chamfer, fill=(11, 6, 24, 200))
-            d.line(chamfer + [chamfer[0]], fill=hex_rgba(accent), width=11 * SS, joint="curve")
+            d.polygon(chamfer, fill=(11, 6, 24, 250))
+            d.line(chamfer + [chamfer[0]], fill=hex_rgba(vivid_accent(accent)), width=11 * SS, joint="curve")
             # 左上角黄色小角标（风格识别色）
             d.polygon([(m0, m0 + c), (m0 + c, m0), (m0 + int(c * 2.2), m0), (m0, m0 + int(c * 2.2))],
                       fill=CYBER_YELLOW + (255,))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 120 * SS, hex_rgba(accent))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 120 * SS, hex_rgba(vivid_accent(accent)))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-cyberpunk-{glyph}-{theme}.png"))
 
