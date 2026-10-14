@@ -210,11 +210,11 @@ def bake_anime():
         img = Image.alpha_composite(img, ov)
 
         # 左侧文字区白色衬底
-        scrim_w = int(w * 0.62)
+        scrim_w = int(w * 0.55)
         xs = np.linspace(0, 1, scrim_w)[None, :, None]
         scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
         scrim_arr[..., :3] = 255
-        scrim_arr[..., 3] = np.repeat((1 - xs) * 95, h, axis=0)[..., 0].astype(np.uint8)
+        scrim_arr[..., 3] = np.repeat((1 - xs) * 60, h, axis=0)[..., 0].astype(np.uint8)
         img = Image.alpha_composite(img, Image.fromarray(scrim_arr, "RGBA").resize(size).filter(ImageFilter.GaussianBlur(8)))
 
         img.save(os.path.join(ASSETS, f"widget-style-anime-{fam}.png"))
@@ -249,7 +249,7 @@ def bake_blueprint():
             d.line([(gx, gy - 7 * U), (gx, gy + 7 * U)], fill=LINE + (40,), width=max(1, round(2 * U)))
         img = Image.alpha_composite(img, ov)
         # 左侧文字区暗色衬底（左 -> 右渐变到透明），压住网格保证白字可读
-        scrim_w = int(w * 0.62)
+        scrim_w = int(w * 0.55)
         xs = np.linspace(0, 1, scrim_w)[None, :, None]
         scrim_alpha = (1 - xs) * 90
         scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
@@ -396,13 +396,13 @@ def bake_cyberpunk():
         img = Image.alpha_composite(img, ov)
 
         # 左侧文字区暗色衬底（同蓝图处理）
-        scrim_w = int(w * 0.62)
+        scrim_w = int(w * 0.55)
         xs = np.linspace(0, 1, scrim_w)[None, :, None]
         scrim_arr = np.zeros((h, scrim_w, 4), dtype=np.uint8)
         scrim_arr[..., 0] = 8
         scrim_arr[..., 1] = 4
         scrim_arr[..., 2] = 20
-        scrim_arr[..., 3] = np.repeat((1 - xs) * 90, h, axis=0)[..., 0].astype(np.uint8)
+        scrim_arr[..., 3] = np.repeat((1 - xs) * 60, h, axis=0)[..., 0].astype(np.uint8)
         img = Image.alpha_composite(img, Image.fromarray(scrim_arr, "RGBA").resize(size))
 
         if fam == "medium":
@@ -466,14 +466,14 @@ def draw_glyph(d, glyph, cx, cy, h, color):
     elif glyph == "download":
         draw_down_arrow(d, cx, cy, h, color)
     elif glyph == "film":
-        # 横置胶片：圆角框 + 上下两排齿孔
+        # 横置胶片：圆角框 + 上下两排齿孔（孔小框粗，避免细线条发虚）
         w2, h2 = h * 0.58, h * 0.40
         d.rounded_rectangle([cx - w2, cy - h2, cx + w2, cy + h2], radius=h * 0.10, fill=color)
-        hole = h * 0.10
+        hole = h * 0.075
         for i in range(4):
-            x = cx - w2 + h * 0.10 + i * (2 * w2 - h * 0.20 - hole) / 3
-            d.rectangle([x, cy - h2 + h * 0.06, x + hole, cy - h2 + h * 0.06 + hole], fill=HOLE)
-            d.rectangle([x, cy + h2 - h * 0.06 - hole, x + hole, cy + h2 - h * 0.06], fill=HOLE)
+            x = cx - w2 + h * 0.09 + i * (2 * w2 - h * 0.18 - hole) / 3
+            d.rectangle([x, cy - h2 + h * 0.05, x + hole, cy - h2 + h * 0.05 + hole], fill=HOLE)
+            d.rectangle([x, cy + h2 - h * 0.05 - hole, x + hole, cy + h2 - h * 0.05], fill=HOLE)
     elif glyph == "video":
         # 摄像机：圆角机身 + 右侧三角镜头
         w2, h2 = h * 0.40, h * 0.30
@@ -481,15 +481,15 @@ def draw_glyph(d, glyph, cx, cy, h, color):
         d.polygon([(cx + w2 - h * 0.14, cy - h * 0.12), (cx + w2 - h * 0.14, cy + h * 0.12),
                    (cx + h * 0.58, cy + h * 0.30), (cx + h * 0.58, cy - h * 0.30)], fill=color)
     elif glyph == "clapperboard":
-        # 场记板：底板 + 斜纹上翻板
+        # 场记板：底板 + 斜纹上翻板（板面加高、条纹收窄，笔画更粗实）
         w2 = h * 0.52
-        d.rounded_rectangle([cx - w2, cy - h * 0.10, cx + w2, cy + h * 0.40], radius=h * 0.07, fill=color)
-        d.polygon([(cx - w2, cy - h * 0.14), (cx - w2 + h * 0.06, cy - h * 0.38),
-                   (cx + w2, cy - h * 0.28), (cx + w2, cy - h * 0.04)], fill=color)
+        d.rounded_rectangle([cx - w2, cy - h * 0.06, cx + w2, cy + h * 0.42], radius=h * 0.07, fill=color)
+        d.polygon([(cx - w2, cy - h * 0.12), (cx - w2 + h * 0.06, cy - h * 0.42),
+                   (cx + w2, cy - h * 0.32), (cx + w2, cy - h * 0.06)], fill=color)
         for i in range(3):  # 斜纹挖洞
-            x0 = cx - w2 + h * (0.14 + i * 0.34)
-            d.polygon([(x0, cy - h * 0.36 + h * 0.02 * i), (x0 + h * 0.10, cy - h * 0.345 + h * 0.02 * i),
-                       (x0 + h * 0.22, cy - h * 0.08), (x0 + h * 0.12, cy - h * 0.065)], fill=HOLE)
+            x0 = cx - w2 + h * (0.13 + i * 0.34)
+            d.polygon([(x0, cy - h * 0.40 + h * 0.02 * i), (x0 + h * 0.08, cy - h * 0.385 + h * 0.02 * i),
+                       (x0 + h * 0.20, cy - h * 0.10), (x0 + h * 0.12, cy - h * 0.085)], fill=HOLE)
     elif glyph == "popcorn":
         # 爆米花桶：梯形盒身 + 竖条纹挖洞 + 顶部三颗米花
         d.polygon([(cx - h * 0.36, cy - h * 0.02), (cx + h * 0.36, cy - h * 0.02),
@@ -520,7 +520,7 @@ def bake_theme_badges():
             base = Image.alpha_composite(base, glow_layer(
                 (S, S), lambda dd: dd.ellipse([56, 30, S - 56, S // 2], fill=(255, 255, 255, 45)), 14 * SS))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 118 * SS, (255, 255, 255, 255))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, int(118 * (1.08 if glyph in ("film", "clapperboard", "video") else 1.0)) * SS, (255, 255, 255, 255))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-anime-{glyph}-{theme}.png"))
 
@@ -535,7 +535,7 @@ def bake_theme_badges():
             octo2 = octagon(S / 2, S / 2, S * 0.36)
             d.line(octo2 + [octo2[0]], fill=(234, 242, 255, 60), width=2 * SS, joint="curve")
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 124 * SS, hex_rgba(vivid_accent(accent)))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, int(124 * (1.08 if glyph in ("film", "clapperboard", "video") else 1.0)) * SS, hex_rgba(vivid_accent(accent)))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-blueprint-{glyph}-{theme}.png"))
 
@@ -551,8 +551,8 @@ def bake_theme_badges():
             d.rounded_rectangle(box, radius=tube_r, outline=hex_rgba(vivid), width=9 * SS)
             d.rounded_rectangle(box, radius=tube_r, outline=(255, 255, 255, 230), width=3 * SS)
             ov = glow_layer(
-                (S, S), lambda dd: draw_glyph(dd, glyph, S / 2, S / 2, 112 * SS, hex_rgba(vivid, 180)), 5 * SS)
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 112 * SS, hex_rgba(vivid))
+                (S, S), lambda dd: draw_glyph(dd, glyph, S / 2, S / 2, 112 * SS, hex_rgba(vivid, 130)), 3 * SS)
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, int(112 * (1.08 if glyph in ("film", "clapperboard", "video") else 1.0)) * SS, hex_rgba(vivid))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-neon-{glyph}-{theme}.png"))
 
@@ -568,7 +568,7 @@ def bake_theme_badges():
             d.polygon([(m0, m0 + c), (m0 + c, m0), (m0 + int(c * 2.2), m0), (m0, m0 + int(c * 2.2))],
                       fill=CYBER_YELLOW + (255,))
             ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, 120 * SS, hex_rgba(vivid_accent(accent)))
+            draw_glyph(ImageDraw.Draw(ov), glyph, S / 2, S / 2, int(120 * (1.08 if glyph in ("film", "clapperboard", "video") else 1.0)) * SS, hex_rgba(vivid_accent(accent)))
             badge = Image.alpha_composite(base, ov).resize((OUT, OUT), Image.LANCZOS)
             badge.save(os.path.join(ASSETS, f"widget-style-badge-cyberpunk-{glyph}-{theme}.png"))
 
