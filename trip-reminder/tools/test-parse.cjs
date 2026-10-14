@@ -370,4 +370,13 @@ const ok = (msg) => console.log(`✓ ${++n}. ${msg}`)
   ok("旧记录兼容、归档保留、Widget排除、清空保留归档正确")
 }
 
+
+// 未知到达时间不把出发时刻误判为结束。
+{
+  const trip = {departDate: "2026-10-12", departTime: "09:00", arriveTime: "", durationMin: 0}
+  assert.strictEqual(P.countdownText(trip, new Date("2026-10-12T10:00:00").getTime()), "已出发 · 到达时间待补")
+  assert.strictEqual(P.countdownText({...trip, durationMin: 60}, new Date("2026-10-12T10:00:00").getTime()), "行程已结束")
+  ok("未知到达时间：已出发提示与确定到达边界一致")
+}
+
 console.log(`\n全部通过：${n} 组断言`)

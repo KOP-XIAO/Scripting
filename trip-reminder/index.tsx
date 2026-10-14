@@ -21,6 +21,7 @@ import {
   List,
   Navigation,
   NavigationStack,
+  NavigationLink,
   RoundedRectangle,
   Script,
   Section,
@@ -37,7 +38,6 @@ import {
   useState,
 } from "scripting"
 import {
-  arriveTimestamp,
   durationText,
   countdownText,
   departTimestamp,
@@ -47,7 +47,6 @@ import {
   modeLabel,
   parseTripText,
   routeText,
-  seatText,
   weekdayText,
   type ParsedTrip,
   type TripMode,
@@ -58,6 +57,9 @@ import {
   deleteTrip,
   displayPassenger,
   getPassengerMode,
+  getHideSeatNumber,
+  setHideSeatNumber,
+  displaySeat,
   listTrips,
   newTripId,
   nextTrip,
@@ -97,6 +99,30 @@ const EMPTY_DRAFT: ParsedTrip = {
   passenger: "",
 }
 
+function ArchivePage({ trips, passengerMode, hideSeatNumber }: {
+  trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean
+}) {
+  return <List navigationTitle="归档记录" navigationBarTitleDisplayMode="inline">
+    <Section title={`归档记录 (${trips.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">已归档行程仅供回看，不参与小组件展示。</Text>}>
+      {trips.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...trips].reverse().map(t =>
+        <VStack key={t.id} alignment="leading" spacing={4}>
+          <Text font="headline">{t.code || "—"} · {routeText(t)}</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel">{[
+            `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
+            `${t.departTime || "--:--"} → ${t.arriveTime || "--:--"}`,
+            t.terminal, t.gate ? `${gateLabel(t.mode)} ${t.gate}` : "", displaySeat(t, hideSeatNumber),
+          ].filter(Boolean).join(" · ")}</Text>
+          <Text font="caption2" foregroundStyle="secondaryLabel">{[
+            `已归档 · ${durationText(t)}`, t.carrier, t.boardingTime ? `登机 ${t.boardingTime}` : "",
+            t.checkIn ? `值机 ${t.checkIn}` : "", t.baggage ? `行李转盘 ${t.baggage}` : "",
+            displayPassenger(t.passenger, passengerMode), t.note,
+          ].filter(Boolean).join(" · ")}</Text>
+        </VStack>
+      )}
+    </Section>
+  </List>
+}
+
 function View() {
   const dismiss = Navigation.useDismiss()
   const selection = useObservable<string>("home")
@@ -104,7 +130,7 @@ function View() {
   const [themeKey, setThemeKeyLocal] = useState<ThemeKey>(getThemeKey())
   const [passengerMode, setPassengerModeLocal] = useState<PassengerMode>(getPassengerMode())
   const [trips, setTrips] = useState<TripRecord[]>(listTrips())
-  const [showArchive, setShowArchive] = useState(false)
+  const [hideSeatNumber, setHideSeatNumberLocal] = useState(getHideSeatNumber())
   const [draft, setDraft] = useState<ParsedTrip | null>(null)
   const [draftId, setDraftId] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState("")
@@ -115,15 +141,21 @@ function View() {
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30000) // 倒计时文本每 30s 刷新
+    const timer = setInterval(() => {
+      const timestamp = Date.now()
+      setTrips(listTrips(timestamp))
+      setNow(timestamp)
+    }, 30000) // 同时刷新倒计时与自动归档
     return () => clearInterval(timer)
   }, [])
 
   const theme = resolveTheme(themeKey, accentKey)
   const upcoming = nextTrip(now)
   const archived = trips.filter((t) => !!t.archivedAt)
-  const visibleTrips = trips.filter((t) => showArchive ? !!t.archivedAt : !t.archivedAt)
-  if (showArchive) visibleTrips.reverse()
+  const activeTrips = trips.filter((t) => !t.archivedAt)
+  const visibleTrips = upcoming
+    ? [upcoming, ...activeTrips.filter(t => t.id !== upcoming.id)]
+    : activeTrips
 
   const refresh = () => setTrips(listTrips())
   const patch = (p: Partial<ParsedTrip>) => setDraft((d) => (d ? { ...d, ...p } : d))
@@ -219,7 +251,6 @@ function View() {
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     }
     upsertTrip(trip) // 内部会 Widget.reloadAll()
-    setShowArchive(false)
     cancelDraft()
     refresh()
   }
@@ -403,17 +434,21 @@ function View() {
       >
         {/* ---------------- 下一段行程 ---------------- */}
         <Section
-          title="下一段行程"
+          title={`行程预览 (${visibleTrips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              {upcoming
-                ? countdownText(upcoming, now) + "　·　小组件显示的就是这一条"
-                : "还没有行程。用下面的「从相册选行程截图识别」导入 12306 或航司行程截图即可。"}
+              {visibleTrips.length > 1 ? "左右滑动查看其他行程；小组件显示最近一段。" : upcoming ? "小组件显示最近一段行程。" : visibleTrips.length ? "请补全出发日期和时间，以便小组件展示与自动归档。" : "用下面的截图识别或手动新建添加行程。"}
             </Text>
           }
         >
-          {upcoming ? (
-            <TripCard trip={upcoming} theme={theme} passengerMode={passengerMode} now={now} />
+          {visibleTrips.length > 1 ? (
+            <TabView tabViewStyle="page" frame={{ height: 340 }}>
+              {visibleTrips.map(t => <VStack key={t.id} spacing={0} padding={{ bottom: 30 }}>
+                <TripCard trip={t} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
+              </VStack>)}
+            </TabView>
+          ) : visibleTrips.length === 1 ? (
+            <TripCard trip={visibleTrips[0]} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
           ) : (
             <Text foregroundStyle="secondaryLabel">暂无行程</Text>
           )}
@@ -439,7 +474,7 @@ function View() {
         </Section>
 
         {/* ---------------- 核对行程（OCR 或手动新建后） ---------------- */}
-        {draft && !draftId ? (
+        {draft && (!draftId || !visibleTrips.some(t => t.id === draftId)) ? (
           <Section
             title={`核对行程${draft.code ? ` · ${draft.code}` : ""}`}
             footer={
@@ -453,25 +488,21 @@ function View() {
         ) : null}
 
         <Section title="行程管理">
-          <Button
-            title={showArchive ? "返回未归档行程" : `查看归档记录（${archived.length}）`}
-            action={() => { cancelDraft(); setShowArchive(!showArchive) }}
-          />
+          <NavigationLink destination={<ArchivePage trips={archived} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} />}>
+            <Text>{`查看归档记录（${archived.length}）`}</Text>
+          </NavigationLink>
         </Section>
 
-        {/* 归档记录只读，不提供编辑和滑动操作 */}
         <Section
-          title={`${showArchive ? "归档记录" : "行程列表"} (${visibleTrips.length})`}
+          title={`行程列表 (${visibleTrips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              {showArchive
-                ? "已归档行程仅供回看，不参与小组件展示。"
-                : "点按编辑；左滑可归档或删除。归档保留记录，不参与小组件展示。"}
+              到达后自动归档；缺少到达信息时，在出发日结束后归档。点按编辑，左滑可归档或删除。
             </Text>
           }
         >
           {visibleTrips.length === 0 ? (
-            <Text foregroundStyle="secondaryLabel">{showArchive ? "暂无归档记录。" : "暂无未归档行程。"}</Text>
+            <Text foregroundStyle="secondaryLabel">暂无未归档行程。</Text>
           ) : (
             visibleTrips.flatMap((t) => {
               if (draft && draftId === t.id) {
@@ -479,15 +510,13 @@ function View() {
                 return draftRows()
               }
               const dep = departTimestamp(t)
-              const arr = arriveTimestamp(t)
-              const expired = arr > 0 && now >= arr
               return [
                 <VStack
                   key={t.id}
                   alignment="leading"
                   spacing={3}
-                  onTapGesture={showArchive ? undefined : () => editTrip(t)}
-                  trailingSwipeActions={showArchive ? undefined : {
+                  onTapGesture={() => editTrip(t)}
+                  trailingSwipeActions={{
                     allowsFullSwipe: false,
                     actions: [
                       <Button title="归档" tint="systemOrange" action={() => archiveRecord(t)} />,
@@ -500,48 +529,37 @@ function View() {
                     <Image
                       systemName={modeIcon(t.mode)}
                       font={12}
-                      foregroundStyle={expired ? "secondaryLabel" : "systemBlue"}
+                      foregroundStyle="systemBlue"
                     />
-                    <Text font="headline" monospaced foregroundStyle={expired ? "secondaryLabel" : "systemBlue"}>
+                    <Text font="headline" monospaced foregroundStyle="systemBlue">
                       {t.code || "—"}
                     </Text>
-                    <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={showArchive ? undefined : 1}>
+                    <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
                       {routeText(t)}
                     </Text>
                     <Spacer />
-                    <Image systemName={showArchive ? "archivebox" : "pencil.circle"} font={12} foregroundStyle="tertiaryLabel" />
+                    <Image systemName="pencil.circle" font={12} foregroundStyle="tertiaryLabel" />
                   </HStack>
-                  <Text font="caption2" monospaced foregroundStyle="secondaryLabel" lineLimit={showArchive ? undefined : 1}>
+                  <Text font="caption2" monospaced foregroundStyle="secondaryLabel" lineLimit={1}>
                     {[
                       `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
                       `${t.departTime || "--:--"} → ${t.arriveTime || "--:--"}`,
                       t.terminal ? t.terminal : "",
                       t.gate ? `${gateLabel(t.mode)} ${t.gate}` : "",
-                      seatText(t) === "—" ? "" : seatText(t),
+                      displaySeat(t, hideSeatNumber),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
                   </Text>
-                  <Text font="caption2" foregroundStyle={expired ? "tertiaryLabel" : "systemBlue"}>
-                    {showArchive ? `已归档 · ${durationText(t)}` : dep ? countdownText(t, now) : "待补全出发时间"}
+                  <Text font="caption2" foregroundStyle="systemBlue">
+                    {dep ? countdownText(t, now) : "待补全出发时间"}
                     {t.note ? `　·　${t.note}` : ""}
                   </Text>
-                  {showArchive ? (
-                    <Text font="caption2" foregroundStyle="secondaryLabel">
-                      {[
-                        t.carrier,
-                        t.boardingTime ? `登机 ${t.boardingTime}` : "",
-                        t.checkIn ? `值机 ${t.checkIn}` : "",
-                        t.baggage ? `行李转盘 ${t.baggage}` : "",
-                        displayPassenger(t.passenger, passengerMode),
-                      ].filter(Boolean).join(" · ")}
-                    </Text>
-                  ) : null}
                 </VStack>,
               ]
             })
           )}
-          {!showArchive && visibleTrips.length > 0 ? (
+          {visibleTrips.length > 0 ? (
             <Button
               title="清空未归档行程"
               role="destructive"
@@ -578,7 +596,7 @@ function View() {
                 departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
                 fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
                 note: "", createdAt: "2099-06-18T00:00:00.000Z",
-              }} theme={theme} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
+              }} theme={theme} hideSeatNumber={hideSeatNumber} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
             </GeometryReader>
           </VStack>
         </Section>
@@ -645,8 +663,12 @@ function View() {
             </Button>
           ))}
         </Section>
-        <Section title="乘客显示">
+        <Section title="隐私显示" footer={<Text font="caption" foregroundStyle="secondaryLabel">隐藏车厢和座位号，保留座别；首页、列表、归档及小组件共用设置，编辑时仍可查看原始数据。</Text>}>
           <Button title={`乘客姓名：${passengerModeLabel(passengerMode)}`} action={() => void choosePassengerMode()} />
+          <Button title={`座位号：${hideSeatNumber ? "已隐藏" : "显示"}`} action={() => {
+            setHideSeatNumberLocal(!hideSeatNumber)
+            setHideSeatNumber(!hideSeatNumber)
+          }} />
         </Section>
 
         {/* ---------------- 关于 ---------------- */}

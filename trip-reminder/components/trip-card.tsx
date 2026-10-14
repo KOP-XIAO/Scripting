@@ -1,11 +1,11 @@
 import { HStack, Image, Spacer, Text, VStack } from "scripting"
-import { countdownText, durationText, gateLabel, monthDayText, seatText, weekdayText } from "../services/parse"
-import { displayPassenger, type PassengerMode, type TripRecord } from "../services/trips"
+import { countdownText, durationText, gateLabel, monthDayText, weekdayText } from "../services/parse"
+import { displayPassenger, displaySeat, type PassengerMode, type TripRecord } from "../services/trips"
 import type { Theme } from "../services/theme"
 import { ThemeBackground } from "./theme-background"
 
-export function TripCard({ trip, theme, passengerMode, now }: {
-  trip: TripRecord; theme: Theme; passengerMode: PassengerMode; now: number
+export function TripCard({ trip, theme, passengerMode, hideSeatNumber, now }: {
+  trip: TripRecord; theme: Theme; passengerMode: PassengerMode; hideSeatNumber: boolean; now: number
 }) {
   const passenger = displayPassenger(trip.passenger, passengerMode)
   return (
@@ -47,7 +47,7 @@ export function TripCard({ trip, theme, passengerMode, now }: {
         </VStack>
         <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
           <Text font="caption2" foregroundStyle={theme.sub}>座位</Text>
-          <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.accent} lineLimit={1}>{seatText({ ...trip, seatClass: "" })}</Text>
+          <Text font="title2" fontWeight="bold" monospaced foregroundStyle={theme.accent} lineLimit={1}>{hideSeatNumber ? "已隐藏" : displaySeat({ ...trip, seatClass: "" }, false)}</Text>
           {trip.seatClass ? <Text font="caption2" foregroundStyle={theme.sub}>{trip.seatClass}</Text> : null}
         </VStack>
       </HStack>

@@ -1,7 +1,7 @@
 // 中号小组件与设置预览共用布局、背景、字号及间距。
 import { HStack, Image, Spacer, Text, VStack, ZStack } from "scripting"
 import { countdownText, departTimestamp, durationText, gateLabel, monthDayText, weekdayText, type TripMode } from "../services/parse"
-import { type TripRecord } from "../services/trips"
+import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
 import { ThemeBackground } from "./theme-background"
 
@@ -44,12 +44,10 @@ function EmptyView({ theme }: { theme: Theme }) {
 }
 
 // 使用有界内容区，避免嵌套 infinity frame 与 padding 争抢可用高度。
-function TripBody({ trip, theme, width, height, now }: { trip: TripRecord; theme: Theme; width: number; height: number; now: number }) {
+function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: TripRecord; theme: Theme; width: number; height: number; now: number; hideSeatNumber: boolean }) {
   const delta = departTimestamp(trip) - now
   const soon = delta >= 0 && delta < 3600000
-  const seat = trip.mode === "flight"
-    ? trip.seatNo || "—"
-    : [trip.seatCar ? `${trip.seatCar}车` : "", trip.seatNo].filter(Boolean).join(" ") || "—"
+  const seat = hideSeatNumber ? "已隐藏" : displaySeat({ ...trip, seatClass: "" }, false)
   // 各列明确分宽，不能让第一列的 infinity frame 将内容推到中间。
   const countdownWidth = Math.floor(width * 0.44)
   const gateWidth = Math.floor(width * 0.19)
@@ -118,15 +116,15 @@ function TripBody({ trip, theme, width, height, now }: { trip: TripRecord; theme
   )
 }
 
-export function TripWidget({ trip, theme, width, height, now = Date.now(), widgetURL }: {
-  trip: TripRecord | null; theme: Theme; width: number; height: number; now?: number; widgetURL?: string
+export function TripWidget({ trip, theme, width, height, now = Date.now(), widgetURL, hideSeatNumber = getHideSeatNumber() }: {
+  trip: TripRecord | null; theme: Theme; width: number; height: number; now?: number; widgetURL?: string; hideSeatNumber?: boolean
 }) {
   // 宿主扣除系统边距后高度较小时，减少额外内边距。
   const inset = height >= 150 ? 28 : 12
   return (
     <ZStack frame={{ width, height }} widgetURL={widgetURL}>
       <VStack frame={{ width, height }} background={<ThemeBackground theme={theme} />}><Spacer /></VStack>
-      {trip ? <TripBody trip={trip} theme={theme} width={Math.max(0, width - inset)} height={Math.max(0, height - inset)} now={now} />
+      {trip ? <TripBody trip={trip} theme={theme} width={Math.max(0, width - inset)} height={Math.max(0, height - inset)} now={now} hideSeatNumber={hideSeatNumber} />
         : <VStack alignment="leading" padding={14}><EmptyView theme={theme} /></VStack>}
     </ZStack>
   )

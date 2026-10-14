@@ -2,7 +2,7 @@
 // 数据源：Storage 里的本机行程（rail.trips，由 app 侧写入）——widget 扩展进程读不到 App
 // 文档目录，Storage 是同脚本跨进程共享的可靠通道。
 //
-// 隐私：小组件只读本机 Storage，页面本身不含任何网络请求；不读取、不上传任何图片。
+// 隐私：小组件读取本机 Storage，并自动归档已结束行程，页面本身不含任何网络请求；不读取、不上传任何图片。
 // 全局对象（禁止从 scripting 导入）：Storage
 
 import { GeometryReader, HStack, Image, Script, Spacer, Text, VStack, Widget, ZStack } from "scripting"

@@ -2,7 +2,7 @@
 // Storage / Widget 为全局对象，禁止从 scripting 导入。
 // 隐私：数据只写入本机 Storage（rail.* 键），不发起任何网络请求。
 
-import { type ParsedTrip, arriveTimestamp, departTimestamp } from "./parse"
+import { type ParsedTrip, arriveTimestamp, departTimestamp, seatText, tripDurationMinutes } from "./parse"
 
 export type TripRecord = ParsedTrip & {
   id: string
@@ -23,17 +23,46 @@ function read(): TripRecord[] {
   }
 }
 
-function write(list: TripRecord[]) {
+function write(list: TripRecord[], reloadWidgets = true) {
   try {
     Storage.set(KEY, list)
   } catch {}
+  if (!reloadWidgets) return
   try {
     Widget.reloadAll() // 行程变化立即刷新主屏幕小组件
   } catch {}
 }
 
-export function listTrips(): TripRecord[] {
-  return read().sort((a, b) => departTimestamp(a) - departTimestamp(b))
+// arriveTimestamp 缺少历时时返回出发时间；归档须保守地保留到出发日结束。
+function endTimestamp(trip: TripRecord): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trip.departDate)
+    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(trip.departTime)) return 0
+  const departure = departTimestamp(trip)
+  const date = new Date(departure)
+  if (!Number.isFinite(departure) || !departure
+    || `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` !== trip.departDate) return 0
+  const validArrival = /^([01]\d|2[0-3]):[0-5]\d$/.test(trip.arriveTime)
+  const usable = { ...trip, arriveTime: validArrival ? trip.arriveTime : "" }
+  const duration = tripDurationMinutes(usable)
+  if (Number.isFinite(duration) && duration > 0) {
+    const arrival = arriveTimestamp(usable)
+    if (Number.isFinite(arrival) && arrival > departure) return arrival
+  }
+  date.setHours(24, 0, 0, 0)
+  return date.getTime()
+}
+
+export function listTrips(now = Date.now()): TripRecord[] {
+  let changed = false
+  const list = read().map((trip) => {
+    const end = trip.archivedAt ? 0 : endTimestamp(trip)
+    if (!end || end > now || !Number.isFinite(now)) return trip
+    changed = true
+    return { ...trip, archivedAt: new Date(now).toISOString() }
+  })
+  // 小组件也读取列表；持久化归档不得触发递归刷新。
+  if (changed) write(list, false)
+  return list.sort((a, b) => departTimestamp(a) - departTimestamp(b))
 }
 
 export function upsertTrip(trip: TripRecord): TripRecord[] {
@@ -66,15 +95,32 @@ export function newTripId(): string {
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
-// 下一班：发车/起飞时间最近的「还没结束」的行程；都结束了则返回最后一条（便于回看）
+// 下一班：出发时间最近且尚未结束的有效行程；没有候选时返回 null。
 export function nextTrip(now = Date.now()): TripRecord | null {
-  const list = listTrips().filter((t) => !t.archivedAt)
-  if (!list.length) return null
-  const upcoming = list.find((t) => {
-    const arr = arriveTimestamp(t)
-    return arr ? arr >= now : departTimestamp(t) >= now
-  })
-  return upcoming ?? list[list.length - 1]
+  return listTrips(now).find((trip) => !trip.archivedAt && endTimestamp(trip) > now) ?? null
+}
+
+const HIDE_SEAT_NUMBER_KEY = "rail.hideSeatNumber"
+
+export function getHideSeatNumber(): boolean {
+  try {
+    return Storage.get<boolean>(HIDE_SEAT_NUMBER_KEY) === true
+  } catch {
+    return false
+  }
+}
+
+export function setHideSeatNumber(hidden: boolean) {
+  try {
+    if (Storage.set(HIDE_SEAT_NUMBER_KEY, hidden) === false) return
+  } catch { return }
+  try {
+    Widget.reloadAll()
+  } catch {}
+}
+
+export function displaySeat(trip: Parameters<typeof seatText>[0], hidden = getHideSeatNumber()): string {
+  return seatText(hidden ? { ...trip, seatCar: "", seatNo: "" } : trip)
 }
 
 // -------------------------------------------------------------

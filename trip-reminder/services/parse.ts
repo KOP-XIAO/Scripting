@@ -396,8 +396,8 @@ export function countdownText(trip: TimeLike, now = Date.now()): string {
   const dep = departTimestamp(trip)
   if (!dep) return "待补全时间"
   const arr = arriveTimestamp(trip)
-  if (arr && now >= arr) return "行程已结束"
-  if (now >= dep) return "行程中"
+  if (tripDurationMinutes(trip) > 0 && arr && now >= arr) return "行程已结束"
+  if (now >= dep) return tripDurationMinutes(trip) > 0 ? "行程中" : "已出发 · 到达时间待补"
   const minutes = Math.floor((dep - now) / 60000)
   if (minutes < 1) return "即将出发"
   if (minutes >= 1440) return `${Math.floor(minutes / 1440)} 天｜${Math.floor((minutes % 1440) / 60)} 小时`
