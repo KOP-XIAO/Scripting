@@ -1,5 +1,5 @@
-// 中号小组件与设置预览共用布局、背景、字号及间距。
-import { HStack, Image, Spacer, Text, VStack, ZStack } from "scripting"
+// 首页、设置预览与中号小组件共用布局、背景、字号及间距。
+import { GeometryReader, HStack, Image, Spacer, Text, VStack, ZStack } from "scripting"
 import { countdownText, departTimestamp, durationText, gateLabel, monthDayText, weekdayText, type TripMode } from "../services/parse"
 import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
@@ -114,6 +114,17 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
       </HStack>
     </VStack>
   )
+}
+
+// 固定高度放在外层容器，GeometryReader 只读取可用宽度。
+export function TripWidgetPreview({ trip, theme, now, hideSeatNumber }: {
+  trip: TripRecord | null; theme: Theme; now: number; hideSeatNumber: boolean
+}) {
+  return <VStack spacing={0} frame={{ height: 158 }} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
+    <GeometryReader>
+      {proxy => <TripWidget trip={trip} theme={theme} width={proxy.size.width} height={158} now={now} hideSeatNumber={hideSeatNumber} />}
+    </GeometryReader>
+  </VStack>
 }
 
 export function TripWidget({ trip, theme, width, height, now = Date.now(), widgetURL, hideSeatNumber = getHideSeatNumber() }: {

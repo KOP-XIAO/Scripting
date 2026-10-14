@@ -15,7 +15,6 @@
 
 import {
   Button,
-  GeometryReader,
   HStack,
   Image,
   List,
@@ -73,7 +72,7 @@ import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/o
 import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey, setThemeKey, type ThemeKey, type AccentKey } from "./services/theme"
 import { ThemeBackground } from "./components/theme-background"
 import { TripCard } from "./components/trip-card"
-import { TripWidget } from "./components/trip-widget"
+import { TripWidgetPreview } from "./components/trip-widget"
 import { VERSION } from "./utils/common"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
@@ -270,7 +269,7 @@ function View() {
   const choosePassengerMode = async () => {
     const idx = await Dialog.actionSheet({
       title: "乘客姓名显示",
-      message: "控制「下一段行程」卡片中的姓名（小组件上不显示姓名）",
+      message: "控制首页预览下方的乘客姓名（小组件上不显示姓名）",
       actions: [{ label: "完整显示" }, { label: "打码显示（张×）" }, { label: "隐藏" }],
       cancelButton: true,
     })
@@ -442,7 +441,7 @@ function View() {
           }
         >
           {visibleTrips.length > 1 ? (
-            <TabView tabViewStyle="page" frame={{ height: 340 }}>
+            <TabView tabViewStyle="page" frame={{ height: 220 }}>
               {visibleTrips.map(t => <VStack key={t.id} spacing={0} padding={{ bottom: 30 }}>
                 <TripCard trip={t} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
               </VStack>)}
@@ -589,16 +588,12 @@ function View() {
         <Section title="外观预览" footer={<Text font="caption" foregroundStyle="secondaryLabel">
           {upcoming ? "中号小组件预览，共用实际布局；主屏幕尺寸与 iOS 显示模式可能影响效果。" : "虚构示例行程，仅用于预览，不会保存。"}
         </Text>}>
-          <VStack spacing={0} frame={{ height: 158 }} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
-            <GeometryReader>
-              {proxy => <TripWidget width={proxy.size.width} height={158} trip={upcoming ?? {
-                ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
-                departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
-                fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
-                note: "", createdAt: "2099-06-18T00:00:00.000Z",
-              }} theme={theme} hideSeatNumber={hideSeatNumber} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />}
-            </GeometryReader>
-          </VStack>
+          <TripWidgetPreview trip={upcoming ?? {
+            ...EMPTY_DRAFT, id: "appearance-demo", mode: "rail", code: "G1234",
+            departDate: "2099-06-18", departTime: "09:00", arriveTime: "10:24", durationMin: 84,
+            fromPlace: "杭州东", toPlace: "上海虹桥", gate: "A1", seatCar: "05", seatNo: "08F",
+            note: "", createdAt: "2099-06-18T00:00:00.000Z",
+          }} theme={theme} hideSeatNumber={hideSeatNumber} now={upcoming ? now : new Date("2099-06-18T07:30:00").getTime()} />
         </Section>
         {/* ---------------- 设置 ---------------- */}
         <Section
