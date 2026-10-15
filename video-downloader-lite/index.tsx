@@ -1,5 +1,5 @@
 // index.tsx — 视频下载器主程序（App 内页面）
-// 结构：NavigationStack + List 分 Section；设置与诊断收进 NavigationLink 子页面。
+// 结构：NavigationStack(path 编程式导航) + List 分 Section；设置/诊断/全部历史由底部栏与列表 Button push。
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()。
 //
 // 注意：Dialog / Storage / FileManager / Photos / Pasteboard / ShareSheet /
@@ -14,7 +14,7 @@ import {
   Link,
   List,
   Navigation,
-  NavigationLink,
+  NavigationDestination,
   NavigationStack,
   RoundedRectangle,
   Script,
@@ -27,6 +27,7 @@ import {
   Widget,
   ZStack,
   useEffect,
+  useObservable,
   useState,
 } from "scripting"
 import {
@@ -882,6 +883,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [showInput, setShowInput] = useState(false)
   // 缩略图挂载即显示：filePath 图像加载不触发行重渲染，用 tick 重建历史行强制加载
   const [imgTick, setImgTick] = useState(0)
+  // 编程式导航栈（底部栏 Button 直接 push；绑定 path 后 NavigationLink 失效，已全部改用 Button）
+  const navPath = useObservable<string[]>([])
 
 
   const refreshHistory = async () => {
@@ -1114,35 +1117,39 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
-    <NavigationStack>
+    <NavigationStack path={navPath}>
       <ZStack>
       <List
+        navigationDestination={
+          <NavigationDestination>
+            {(page) =>
+              page === "settings" ? (
+                <SettingsPage prefs={prefs} onSave={savePrefs} />
+              ) : page === "diagnostics" ? (
+                <DiagnosticsPage />
+              ) : (
+                <HistoryPage history={history} onChanged={refreshHistory} />
+              )
+            }
+          </NavigationDestination>
+        }
         onAppear={() => void refreshHistory()}
         navigationTitle={`视频下载器 Lite | v${VERSION}`}
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
-            <HStack spacing={10}>
+            /* 三个统一的 systemImage Button，交由系统玻璃样式渲染（自定义圆形底在液态玻璃上是双重背景） */
+            <HStack spacing={14}>
               <Button
-                title={loading ? "下载中…" : "⬇  粘贴并下载"}
+                title={loading ? "下载中…" : "粘贴并下载"}
+                systemImage="arrow.down"
                 disabled={loading}
                 action={() => void pasteAndDownload()}
               />
               <Spacer />
-              {/* 圆形图标按钮：灰底圆 + 主题色图标，不再是裸图标堆叠 */}
-              {([
-                { icon: "gearshape", dest: <SettingsPage prefs={prefs} onSave={savePrefs} /> },
-                { icon: "stethoscope", dest: <DiagnosticsPage /> },
-              ] as const).map((entry) => (
-                <NavigationLink key={entry.icon} destination={entry.dest}>
-                  <ZStack frame={{ width: 34, height: 34 }}>
-                    <RoundedRectangle cornerRadius={17} fill="rgba(128,128,128,0.18)"
-                      frame={{ width: 34, height: 34 }} />
-                    <Image systemName={entry.icon} font={15} foregroundStyle={getTheme().accent} />
-                  </ZStack>
-                </NavigationLink>
-              ))}
+              <Button systemImage="gearshape" action={() => navPath.setValue(["settings"])} />
+              <Button systemImage="stethoscope" action={() => navPath.setValue(["diagnostics"])} />
             </HStack>
           ),
         }}
@@ -1351,9 +1358,10 @@ function View(props: { initialHistory: HistoryRecord[] }) {
             ))
           )}
           {history.length > 8 ? (
-            <NavigationLink destination={<HistoryPage history={history} onChanged={refreshHistory} />}>
-              <Text>{`查看全部 ${history.length} 条`}</Text>
-            </NavigationLink>
+            <Button
+              title={`查看全部 ${history.length} 条`}
+              action={() => navPath.setValue(["history"])}
+            />
           ) : null}
         </Section>
 
