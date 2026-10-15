@@ -1139,17 +1139,17 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
-            /* 三个统一的 systemImage Button，交由系统玻璃样式渲染（自定义圆形底在液态玻璃上是双重背景） */
+            /* 统一文字按钮：systemImage 在本运行时的工具栏会吞掉 title、纯图标 Button 不渲染
+               （1.36.0 实证翻车），文字按钮的玻璃渲染可靠且三者观感一致 */
             <HStack spacing={14}>
               <Button
-                title={loading ? "下载中…" : "粘贴并下载"}
-                systemImage="arrow.down"
+                title={loading ? "下载中…" : "⬇  粘贴并下载"}
                 disabled={loading}
                 action={() => void pasteAndDownload()}
               />
               <Spacer />
-              <Button systemImage="gearshape" action={() => navPath.setValue(["settings"])} />
-              <Button systemImage="stethoscope" action={() => navPath.setValue(["diagnostics"])} />
+              <Button title="设置" action={() => navPath.setValue(["settings"])} />
+              <Button title="诊断" action={() => navPath.setValue(["diagnostics"])} />
             </HStack>
           ),
         }}
