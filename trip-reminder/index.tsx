@@ -73,6 +73,7 @@ import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey,
 import { ThemeBackground } from "./components/theme-background"
 import { TripCard } from "./components/trip-card"
 import { TripWidgetPreview } from "./components/trip-widget"
+import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
@@ -116,6 +117,9 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber }: {
             t.checkIn ? `值机 ${t.checkIn}` : "", t.baggage ? `行李转盘 ${t.baggage}` : "",
             displayPassenger(t.passenger, passengerMode), t.note,
           ].filter(Boolean).join(" · ")}</Text>
+          {t.mode === "rail" && t.railStops?.length ? <NavigationLink destination={<RailTimetablePage trip={t} />}>
+            <Text font="caption" foregroundStyle="systemBlue">查看乘车区间时刻表</Text>
+          </NavigationLink> : null}
         </VStack>
       )}
     </Section>
@@ -394,6 +398,10 @@ function View() {
       )
     }
 
+    if (draft.mode === "rail") {
+      rows.push(<RailTimetable key="rail-timetable" trip={draft} />)
+    }
+
     if (rawText) {
       rows.push(
         <Toggle key="raw" title="查看识别原文（用于排查识别不准）" value={showRaw} onChanged={setShowRaw} />,
@@ -555,6 +563,11 @@ function View() {
                     {t.note ? `　·　${t.note}` : ""}
                   </Text>
                 </VStack>,
+                ...(t.mode === "rail" && t.railStops?.length ? [
+                  <NavigationLink key={`${t.id}-stops`} destination={<RailTimetablePage trip={t} />}>
+                    <Text font="caption" foregroundStyle="systemBlue">{`${t.code || "列车"} · 查看乘车区间时刻表`}</Text>
+                  </NavigationLink>,
+                ] : []),
               ]
             })
           )}

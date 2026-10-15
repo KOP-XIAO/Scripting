@@ -2,6 +2,9 @@
 // 纯函数模块：不引用任何 Scripting 全局对象，可在 Node 里直接跑断言（tools/test-parse.cjs）。
 // 隐私：本模块只做字符串处理，不含任何网络请求；识别结果仅交给调用方写入本机 Storage。
 
+import { extractRailTimetable, type RailStop } from "./rail-stops"
+export { railJourneyStops, type RailStop } from "./rail-stops"
+
 export type TripMode = "rail" | "flight"
 
 export type ParsedTrip = {
@@ -23,6 +26,7 @@ export type ParsedTrip = {
   seatNo: string // 座位号，如 12A
   seatClass: string // 二等座 / 经济舱
   passenger: string
+  railStops?: RailStop[] // 完整识别表；显示时按用户区间裁剪
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
@@ -121,7 +125,7 @@ export function parseDuration(text: string): number {
 const cleanPlace = (s: string) =>
   s
     .replace(/[（(].*?[)）]/g, "")
-    .replace(/^[过终始发到]\s*[·.、:：]?\s*/, "")
+    .replace(/^[过终始发到](?:\s*[·.、:：]\s*|\s+)/, "")
     .replace(/[^\u4e00-\u9fa5A-Z0-9]+$/g, "") // 尾部垃圾字符（，、〉等，OCR 常把小图标认成标点）
     .replace(/[站\s]+$/g, "")
     .trim()
@@ -131,6 +135,13 @@ const cleanPlace = (s: string) =>
 // 都找不到时再用 A → B 兜底
 function parseRailPlaces(text: string): { from: string; to: string } {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+  const explicitFrom = text.match(/(?:乘车站|出发站)\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+  const explicitTo = text.match(/到达站\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+  const arrow = text.match(/([\u4e00-\u9fa5]{2,12})\s*(?:→|->|—|~|至|-)\s*([\u4e00-\u9fa5]{2,12})/)
+  if (explicitFrom || explicitTo || arrow) return {
+    from: cleanPlace(explicitFrom?.[1] ?? arrow?.[1] ?? ""),
+    to: cleanPlace(explicitTo?.[1] ?? arrow?.[2] ?? ""),
+  }
   const fromList: string[] = []
   const toList: string[] = []
   const push = (marker: string, raw: string) => {
@@ -146,7 +157,7 @@ function parseRailPlaces(text: string): { from: string; to: string } {
       push(/到达|终到/.test(labeled[1]) ? "终" : "过", labeled[2])
       continue
     }
-    const sameLine = line.match(/^([过终始发到])\s*[·.、:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+    const sameLine = line.match(/^([过终始发到])(?:\s*[·.、:：]\s*|\s+)([\u4e00-\u9fa5]{2,12})/)
     if (sameLine) {
       push(sameLine[1], sameLine[2])
       continue
@@ -343,10 +354,14 @@ export function parseTripText(
   modeHint: TripMode | "auto" = "auto",
   candidates: OCRCandidateBlock[] = [],
 ): ParsedTrip {
-  const text = normalizeOCR(rawText)
+  const normalized = normalizeOCR(rawText)
+  const table = extractRailTimetable(normalized)
+  const text = table.text
   const flat = text.replace(/\n/g, " ")
-  const mode = modeHint === "auto" ? detectMode(flat) : modeHint
-  return mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now, candidates)
+  const mode = modeHint === "auto" ? detectMode(normalized) : modeHint
+  const trip = mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now, table.hasTable ? [] : candidates)
+  if (mode === "rail" && table.stops.length) trip.railStops = table.stops
+  return trip
 }
 
 // -------------------------------------------------------------
