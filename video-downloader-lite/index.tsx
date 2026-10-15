@@ -1138,19 +1138,18 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
-          // 次级入口归位顶部导航栏右侧（系统标准位置），底部只留主按钮
-          topBarTrailing: (
+          // 底部栏：左次右主——设置/诊断在左，主按钮「粘贴并下载」在右下角
+          bottomBar: (
             <HStack spacing={16}>
               <Button title="设置" action={() => navPath.setValue(["settings"])} />
               <Button title="诊断" action={() => navPath.setValue(["diagnostics"])} />
+              <Spacer />
+              <Button
+                title={loading ? "下载中…" : "⬇  粘贴并下载"}
+                disabled={loading}
+                action={() => void pasteAndDownload()}
+              />
             </HStack>
-          ),
-          bottomBar: (
-            <Button
-              title={loading ? "下载中…" : "⬇  粘贴并下载"}
-              disabled={loading}
-              action={() => void pasteAndDownload()}
-            />
           ),
         }}
       >
