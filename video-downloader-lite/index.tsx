@@ -200,7 +200,8 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
             {metaLine1}
           </Text>
           {item.note.includes("相册") ? (
-            <Image systemName="photo.on.rectangle" font={12} foregroundStyle="systemGreen" />
+            <Image systemName="photo.on.rectangle" font={12} foregroundStyle="systemGreen"
+              accessibilityLabel="已存相册" />
           ) : null}
         </HStack>
         <Text font="caption2" monospaced foregroundStyle="tertiaryLabel" lineLimit={1}>

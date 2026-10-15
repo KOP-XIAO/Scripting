@@ -33,15 +33,24 @@ video-downloader-lite/
 ├── script.json             # 元信息 + remoteResource 自动更新配置
 ├── index.tsx               # 主界面（下载 / 历史 / 设置 / 诊断中心）
 ├── intent.tsx              # 分享表单 & 快捷指令入口
+├── widget.tsx              # 主屏幕小组件（5 种风格 × 10 主题 × 6 徽章款式）
+├── app_intents.tsx         # App Intent 声明
+├── assets/                 # 烘焙 PNG（背景 / 徽章 / 提示音）
+├── tools/
+│   └── bake-style-assets.py  # 小组件风格资产生成器（PIL，可复现可调整）
 ├── services/
 │   ├── downloader.ts       # 核心：类型识别 / 视频号解析 / cobalt / m3u8 拼接
 │   ├── history.ts          # JSON 下载历史（Lite 与 Pro 版唯一实现差异）
 │   ├── preferences.ts      # 偏好设置
 │   ├── file-actions.ts     # 存相册 / 导出 / 分享
+│   ├── theme.ts            # 主题 / 小组件风格 / 徽章款式（Storage 持久化）
 │   └── debug.ts            # 诊断日志与导出
 └── utils/
     └── common.ts           # 工具函数
 ```
+
+> 修改小组件视觉资产：调整 `tools/bake-style-assets.py` 后重跑即可
+> （`python3 tools/bake-style-assets.py`，依赖 Pillow + numpy）。
 
 ## 快速入口
 
