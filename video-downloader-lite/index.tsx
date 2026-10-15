@@ -1139,17 +1139,41 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
-            /* 统一文字按钮：systemImage 在本运行时的工具栏会吞掉 title、纯图标 Button 不渲染
-               （1.36.0 实证翻车），文字按钮的玻璃渲染可靠且三者观感一致 */
-            <HStack spacing={14}>
-              <Button
-                title={loading ? "下载中…" : "⬇  粘贴并下载"}
-                disabled={loading}
-                action={() => void pasteAndDownload()}
-              />
+            /* 终端命令条：深色胶囊承载——主题色 ▸ 提示符 + 主命令，管道符分隔次级命令。
+               与进度卡/日志卡同一套终端语言，不做系统玻璃按钮的裸堆叠 */
+            <HStack
+              spacing={0}
+              padding={4}
+              frame={{ maxWidth: "infinity" } as never}
+              background="#0D1117"
+              clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}
+            >
+              <Button buttonStyle="plain" disabled={loading} action={() => void pasteAndDownload()}>
+                <HStack spacing={6} padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
+                  <Text font="subheadline" monospaced fontWeight="bold"
+                    foregroundStyle={loading ? "rgba(255,255,255,0.35)" : getTheme().accent}>
+                    {"▸"}
+                  </Text>
+                  <Text font="subheadline" monospaced fontWeight="semibold"
+                    foregroundStyle={loading ? "rgba(255,255,255,0.35)" : "#F0F3F6"}>
+                    {loading ? "running…" : "粘贴并下载"}
+                  </Text>
+                </HStack>
+              </Button>
               <Spacer />
-              <Button title="设置" action={() => navPath.setValue(["settings"])} />
-              <Button title="诊断" action={() => navPath.setValue(["diagnostics"])} />
+              <Button buttonStyle="plain" action={() => navPath.setValue(["settings"])}>
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.70)"
+                  padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
+                  设置
+                </Text>
+              </Button>
+              <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.25)">{"·"}</Text>
+              <Button buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])}>
+                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.70)"
+                  padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
+                  诊断
+                </Text>
+              </Button>
             </HStack>
           ),
         }}
