@@ -1139,21 +1139,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           // 底部栏：左次右主——设置/诊断在左，主按钮「粘贴并下载」在右下角
-          bottomBar: (
-            /* 标准按钮分层：plain 文字按钮（次级）vs borderedProminent 实心胶囊（主操作） */
-            <HStack spacing={16}>
-              <Button title="设置" buttonStyle="plain" action={() => navPath.setValue(["settings"])} />
-              <Button title="诊断" buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])} />
-              <Spacer />
-              <Button
-                title={loading ? "下载中…" : "⬇  粘贴并下载"}
-                buttonStyle="borderedProminent"
-                tint={getTheme().accent}
-                disabled={loading}
-                action={() => void pasteAndDownload()}
-              />
-            </HStack>
-          ),
+          /* bottomBar 接受节点数组：每个 Button 是独立工具栏项，系统各自玻璃化并分布，
+             不要包 HStack（包了整个算一项，1.36 翻车的根源） */
+          bottomBar: [
+            <Button title="设置" buttonStyle="plain" action={() => navPath.setValue(["settings"])} />,
+            <Button title="诊断" buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])} />,
+            <Button
+              title={loading ? "下载中…" : "⬇  粘贴并下载"}
+              buttonStyle="borderedProminent"
+              tint={getTheme().accent}
+              disabled={loading}
+              action={() => void pasteAndDownload()}
+            />,
+          ],
         }}
       >
         {showInput || inputURL.trim() ? (
