@@ -1140,12 +1140,15 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           cancellationAction: <Button title="关闭" action={dismiss} />,
           // 底部栏：左次右主——设置/诊断在左，主按钮「粘贴并下载」在右下角
           bottomBar: (
+            /* 标准按钮分层：plain 文字按钮（次级）vs borderedProminent 实心胶囊（主操作） */
             <HStack spacing={16}>
-              <Button title="设置" action={() => navPath.setValue(["settings"])} />
-              <Button title="诊断" action={() => navPath.setValue(["diagnostics"])} />
+              <Button title="设置" buttonStyle="plain" action={() => navPath.setValue(["settings"])} />
+              <Button title="诊断" buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])} />
               <Spacer />
               <Button
                 title={loading ? "下载中…" : "⬇  粘贴并下载"}
+                buttonStyle="borderedProminent"
+                tint={getTheme().accent}
                 disabled={loading}
                 action={() => void pasteAndDownload()}
               />
