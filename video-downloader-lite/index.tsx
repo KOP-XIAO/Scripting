@@ -879,6 +879,8 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [celebrate, setCelebrate] = useState(false)
   // 顶部链接输入区默认隐藏：首次通过底部按钮下载后（输入框有内容）或剪贴板无链接时才展开
   const [showInput, setShowInput] = useState(false)
+  // 缩略图挂载即显示：filePath 图像加载不触发行重渲染，用 tick 重建历史行强制加载
+  const [imgTick, setImgTick] = useState(0)
 
 
   const refreshHistory = async () => {
@@ -892,7 +894,11 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   useEffect(() => {
     void (async () => {
       await refreshHistory() // 先直接读库显示（listHistory 不依赖 initDatabase）
-      setTimeout(() => void refreshHistory(), 600) // 兜底二次刷新
+      setImgTick((t) => t + 1) // 强制重建历史行，触发缩略图加载
+      setTimeout(() => {
+        void refreshHistory()
+        setImgTick((t) => t + 1) // 兜底二次刷新后再推一次
+      }, 600)
       await initDatabase()
       try {
         const list = await listHistory(50)
@@ -1062,7 +1068,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       await Dialog.alert({ title: "下载失败", message })
     } finally {
       // 小文件秒下时给进度条留出追到 100% 的展示窗口，避免一闪而过
-      if (sawProgress) await new Promise((r) => setTimeout(r, 650))
+      if (sawProgress) await new Promise((r) => setTimeout(r, 800))
       setLoading(false)
       setProgress(null)
     }
@@ -1096,8 +1102,11 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       return
     }
     if (displayRatio >= progressRatio) return
+    // 指数趋近（+微小线性保底保证收敛）：显示值始终"追"真实值，
+    // 落后多就快追、接近就放缓——视觉上与日志里的实际进展保持耦合
     const timer = setTimeout(() => {
-      setDisplayRatio((r) => (r == null ? 0 : Math.min(progressRatio, r + 0.04)))
+      setDisplayRatio((r) =>
+        r == null ? 0 : Math.min(progressRatio, r + (progressRatio - r) * 0.22 + 0.004))
     }, 30)
     return () => clearTimeout(timer)
   }, [progressRatio, displayRatio])
@@ -1113,11 +1122,20 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
-            <Button
-              title={loading ? "下载中…" : "⬇  粘贴并下载"}
-              disabled={loading}
-              action={() => void pasteAndDownload()}
-            />
+            <HStack spacing={14}>
+              <Button
+                title={loading ? "下载中…" : "⬇  粘贴并下载"}
+                disabled={loading}
+                action={() => void pasteAndDownload()}
+              />
+              <Spacer />
+              <NavigationLink destination={<SettingsPage prefs={prefs} onSave={savePrefs} />}>
+                <Image systemName="gearshape" font={16} foregroundStyle="secondaryLabel" />
+              </NavigationLink>
+              <NavigationLink destination={<DiagnosticsPage />}>
+                <Image systemName="stethoscope" font={16} foregroundStyle="secondaryLabel" />
+              </NavigationLink>
+            </HStack>
           ),
         }}
       >
@@ -1205,9 +1223,32 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               </HStack>
             </VStack>
           ) : (
-            <Text foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"}>
-              {status}
-            </Text>
+            /* 空闲状态卡：与进度卡同款终端风，图标 + 状态文字 */
+            <HStack
+              spacing={8}
+              padding={10}
+              frame={{ maxWidth: "infinity" } as never}
+              background="#0D1117"
+              clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+            >
+              <Image
+                systemName={status.startsWith("失败") ? "xmark.circle.fill" : status === "就绪" ? "bolt.circle" : "checkmark.circle.fill"}
+                font={14}
+                foregroundStyle={status.startsWith("失败") ? "systemRed" : status === "就绪" ? "secondaryLabel" : getTheme().accent}
+              />
+              <Text
+                font="caption"
+                monospaced
+                foregroundStyle={status.startsWith("失败") ? "systemRed" : "#E6E9EC"}
+                lineLimit={2}
+              >
+                {status}
+              </Text>
+              <Spacer />
+              <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.35)">
+                {status === "就绪" ? "idle" : "done"}
+              </Text>
+            </HStack>
           )}
         </Section>
 
@@ -1298,7 +1339,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
             history.slice(0, 8).map((item, i) => (
-              <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
+              <HistoryRow key={`${item.id}-${imgTick}`} item={item} index={i} onChanged={refreshHistory} />
             ))
           )}
           {history.length > 8 ? (
@@ -1316,12 +1357,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
             </Text>
           }
         >
-          <NavigationLink destination={<SettingsPage prefs={prefs} onSave={savePrefs} />}>
-            <Text>设置</Text>
-          </NavigationLink>
-          <NavigationLink destination={<DiagnosticsPage />}>
-            <Text>诊断中心</Text>
-          </NavigationLink>
           <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
         </Section>
       </List>
