@@ -1138,43 +1138,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
-          bottomBar: (
-            /* 终端命令条：深色胶囊承载——主题色 ▸ 提示符 + 主命令，管道符分隔次级命令。
-               与进度卡/日志卡同一套终端语言，不做系统玻璃按钮的裸堆叠 */
-            <HStack
-              spacing={0}
-              padding={4}
-              frame={{ maxWidth: "infinity" } as never}
-              background="#0D1117"
-              clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}
-            >
-              <Button buttonStyle="plain" disabled={loading} action={() => void pasteAndDownload()}>
-                <HStack spacing={6} padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
-                  <Text font="subheadline" monospaced fontWeight="bold"
-                    foregroundStyle={loading ? "rgba(255,255,255,0.35)" : getTheme().accent}>
-                    {"▸"}
-                  </Text>
-                  <Text font="subheadline" monospaced fontWeight="semibold"
-                    foregroundStyle={loading ? "rgba(255,255,255,0.35)" : "#F0F3F6"}>
-                    {loading ? "running…" : "粘贴并下载"}
-                  </Text>
-                </HStack>
-              </Button>
-              <Spacer />
-              <Button buttonStyle="plain" action={() => navPath.setValue(["settings"])}>
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.70)"
-                  padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
-                  设置
-                </Text>
-              </Button>
-              <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.25)">{"·"}</Text>
-              <Button buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])}>
-                <Text font="caption" monospaced foregroundStyle="rgba(255,255,255,0.70)"
-                  padding={{ top: 8, bottom: 8, leading: 12, trailing: 12 }}>
-                  诊断
-                </Text>
-              </Button>
+          // 次级入口归位顶部导航栏右侧（系统标准位置），底部只留主按钮
+          topBarTrailing: (
+            <HStack spacing={16}>
+              <Button title="设置" action={() => navPath.setValue(["settings"])} />
+              <Button title="诊断" action={() => navPath.setValue(["diagnostics"])} />
             </HStack>
+          ),
+          bottomBar: (
+            <Button
+              title={loading ? "下载中…" : "⬇  粘贴并下载"}
+              disabled={loading}
+              action={() => void pasteAndDownload()}
+            />
           ),
         }}
       >
