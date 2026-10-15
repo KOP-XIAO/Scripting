@@ -1123,19 +1123,26 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           bottomBar: (
-            <HStack spacing={14}>
+            <HStack spacing={10}>
               <Button
                 title={loading ? "下载中…" : "⬇  粘贴并下载"}
                 disabled={loading}
                 action={() => void pasteAndDownload()}
               />
               <Spacer />
-              <NavigationLink destination={<SettingsPage prefs={prefs} onSave={savePrefs} />}>
-                <Image systemName="gearshape" font={16} foregroundStyle="secondaryLabel" />
-              </NavigationLink>
-              <NavigationLink destination={<DiagnosticsPage />}>
-                <Image systemName="stethoscope" font={16} foregroundStyle="secondaryLabel" />
-              </NavigationLink>
+              {/* 圆形图标按钮：灰底圆 + 主题色图标，不再是裸图标堆叠 */}
+              {([
+                { icon: "gearshape", dest: <SettingsPage prefs={prefs} onSave={savePrefs} /> },
+                { icon: "stethoscope", dest: <DiagnosticsPage /> },
+              ] as const).map((entry) => (
+                <NavigationLink key={entry.icon} destination={entry.dest}>
+                  <ZStack frame={{ width: 34, height: 34 }}>
+                    <RoundedRectangle cornerRadius={17} fill="rgba(128,128,128,0.18)"
+                      frame={{ width: 34, height: 34 }} />
+                    <Image systemName={entry.icon} font={15} foregroundStyle={getTheme().accent} />
+                  </ZStack>
+                </NavigationLink>
+              ))}
             </HStack>
           ),
         }}
