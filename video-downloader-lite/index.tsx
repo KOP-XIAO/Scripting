@@ -1,5 +1,5 @@
 // index.tsx — 视频下载器主程序（App 内页面）
-// 结构：NavigationStack(path 编程式导航) + List 分 Section；设置/诊断/全部历史由底部栏与列表 Button push。
+// 结构：TabView 三 Tab（下载/设置/诊断）+ 主页 NavigationStack(path) 供「查看全部」push 历史页。
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()。
 //
 // 注意：Dialog / Storage / FileManager / Photos / Pasteboard / ShareSheet /
@@ -20,6 +20,8 @@ import {
   Script,
   Section,
   Spacer,
+  Tab,
+  TabView,
   Text,
   TextField,
   Toggle,
@@ -883,8 +885,10 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [showInput, setShowInput] = useState(false)
   // 缩略图挂载即显示：filePath 图像加载不触发行重渲染，用 tick 重建历史行强制加载
   const [imgTick, setImgTick] = useState(0)
-  // 编程式导航栈（底部栏 Button 直接 push；绑定 path 后 NavigationLink 失效，已全部改用 Button）
+  // 编程式导航栈（主页「查看全部」push 历史页用）
   const navPath = useObservable<string[]>([])
+  // 底部 Tab：下载 / 设置 / 诊断（iOS 标准图标+文字标签栏）
+  const activeTab = useObservable<string>("download")
 
 
   const refreshHistory = async () => {
@@ -1117,20 +1121,14 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
-    <NavigationStack path={navPath}>
+    <TabView selection={activeTab}>
+      <Tab title="下载" systemImage="arrow.down.circle" value="download">
+      <NavigationStack path={navPath}>
       <ZStack>
       <List
         navigationDestination={
           <NavigationDestination>
-            {(page) =>
-              page === "settings" ? (
-                <SettingsPage prefs={prefs} onSave={savePrefs} />
-              ) : page === "diagnostics" ? (
-                <DiagnosticsPage />
-              ) : (
-                <HistoryPage history={history} onChanged={refreshHistory} />
-              )
-            }
+            {() => <HistoryPage history={history} onChanged={refreshHistory} />}
           </NavigationDestination>
         }
         onAppear={() => void refreshHistory()}
@@ -1139,19 +1137,16 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
           // 底部栏：左次右主——设置/诊断在左，主按钮「粘贴并下载」在右下角
-          /* bottomBar 接受节点数组：每个 Button 是独立工具栏项，系统各自玻璃化并分布，
-             不要包 HStack（包了整个算一项，1.36 翻车的根源） */
-          bottomBar: [
-            <Button title="设置" buttonStyle="plain" action={() => navPath.setValue(["settings"])} />,
-            <Button title="诊断" buttonStyle="plain" action={() => navPath.setValue(["diagnostics"])} />,
+          /* Tab 栏上方浮动的主操作玻璃胶囊：精简文案 + 箭头暗示 */
+          bottomBar: (
             <Button
-              title={loading ? "下载中…" : "⬇  粘贴并下载"}
+              title={loading ? "下载中…" : "⬇  下载"}
               buttonStyle="borderedProminent"
               tint={getTheme().accent}
               disabled={loading}
               action={() => void pasteAndDownload()}
-            />,
-          ],
+            />
+          ),
         }}
       >
         {showInput || inputURL.trim() ? (
@@ -1346,18 +1341,18 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           header={<Text>{`下载历史 (${history.length})`}</Text>}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              仅显示最近 8 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
+              仅显示最近 6 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
             </Text>
           }
         >
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
           ) : (
-            history.slice(0, 8).map((item, i) => (
+            history.slice(0, 6).map((item, i) => (
               <HistoryRow key={`${item.id}-${imgTick}`} item={item} index={i} onChanged={refreshHistory} />
             ))
           )}
-          {history.length > 8 ? (
+          {history.length > 6 ? (
             <Button
               title={`查看全部 ${history.length} 条`}
               action={() => navPath.setValue(["history"])}
@@ -1378,7 +1373,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       </List>
       {celebrate ? <ConfettiOverlay onFinish={() => setCelebrate(false)} /> : null}
       </ZStack>
-    </NavigationStack>
+      </NavigationStack>
+      </Tab>
+      <Tab title="设置" systemImage="gearshape" value="settings">
+        <NavigationStack>
+          <SettingsPage prefs={prefs} onSave={savePrefs} />
+        </NavigationStack>
+      </Tab>
+      <Tab title="诊断" systemImage="stethoscope" value="diagnostics">
+        <NavigationStack>
+          <DiagnosticsPage />
+        </NavigationStack>
+      </Tab>
+    </TabView>
   )
 }
 
