@@ -1,5 +1,5 @@
 // index.tsx — 视频下载器主程序（App 内页面）
-// 结构：TabView 三 Tab（下载/设置/诊断）+ 主页 NavigationStack(path) 供「查看全部」push 历史页。
+// 结构：NavigationStack + 独立底部动作；下载按钮直接读取剪贴板并启动任务。
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()。
 //
 // 注意：Dialog / Storage / FileManager / Photos / Pasteboard / ShareSheet /
@@ -20,8 +20,6 @@ import {
   Script,
   Section,
   Spacer,
-  Tab,
-  TabView,
   Text,
   TextField,
   Toggle,
@@ -887,8 +885,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [imgTick, setImgTick] = useState(0)
   // 编程式导航栈（主页「查看全部」push 历史页用）
   const navPath = useObservable<string[]>([])
-  // 底部 Tab：下载 / 设置 / 诊断（iOS 标准图标+文字标签栏）
-  const activeTab = useObservable<string>("download")
 
 
   const refreshHistory = async () => {
@@ -1121,14 +1117,16 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
-    <TabView selection={activeTab}>
-      <Tab title="下载" systemImage="arrow.down.circle" value="download">
-      <NavigationStack path={navPath}>
+    <NavigationStack path={navPath}>
       <ZStack>
       <List
         navigationDestination={
           <NavigationDestination>
-            {() => <HistoryPage history={history} onChanged={refreshHistory} />}
+            {(page) => page === "settings"
+              ? <SettingsPage prefs={prefs} onSave={savePrefs} />
+              : page === "diagnostics"
+                ? <DiagnosticsPage />
+                : <HistoryPage history={history} onChanged={refreshHistory} />}
           </NavigationDestination>
         }
         onAppear={() => void refreshHistory()}
@@ -1136,17 +1134,33 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         navigationBarTitleDisplayMode="inline"
         toolbar={{
           cancellationAction: <Button title="关闭" action={dismiss} />,
-          // 底部栏：左次右主——设置/诊断在左，主按钮「粘贴并下载」在右下角
-          /* Tab 栏上方浮动的主操作玻璃胶囊：精简文案 + 箭头暗示 */
-          bottomBar: (
+          // 独立工具栏动作。显式 Image + Text 保留图标和文字，不使用 Tab 充当下载动作。
+          bottomBar: [
+            <Button action={() => navPath.setValue(["settings"])} accessibilityLabel="设置">
+              <VStack spacing={3} padding={4}>
+                <Image systemName="gearshape" font={19} />
+                <Text font="caption2">设置</Text>
+              </VStack>
+            </Button>,
+            <Button action={() => navPath.setValue(["diagnostics"])} accessibilityLabel="诊断">
+              <VStack spacing={3} padding={4}>
+                <Image systemName="stethoscope" font={19} />
+                <Text font="caption2">诊断</Text>
+              </VStack>
+            </Button>,
             <Button
-              title={loading ? "下载中…" : "⬇  下载"}
               buttonStyle="borderedProminent"
               tint={getTheme().accent}
               disabled={loading}
+              accessibilityLabel="读取剪贴板链接并下载"
               action={() => void pasteAndDownload()}
-            />
-          ),
+            >
+              <VStack spacing={3} padding={4}>
+                <Image systemName="square.and.arrow.down" font={19} />
+                <Text font="caption2">{loading ? "下载中" : "下载"}</Text>
+              </VStack>
+            </Button>,
+          ],
         }}
       >
         {showInput || inputURL.trim() ? (
@@ -1373,19 +1387,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       </List>
       {celebrate ? <ConfettiOverlay onFinish={() => setCelebrate(false)} /> : null}
       </ZStack>
-      </NavigationStack>
-      </Tab>
-      <Tab title="设置" systemImage="gearshape" value="settings">
-        <NavigationStack>
-          <SettingsPage prefs={prefs} onSave={savePrefs} />
-        </NavigationStack>
-      </Tab>
-      <Tab title="诊断" systemImage="stethoscope" value="diagnostics">
-        <NavigationStack>
-          <DiagnosticsPage />
-        </NavigationStack>
-      </Tab>
-    </TabView>
+    </NavigationStack>
   )
 }
 
