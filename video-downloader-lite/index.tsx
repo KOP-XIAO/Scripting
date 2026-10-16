@@ -1244,7 +1244,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
               <Image
                 systemName={status.startsWith("失败") ? "xmark.circle.fill" : status === "就绪" ? "bolt.circle" : "checkmark.circle.fill"}
                 font={14}
-                foregroundStyle={status.startsWith("失败") ? "systemRed" : status === "就绪" ? "secondaryLabel" : getTheme().accent}
+                foregroundStyle={status.startsWith("失败") ? "systemRed" : getTheme().accent}
               />
               <Text
                 font="caption"
@@ -1255,7 +1255,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                 {status}
               </Text>
               <Spacer />
-              <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.35)">
+              <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
                 {status === "就绪" ? "idle" : "done"}
               </Text>
             </HStack>
