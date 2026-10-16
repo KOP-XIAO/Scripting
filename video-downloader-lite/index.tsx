@@ -1,5 +1,5 @@
 // index.tsx — 视频下载器主程序（App 内页面）
-// 结构：NavigationStack + 独立底部动作；下载按钮直接读取剪贴板并启动任务。
+// 结构：TabView + 各页 NavigationStack；主页右下角下载按钮读取剪贴板并启动任务。
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()。
 //
 // 注意：Dialog / Storage / FileManager / Photos / Pasteboard / ShareSheet /
@@ -20,6 +20,8 @@ import {
   Script,
   Section,
   Spacer,
+  Tab,
+  TabView,
   Text,
   TextField,
   Toggle,
@@ -885,6 +887,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [imgTick, setImgTick] = useState(0)
   // 编程式导航栈（主页「查看全部」push 历史页用）
   const navPath = useObservable<string[]>([])
+  const selectedTab = useObservable<string>("home")
 
 
   const refreshHistory = async () => {
@@ -1117,277 +1120,293 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
-    <NavigationStack path={navPath}>
-      <ZStack>
-      <List
-        navigationDestination={
-          <NavigationDestination>
-            {(page) => page === "settings"
-              ? <SettingsPage prefs={prefs} onSave={savePrefs} />
-              : page === "diagnostics"
-                ? <DiagnosticsPage />
-                : <HistoryPage history={history} onChanged={refreshHistory} />}
-          </NavigationDestination>
-        }
-        onAppear={() => void refreshHistory()}
-        navigationTitle={`视频下载器 Lite | v${VERSION}`}
-        navigationBarTitleDisplayMode="inline"
-        toolbar={{
-          cancellationAction: <Button title="关闭" action={dismiss} />,
-          // 独立工具栏动作。显式 Image + Text 保留图标和文字，不使用 Tab 充当下载动作。
-          bottomBar: [
-            <Button action={() => navPath.setValue(["settings"])} accessibilityLabel="设置">
-              <VStack spacing={3} padding={4}>
-                <Image systemName="gearshape" font={19} />
-                <Text font="caption2">设置</Text>
-              </VStack>
-            </Button>,
-            <Button action={() => navPath.setValue(["diagnostics"])} accessibilityLabel="诊断">
-              <VStack spacing={3} padding={4}>
-                <Image systemName="stethoscope" font={19} />
-                <Text font="caption2">诊断</Text>
-              </VStack>
-            </Button>,
-            <Button
-              buttonStyle="borderedProminent"
-              tint={getTheme().accent}
-              disabled={loading}
-              accessibilityLabel="读取剪贴板链接并下载"
-              action={() => void pasteAndDownload()}
-            >
-              <VStack spacing={3} padding={4}>
-                <Image systemName="square.and.arrow.down" font={19} />
-                <Text font="caption2">{loading ? "下载中" : "下载"}</Text>
-              </VStack>
-            </Button>,
-          ],
-        }}
-      >
-        {showInput || inputURL.trim() ? (
-          <Section
-            footer={
-              <Text font="caption" foregroundStyle="secondaryLabel">
-                {inputURL.trim()
-                  ? `当前识别：${kindHint}`
-                  : "支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接，复制链接后点底部按钮即可"}
-              </Text>
-            }
-          >
-            <TextField
-              title="视频链接"
-              value={inputURL}
-              onChanged={setInputURL}
-              prompt="粘贴或输入链接（也可手动编辑）"
-            />
-          </Section>
-        ) : null}
-
-        <Section title="状态">
-          {loading ? (
-            /* 终端风进度卡：loading 全程显示——解析/探测阶段 progress 尚未产生，
-               用零值兜底渲染斑马纹 + resolving…，避免进度条在最后时刻突然闪现。 */
-            <VStack
-              alignment="leading"
-              spacing={8}
-              padding={12}
-              frame={{ maxWidth: "infinity" } as never}
-              background="#0D1117"
-              clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
-            >
-              <HStack>
-                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                  vdl@ios:~$ download
-                </Text>
-                <Spacer />
-                <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
-                  {displayRatio == null ? "--%" : `${Math.round(displayRatio * 100)}%`}
-                </Text>
-              </HStack>
-              {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
-                  亮块=主题色，最前沿一块白色高亮，暗块=12% 白；不定进度为斑马呼吸纹 */}
-              <GeometryReader>
-                {proxy => {
-                  const trackW = proxy.size.width
-                  const gap = 2
-                  const N = Math.max(20, Math.floor((trackW + gap) / 8))
-                  const bw = (trackW - (N - 1) * gap) / N
-                  const lit = displayRatio == null ? 0 : Math.round(displayRatio * N)
-                  return (
-                    <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
-                      {Array.from({ length: N }, (_, i) => (
-                        <RoundedRectangle
-                          key={i}
-                          cornerRadius={1.5}
-                          fill={displayRatio == null
-                            ? "rgba(255,255,255,0.12)"
-                            : i < lit
-                              ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
-                              : "rgba(255,255,255,0.12)"}
-                          opacity={displayRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
-                          frame={{ width: bw, height: 14 }}
-                        />
-                      ))}
+    <TabView selection={selectedTab}>
+      <Tab title="主页" systemImage="house" value="home">
+        <NavigationStack path={navPath}>
+          <ZStack>
+            <List
+              navigationDestination={
+                <NavigationDestination>
+                  {() => <HistoryPage history={history} onChanged={refreshHistory} />}
+                </NavigationDestination>
+              }
+              onAppear={() => void refreshHistory()}
+              navigationTitle={`视频下载器 Lite | v${VERSION}`}
+              navigationBarTitleDisplayMode="inline"
+              toolbar={{
+                cancellationAction: <Button title="关闭" action={dismiss} />,
+              }}
+              safeAreaInset={{
+                bottom: {
+                  alignment: "trailing",
+                  spacing: 0,
+                  content: (
+                    <HStack padding={{ trailing: 12, leading: 12, top: 8, bottom: 8 }}>
+                      <Spacer />
+                      <Button
+                        buttonStyle="borderedProminent"
+                        tint={getTheme().accent}
+                        disabled={loading}
+                        accessibilityLabel="读取剪贴板链接并下载"
+                        action={() => void pasteAndDownload()}
+                      >
+                        <HStack spacing={6} padding={{ horizontal: 8, vertical: 8 }}>
+                          <Image systemName="square.and.arrow.down" font={19} />
+                          <Text>{loading ? "下载中" : "下载"}</Text>
+                        </HStack>
+                      </Button>
                     </HStack>
-                  )
-                }}
-              </GeometryReader>
-              <HStack>
-                <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
-                  {progress == null || (progress.total === 0 && progress.done === 0)
-                    ? "resolving…"
-                    : [
-                        progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
-                        progress.bytes > 0 ? formatBytes(progress.bytes) : "",
-                        progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
-                        progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
-                      ].filter(Boolean).join(" · ")}
-                </Text>
-                <Spacer />
-                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
-              </HStack>
-            </VStack>
-          ) : (
-            /* 空闲状态卡：与进度卡同款终端风，图标 + 状态文字 */
-            <HStack
-              spacing={8}
-              padding={10}
-              frame={{ maxWidth: "infinity" } as never}
-              background="#0D1117"
-              clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+                  ),
+                },
+              }}
             >
-              <Image
-                systemName={status.startsWith("失败") ? "xmark.circle.fill" : status === "就绪" ? "bolt.circle" : "checkmark.circle.fill"}
-                font={14}
-                foregroundStyle={status.startsWith("失败") ? "systemRed" : getTheme().accent}
-              />
-              <Text
-                font="caption"
-                monospaced
-                foregroundStyle={status.startsWith("失败") ? "systemRed" : "#E6E9EC"}
-                lineLimit={2}
-              >
-                {status}
-              </Text>
-              <Spacer />
-              <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
-                {status === "就绪" ? "idle" : "done"}
-              </Text>
-            </HStack>
-          )}
-        </Section>
-
-        {logs.length > 0 ? (
-          <Section
-            header={
-              <HStack spacing={6}>
-                <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
-                <Text>实时日志</Text>
-              </HStack>
-            }
-          >
-            {/* 终端风日志卡：单 VStack 挂背景（ZStack+Shape 在 List 行里不满宽） */}
-            <VStack
-              alignment="leading"
-              spacing={3}
-              padding={10}
-              frame={{ maxWidth: "infinity" } as never}
-              background="#0D1117"
-              clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
-            >
-              <HStack>
-                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                  vdl@ios:~$ run
-                </Text>
-                <Spacer />
-              </HStack>
-              {logs.map((l, i) => (
-                <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
-                  {"▸ " + l}
-                </Text>
-              ))}
-              {loading ? (
-                <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                  {"▌"}
-                </Text>
-              ) : null}
-            </VStack>
-          </Section>
-        ) : null}
-
-        {lastFiles.length > 0 ? (
-          <Section title="本次文件">
-            {lastFiles.map((f) => (
-              <VStack key={f.path} alignment="leading" spacing={4}>
-                <Text font="headline" lineLimit={1}>
-                  {f.name}
-                </Text>
-                <Text font="caption" foregroundStyle="secondaryLabel">
-                  {formatBytes(f.bytes)}
-                  {canSaveToPhotos(f.name) ? "" : " · 非相册格式"}
-                </Text>
-                <HStack>
-                  {canSaveToPhotos(f.name) ? (
-                    <Button
-                      title="存相册"
-                      action={() =>
-                        void saveFilePathToPhotos(f.path, f.name).catch(async (e) => {
-                          await Dialog.alert({ title: "保存失败", message: String(e) })
-                        })
-                      }
-                    />
-                  ) : null}
-                  <Button title="分享" action={() => void shareFile(f.path)} />
-                  <Button
-                    title="导出到文件"
-                    action={() =>
-                      void exportFilePathToFiles(f.path, f.name).catch(async (e) => {
-                        await Dialog.alert({ title: "导出失败", message: String(e) })
-                      })
-                    }
+              {showInput || inputURL.trim() ? (
+                <Section
+                  footer={
+                    <Text font="caption" foregroundStyle="secondaryLabel">
+                      {inputURL.trim()
+                        ? `当前识别：${kindHint}`
+                        : "支持：视频号 / 抖音 / m3u8 / 直链 / 平台链接，复制链接后点底部按钮即可"}
+                    </Text>
+                  }
+                >
+                  <TextField
+                    title="视频链接"
+                    value={inputURL}
+                    onChanged={setInputURL}
+                    prompt="粘贴或输入链接（也可手动编辑）"
                   />
-                </HStack>
-              </VStack>
-            ))}
-          </Section>
-        ) : null}
+                </Section>
+              ) : null}
 
-        <Section
-          header={<Text>{`下载历史 (${history.length})`}</Text>}
-          footer={
-            <Text font="caption" foregroundStyle="secondaryLabel">
-              仅显示最近 6 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
-            </Text>
-          }
-        >
-          {history.length === 0 ? (
-            <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
-          ) : (
-            history.slice(0, 6).map((item, i) => (
-              <HistoryRow key={`${item.id}-${imgTick}`} item={item} index={i} onChanged={refreshHistory} />
-            ))
-          )}
-          {history.length > 6 ? (
-            <Button
-              title={`查看全部 ${history.length} 条`}
-              action={() => navPath.setValue(["history"])}
-            />
-          ) : null}
-        </Section>
+              <Section title="状态">
+                {loading ? (
+                  /* 终端风进度卡：loading 全程显示——解析/探测阶段 progress 尚未产生，
+                     用零值兜底渲染斑马纹 + resolving…，避免进度条在最后时刻突然闪现。 */
+                  <VStack
+                    alignment="leading"
+                    spacing={8}
+                    padding={12}
+                    frame={{ maxWidth: "infinity" } as never}
+                    background="#0D1117"
+                    clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+                  >
+                    <HStack>
+                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                        vdl@ios:~$ download
+                      </Text>
+                      <Spacer />
+                      <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
+                        {displayRatio == null ? "--%" : `${Math.round(displayRatio * 100)}%`}
+                      </Text>
+                    </HStack>
+                    {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
+                        亮块=主题色，最前沿一块白色高亮，暗块=12% 白；不定进度为斑马呼吸纹 */}
+                    <GeometryReader>
+                      {proxy => {
+                        const trackW = proxy.size.width
+                        const gap = 2
+                        const N = Math.max(20, Math.floor((trackW + gap) / 8))
+                        const bw = (trackW - (N - 1) * gap) / N
+                        const lit = displayRatio == null ? 0 : Math.round(displayRatio * N)
+                        return (
+                          <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
+                            {Array.from({ length: N }, (_, i) => (
+                              <RoundedRectangle
+                                key={i}
+                                cornerRadius={1.5}
+                                fill={displayRatio == null
+                                  ? "rgba(255,255,255,0.12)"
+                                  : i < lit
+                                    ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
+                                    : "rgba(255,255,255,0.12)"}
+                                opacity={displayRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
+                                frame={{ width: bw, height: 14 }}
+                              />
+                            ))}
+                          </HStack>
+                        )
+                      }}
+                    </GeometryReader>
+                    <HStack>
+                      <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
+                        {progress == null || (progress.total === 0 && progress.done === 0)
+                          ? "resolving…"
+                          : [
+                              progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
+                              progress.bytes > 0 ? formatBytes(progress.bytes) : "",
+                              progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
+                              progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
+                            ].filter(Boolean).join(" · ")}
+                      </Text>
+                      <Spacer />
+                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
+                    </HStack>
+                  </VStack>
+                ) : (
+                  /* 空闲状态卡：与进度卡同款终端风，图标 + 状态文字 */
+                  <HStack
+                    spacing={8}
+                    padding={10}
+                    frame={{ maxWidth: "infinity" } as never}
+                    background="#0D1117"
+                    clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+                  >
+                    <Image
+                      systemName={status.startsWith("失败") ? "xmark.circle.fill" : status === "就绪" ? "bolt.circle" : "checkmark.circle.fill"}
+                      font={14}
+                      foregroundStyle={status.startsWith("失败") ? "systemRed" : getTheme().accent}
+                    />
+                    <Text
+                      font="caption"
+                      monospaced
+                      foregroundStyle={status.startsWith("失败") ? "systemRed" : "#E6E9EC"}
+                      lineLimit={2}
+                    >
+                      {status}
+                    </Text>
+                    <Spacer />
+                    <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
+                      {status === "就绪" ? "idle" : "done"}
+                    </Text>
+                  </HStack>
+                )}
+              </Section>
 
-        <Section
-          title="更多"
-          footer={
-            <Text font="caption" foregroundStyle="tertiaryLabel">
-              v{VERSION} · 视频号本地解析移植自 ltaoo/wx_channels_download · 平台解析兼容 cobalt API
-            </Text>
-          }
-        >
-          <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
-        </Section>
-      </List>
-      {celebrate ? <ConfettiOverlay onFinish={() => setCelebrate(false)} /> : null}
-      </ZStack>
-    </NavigationStack>
+              {logs.length > 0 ? (
+                <Section
+                  header={
+                    <HStack spacing={6}>
+                      <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
+                      <Text>实时日志</Text>
+                    </HStack>
+                  }
+                >
+                  {/* 终端风日志卡：单 VStack 挂背景（ZStack+Shape 在 List 行里不满宽） */}
+                  <VStack
+                    alignment="leading"
+                    spacing={3}
+                    padding={10}
+                    frame={{ maxWidth: "infinity" } as never}
+                    background="#0D1117"
+                    clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
+                  >
+                    <HStack>
+                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                        vdl@ios:~$ run
+                      </Text>
+                      <Spacer />
+                    </HStack>
+                    {logs.map((l, i) => (
+                      <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
+                        {"▸ " + l}
+                      </Text>
+                    ))}
+                    {loading ? (
+                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                        {"▌"}
+                      </Text>
+                    ) : null}
+                  </VStack>
+                </Section>
+              ) : null}
+
+              {lastFiles.length > 0 ? (
+                <Section title="本次文件">
+                  {lastFiles.map((f) => (
+                    <VStack key={f.path} alignment="leading" spacing={4}>
+                      <Text font="headline" lineLimit={1}>
+                        {f.name}
+                      </Text>
+                      <Text font="caption" foregroundStyle="secondaryLabel">
+                        {formatBytes(f.bytes)}
+                        {canSaveToPhotos(f.name) ? "" : " · 非相册格式"}
+                      </Text>
+                      <HStack>
+                        {canSaveToPhotos(f.name) ? (
+                          <Button
+                            title="存相册"
+                            action={() =>
+                              void saveFilePathToPhotos(f.path, f.name).catch(async (e) => {
+                                await Dialog.alert({ title: "保存失败", message: String(e) })
+                              })
+                            }
+                          />
+                        ) : null}
+                        <Button title="分享" action={() => void shareFile(f.path)} />
+                        <Button
+                          title="导出到文件"
+                          action={() =>
+                            void exportFilePathToFiles(f.path, f.name).catch(async (e) => {
+                              await Dialog.alert({ title: "导出失败", message: String(e) })
+                            })
+                          }
+                        />
+                      </HStack>
+                    </VStack>
+                  ))}
+                </Section>
+              ) : null}
+
+              <Section
+                header={<Text>{`下载历史 (${history.length})`}</Text>}
+                footer={
+                  <Text font="caption" foregroundStyle="secondaryLabel">
+                    仅显示最近 6 条，点按记录展开详情与操作。下载先写入 App 文档目录 Video/Downloads；选择「保存到相册」后本地副本会自动移除，不再重复占用空间。
+                  </Text>
+                }
+              >
+                {history.length === 0 ? (
+                  <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
+                ) : (
+                  history.slice(0, 6).map((item, i) => (
+                    <HistoryRow key={`${item.id}-${imgTick}`} item={item} index={i} onChanged={refreshHistory} />
+                  ))
+                )}
+                {history.length > 6 ? (
+                  <Button
+                    title={`查看全部 ${history.length} 条`}
+                    action={() => navPath.setValue(["history"])}
+                  />
+                ) : null}
+              </Section>
+
+              <Section
+                title="更多"
+                footer={
+                  <Text font="caption" foregroundStyle="tertiaryLabel">
+                    v{VERSION} · 视频号本地解析移植自 ltaoo/wx_channels_download · 平台解析兼容 cobalt API
+                  </Text>
+                }
+              >
+                <Button title="清空历史记录" role="destructive" action={() => void handleClearHistory()} />
+              </Section>
+            </List>
+            {celebrate ? <ConfettiOverlay onFinish={() => setCelebrate(false)} /> : null}
+          </ZStack>
+        </NavigationStack>
+      </Tab>
+      <Tab title="设置" systemImage="gearshape" value="settings">
+        <NavigationStack>
+          <VStack
+            spacing={0}
+            toolbar={{ cancellationAction: <Button title="关闭" action={dismiss} /> }}
+          >
+            <SettingsPage prefs={prefs} onSave={savePrefs} />
+          </VStack>
+        </NavigationStack>
+      </Tab>
+      <Tab title="诊断" systemImage="stethoscope" value="diagnostics">
+        <NavigationStack>
+          <VStack
+            spacing={0}
+            toolbar={{ cancellationAction: <Button title="关闭" action={dismiss} /> }}
+          >
+            <DiagnosticsPage />
+          </VStack>
+        </NavigationStack>
+      </Tab>
+    </TabView>
   )
 }
 
