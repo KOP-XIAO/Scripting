@@ -5,7 +5,8 @@
 // 钩子记录 url + method + 请求体，会话存好后，刷新时在页面上下文里重放 fetch
 // （Cookie 由 WebView 自动携带，绕开一切会话问题）。
 
-import { appendDebug, endWebLogin, getPassword, getPhone, getWebStartUrl, hasCredentials, isLoginRequest, isWebLoginBusy, readLoginPageUrl, saveCapture, saveCapturedBody, saveLoginRequest, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession, tryBeginWebLogin } from "./cmhk"
+import { appendDebug, endWebLogin, getPassword, getPhone, getWebStartUrl, hasCredentials, isApiError, summaryHasUsage, isLoginRequest, isWebLoginBusy, readLoginPageUrl, saveCapture, saveCapturedBody, saveLoginRequest, saveMemberJson, saveNicknameJson, saveOverviewHtml, saveWebSession, tryBeginWebLogin } from "./cmhk"
+import { withTimeout } from "./timeout"
 
 // WebViewController 是全局对象（与 Dialog/Storage/Keychain 一样，不从 scripting 导入）
 declare const WebViewController: {
@@ -239,7 +240,7 @@ const USAGE_PAGE_URL = "https://www.hk.chinamobile.com/tc/home/my-zone/menu/usag
 // 填表并提交（只执行一次）：返回 clicked / captcha / no-form / no-button / already-submitted
 function buildFillLoginJs(phone: string, password: string): string {
   return `
-(function () {
+return (function () {
   if (window.__cmhkAutoSubmitted) return "already-submitted"
   function vis(el) { return !!(el && (el.offsetParent !== null || (el.getClientRects && el.getClientRects().length > 0))) }
   var inputs = Array.prototype.slice.call(document.querySelectorAll("input"))
@@ -307,8 +308,14 @@ export async function autoRelogin(): Promise<{ summary: any | null; reason?: str
   let submitAt = 0
   let loginOk = false
   let loginRejected: string | null = null
+  let active = true
+  const startedAt = Date.now()
+  const deadline = startedAt + 15000
+  const step = <T,>(operation: Promise<T>, label: string) =>
+    withTimeout(operation, Math.max(1, Math.min(2000, deadline - Date.now())), `自动重登·${label}`)
   try {
-    await wv.addScriptMessageHandler<any>("cmhkCapture", (msg) => {
+    await step(wv.addScriptMessageHandler<any>("cmhkCapture", (msg) => {
+      if (!active) return null
       try {
         const url = String(msg?.url ?? "")
         const body = String(msg?.body ?? "")
@@ -319,57 +326,59 @@ export async function autoRelogin(): Promise<{ summary: any | null; reason?: str
         // 登录成功信号：提交后 queryLoginInfo 返回 000000（诊断包实证：未登录时返回 999999 用戶未登錄）
         if (submitAt > 0 && /\/single\/queryLoginInfo/i.test(url) && body.includes('"code":"000000"')) loginOk = true
         if (/\/single\/accountLogin/i.test(url) && !body.includes('"code":"000000"')) loginRejected = body.slice(0, 120)
-        if (looksLikeUsageJson(url, body)) {
-          saveCapture(url, body)
-          if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)
-          if (/getNickname/i.test(url)) saveNicknameJson(body)
-          const usageRank = (u: string) => (/cbs\/usageQuery/i.test(u) ? 3 : /usageQuery/i.test(u) ? 2 : 1)
-          if (!best || usageRank(url) > usageRank(best.url)) {
+        if (/cbs\/usageQuery/i.test(url)) {
+          const usage = JSON.parse(body)
+          if (!isApiError(usage) && summaryHasUsage(usage)) {
             best = { url, method, reqBody: String(msg?.reqBody ?? ""), body, headers: msg?.headers }
           }
         }
       } catch { /* 忽略 */ }
       return null
-    })
+    }), "建立捕获通道")
 
     const startUrl = readLoginPageUrl() ?? USAGE_PAGE_URL
     let loadErr: string | null = null
     void wv.loadURL(startUrl).catch((e) => { loadErr = String(e) })
-    let navigatedToUsage = /usage/i.test(startUrl) // 起点即用量页则无需再导航
-    const deadline = Date.now() + 45000
-    let noFormRounds = 0
+    let navigatedToUsage = false
+    let lastFillState = "尚未找到登录表单"
     while (Date.now() < deadline) {
       if (isWebLoginBusy()) return { summary: null, reason: "手动登录窗口优先" }
-      await wv.evaluateJavaScript(INJECT_HOOK).catch(() => false)
-      if (best) break
+      await step(wv.evaluateJavaScript(INJECT_HOOK).catch(() => false), "注入钩子")
       if (loginRejected) return { summary: null, reason: `登录被拒：${loginRejected}` }
+      if (best) break
       if (loadErr) return { summary: null, reason: `页面加载失败：${loadErr.slice(0, 60)}` }
       if (loginOk && !navigatedToUsage) {
         navigatedToUsage = true
         void wv.loadURL(USAGE_PAGE_URL).catch(() => {})
       }
       if (submitAt === 0) {
-        const r = await wv.evaluateJavaScript<string>(buildFillLoginJs(phone, password)).catch(() => "error")
+        const r = await step(wv.evaluateJavaScript<string>(buildFillLoginJs(phone, password)).catch(() => "error"), "填表提交")
         if (r === "captcha") { appendDebug("自动重登: 检测到验证码，放弃自动"); return { summary: null, reason: "出现验证码，需手动登录" } }
         if (r === "clicked") { submitAt = Date.now(); appendDebug("自动重登: 已填表并提交") }
-        else if (r === "no-form" || r === "no-button") {
-          noFormRounds++
-          if (noFormRounds > 15) return { summary: null, reason: "未找到登录表单（页面结构可能已改版）" }
+        else {
+          const state = r === "no-form" ? "未找到登录表单" : r === "no-button" ? "未找到登录按钮" : "填表脚本未返回有效状态"
+          if (state !== lastFillState) appendDebug(`自动重登: ${state}`)
+          lastFillState = state
+          if (Date.now() - startedAt >= 6000) return { summary: null, reason: `${lastFillState}，请手动网页登录` }
         }
       }
-      await new Promise((r2) => setTimeout(r2, 900))
+      await new Promise((r2) => setTimeout(r2, Math.max(0, Math.min(900, deadline - Date.now()))))
     }
     if (!best) return { summary: null, reason: submitAt > 0 ? "已提交但未捕获到用量数据" : "超时（未完成登录）" }
-    const cookie = await wv.evaluateJavaScript<string>("return document.cookie").catch(() => null)
+    const cookie = await step(wv.evaluateJavaScript<string>("return document.cookie"), "读取会话")
     saveWebSession({
       url: best.url, method: best.method, reqBody: best.reqBody,
       pageUrl: USAGE_PAGE_URL, at: Date.now(), authorization: null,
       cookie: cookie ?? null, headers: best.headers,
     })
+    saveCapture(best.url, best.body)
     saveCapturedBody(best.body)
     appendDebug("自动重登: 成功，新会话已保存")
     return { summary: JSON.parse(best.body) }
+  } catch (e) {
+    return { summary: null, reason: String((e as any)?.message ?? e).slice(0, 100) }
   } finally {
+    active = false
     wv.dispose()
   }
 }

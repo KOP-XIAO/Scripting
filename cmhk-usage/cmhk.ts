@@ -11,8 +11,9 @@
 // 修改下方 CMHK.paths / CMHK.fieldMap 即可。全程只读接口，不写账户数据。
 
 import { fetch } from "scripting"
+import { withTimeout } from "./timeout"
 
-export const VERSION = "1.20.0"  // 与 script.json 同步
+export const VERSION = "1.20.1"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -442,13 +443,11 @@ function toNum(v: any): number | null {
 }
 
 async function fetchJson(url: string, init: Record<string, any>, timeoutMs = 12000): Promise<any> {
-  const req = fetch(url, init)
-  const timer = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("请求超时")), timeoutMs)
-  )
-  const res = (await Promise.race([req, timer])) as any
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  return withTimeout((async () => {
+    const res = (await fetch(url, init)) as any
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  })(), timeoutMs, "请求")
 }
 
 // 会话 URL 解析：捕获的 API 地址可能是相对路径，补官网 origin
@@ -512,14 +511,14 @@ async function fetchDirectWithSession(s: WebSession): Promise<any | null> {
   if (hasBody) headers["Content-Type"] = "application/json"
   const init: Record<string, any> = { method, headers }
   if (hasBody) init.body = s.reqBody
-  const timer = new Promise((_, reject) => setTimeout(() => reject(new Error("直连超时")), 3000)) // v1.19.17：5s→3s，压缩无效等待
-  const res = (await Promise.race([fetch(apiUrl, init), timer])) as any
+  const deadline = Date.now() + 3000
+  const res = (await withTimeout(fetch(apiUrl, init), 3000, "直连")) as any
   if (!res || !res.ok) {
     appendDebug(`直连未命中: ${res ? `HTTP ${res.status}` : "无响应"}`)
     return null
   }
   try {
-    const j = await res.json() // HTML / 非 JSON 响应会抛错 → 视为未命中
+    const j = await withTimeout(res.json(), Math.max(1, deadline - Date.now()), "直连正文")
     if (isApiError(j)) {
       const sn = JSON.stringify(j).slice(0, 120)
       appendDebug(`直连未命中: 错误响应 ${sn}`)
@@ -597,19 +596,16 @@ async function fetchWithWebSession(): Promise<any> {
 
   const wv = new WebViewController()
   try {
-    const withTimeout = <T,>(pr: Promise<T>, ms: number, label: string): Promise<T> =>
-      Promise.race([pr, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`超时: ${label}`)), ms))])
-
     // 截获通道：页面发出的每个 fetch/XHR 响应经 messageHandler 回传（登录捕获同款机制）
     const captures: { url: string; body: string }[] = []
-    await wv.addScriptMessageHandler<any>("cmhkReplay", (msg) => {
+    await withTimeout(wv.addScriptMessageHandler<any>("cmhkReplay", (msg) => {
       try {
         const url = String(msg?.url ?? "")
         const body = String(msg?.body ?? "")
         if (url && body) captures.push({ url, body })
       } catch { /* 忽略 */ }
       return null
-    })
+    }), 2000, "建立捕获通道")
 
     // 用量页：会话记录的页面曾是用量页则优先，否则标准用量查询页
     const startUrl = s.pageUrl && /usage|用量/i.test(s.pageUrl)
@@ -912,7 +908,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
           const e = webErr ?? new Error("页内捕获无结果")
           const reason = String((e as any)?.message ?? e)
           const hm = /HTTP (\d+)/.exec(reason)
-          const shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /未捕获/.test(reason) ? "·未捕获" : /超时/.test(reason) ? "·超时" : "·请求失败"
+          let shortReason = hm ? `·HTTP${hm[1]}` : /已过期/.test(reason) ? "·会话过期" : /无用量数据/.test(reason) ? "·空数据" : /错误响应/.test(reason) ? "·错误响应" : /让路/.test(reason) ? "·登录窗口优先" : /未捕获/.test(reason) ? "·未捕获" : /超时/.test(reason) ? "·超时" : "·请求失败"
           appendDebug(`刷新: 页内捕获失败 ${reason.slice(0, 120)}`)
           // v1.20.0 会话真死 + 有凭据 → 先尝试无头自动重登；成功则本轮直接用新数据
           if (/已过期/.test(reason) && hasCredentials()) {
@@ -923,6 +919,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
               appendDebug("刷新: 自动重登成功（新会话已捕获）")
             } else {
               appendDebug(`刷新: 自动重登未果（${rl.reason ?? "未知原因"}）`)
+              shortReason += `·自动重登未完成（${rl.reason ?? "未知原因"}）`
             }
           }
           const body = summary == null ? readCapturedBody() : null
@@ -934,8 +931,8 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
             const snapAt = readWebSession()?.at ?? readCapturedBodyAt()
             if (cacheBeatsSnapshot(cur, snapAt)) {
               appendDebug("刷新: 快照回退被拒（现有缓存更新，保留）")
-              saveReport(`刷新失败·保留较新缓存${cacheAgeDesc(cur)}${shortReason}`, via, false, false, false)
-              return cur
+              saveReport(`刷新失败·保留较新缓存${cacheAgeDesc(cur)}${shortReason}`, via, false, true, false)
+              return { ...cur!, stale: true }
             }
             try { summary = JSON.parse(body) } catch { summary = body }
             fromCaptured = true

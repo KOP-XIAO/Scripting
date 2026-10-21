@@ -136,35 +136,26 @@ function Page() {
 
   async function handleRefresh(opts?: { snapshotFirst?: boolean }) {
     setBusy(true)
-    setStatus(null)
+    setStatus("正在刷新；若会话已过期，将尝试重新登录…")
     try {
       // v1.19.17：手动刷新按钮同样走快路径——刚登录完手上就有现场数据，
       // 此前只有"登录完成"那一刻走快路径，点按钮仍要白等直连 3s + 页内捕获 12s。
       const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst !== false })
-      if (!d) return
+      if (!d) {
+        setStatus("刷新未取得数据，请重新「網頁登入」后再试。")
+        return
+      }
       setData(d)
       Widget.reloadUserWidgets()
       const r = readRefreshReport()
-      if (d.stale) {
-        // v1.19.11：快照若带来了新数值（刚登录完的常见情形），明确告知"已更新"而非"失败"
-        setStatus(r?.changed === true
-          ? `数据已更新（${r?.path ?? "快照"}）· 实时重放暂不可用`
-          : `刷新未成功（${r?.path ?? "会话失效"}）· 已显示缓存。建议重新「網頁登入」`)
-        // 仅当会话真死且数据没有更新时才弹窗直达登录（v1.19.9 登录后立刻弹窗误扰）
-        if (/过期|過期/.test(r?.path ?? "") && r?.changed !== true) {
-          const go = await Dialog.confirm({
-            title: "會話已過期",
-            message: "直連與網頁重放均已失效，需重新登入才能取得最新流量/話費數據。現在去登入？",
-            confirmLabel: "去登入",
-          })
-          if (go) await handleWebLogin()
-        }
+      if (d.stale || r?.ok === false) {
+        setStatus(`刷新未取得实时数据（${r?.path ?? "会话或网络异常"}）· 已显示缓存。请点「網頁登入」重新登录。`)
       } else {
         const chg = r?.changed === false ? "数值无变化（运营商侧可能有延迟）" : r?.changed ? "数值有更新" : "完成"
         setStatus(`已刷新 · ${r?.path ?? "成功"} · ${chg}`)
       }
     } catch (e) {
-      await showError("刷新失败", e)
+      setStatus(`刷新失败：${friendlyError(e)}`)
     } finally {
       setBusy(false)
     }
