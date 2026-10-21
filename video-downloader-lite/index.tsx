@@ -16,6 +16,7 @@ import {
   Navigation,
   NavigationDestination,
   NavigationStack,
+  ProgressView,
   RoundedRectangle,
   Script,
   Section,
@@ -1141,19 +1142,26 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   alignment: "trailing",
                   spacing: 0,
                   content: (
-                    <HStack padding={{ trailing: 12, leading: 12, top: 8, bottom: 8 }}>
+                    <HStack padding={{ trailing: 20, leading: 20, top: 4, bottom: 10 }}>
                       <Spacer />
                       <Button
-                        buttonStyle="borderedProminent"
-                        tint={getTheme().accent}
+                        buttonStyle="plain"
                         disabled={loading}
-                        accessibilityLabel="读取剪贴板链接并下载"
+                        accessibilityLabel={loading ? "正在下载" : "读取剪贴板链接并下载"}
                         action={() => void pasteAndDownload()}
                       >
-                        <HStack spacing={6} padding={{ horizontal: 8, vertical: 8 }}>
-                          <Image systemName="square.and.arrow.down" font={19} />
-                          <Text>{loading ? "下载中" : "下载"}</Text>
-                        </HStack>
+                        <ZStack
+                          frame={{ width: 52, height: 52 }}
+                          background={getTheme().accent}
+                          clipShape={{ type: "circle" }}
+                          opacity={loading ? 0.65 : 1}
+                        >
+                          {loading ? (
+                            <ProgressView progressViewStyle="circular" tint="#0D1117" />
+                          ) : (
+                            <Image systemName="arrow.down" font={22} fontWeight="semibold" foregroundStyle="#0D1117" />
+                          )}
+                        </ZStack>
                       </Button>
                     </HStack>
                   ),
