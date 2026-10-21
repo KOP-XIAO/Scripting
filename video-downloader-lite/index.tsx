@@ -8,6 +8,7 @@
 
 import {
   Button,
+  Circle,
   GeometryReader,
   HStack,
   Image,
@@ -1151,15 +1152,18 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                         action={() => void pasteAndDownload()}
                       >
                         <ZStack
-                          frame={{ width: 52, height: 52 }}
-                          background={getTheme().accent}
-                          clipShape={{ type: "circle" }}
+                          frame={{ width: 54, height: 54 }}
                           opacity={loading ? 0.65 : 1}
                         >
+                          <Circle
+                            fill={getTheme().bgTop}
+                            stroke={{ shapeStyle: getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
+                            frame={{ width: 54, height: 54 }}
+                          />
                           {loading ? (
-                            <ProgressView progressViewStyle="circular" tint="#0D1117" />
+                            <ProgressView progressViewStyle="circular" tint={getTheme().accent} />
                           ) : (
-                            <Image systemName="arrow.down" font={22} fontWeight="semibold" foregroundStyle="#0D1117" />
+                            <Image systemName="tray.and.arrow.down" font={23} fontWeight="medium" foregroundStyle={getTheme().accent} />
                           )}
                         </ZStack>
                       </Button>
