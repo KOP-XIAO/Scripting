@@ -327,7 +327,7 @@ function Page() {
             脚本版本 {VERSION} · {data ? (data.stale ? "缓存数据" : "数据已就绪") : "等待登录/刷新"}
           </Text>
           {data && (
-            <VStack spacing={6} padding={12} background={theme.cardBackground as any} cornerRadius={16}>
+            <VStack spacing={6} padding={12} background={theme.cardBackground as any} clipShape={{ type: "rect", cornerRadius: 16, style: "continuous" }}>
               <HStack>
                 <Text font="caption" fontWeight="medium" foregroundStyle={theme.textSecondary}>
                   {data.nickname || data.userName || data.phoneNumber || data.accountNumber || "CMHK"} {data.phoneNumber ? ` · ${data.phoneNumber}` : ""} {data.planName ? `· ${data.planName}` : ""}

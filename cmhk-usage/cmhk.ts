@@ -13,7 +13,7 @@
 import { fetch } from "scripting"
 import { withTimeout } from "./timeout"
 
-export const VERSION = "1.20.1"  // 与 script.json 同步
+export const VERSION = "1.20.2"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
