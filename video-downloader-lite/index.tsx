@@ -87,20 +87,31 @@ import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/the
 
 import { ConfettiOverlay } from "./components/confetti"
 
-// 只刷新圆弧自身，不让下载进度或整页跟着动画重渲染。
-function DownloadSpinner() {
-  const [angle, setAngle] = useState(0)
-  useEffect(() => {
-    const started = Date.now()
-    const timer = setInterval(() => setAngle((Date.now() - started) * 0.4), 33)
-    return () => clearInterval(timer)
-  }, [])
-  return <Circle
-    trim={{ from: 0, to: 0.72 }}
-    stroke={{ shapeStyle: "#0D1117", strokeStyle: { lineWidth: 4, lineCap: "round" } }}
-    frame={{ width: 28, height: 28 }}
-    rotationEffect={angle - 90}
-  />
+declare const Animation: any
+
+function DownloadProgress({ ratio }: { ratio?: number }) {
+  const animation = typeof Animation !== "undefined" && typeof Animation.easeOut === "function"
+    ? { animation: Animation.easeOut(0.2), value: ratio }
+    : undefined
+  if (ratio == null) {
+    return <Image systemName="hourglass" font={23} fontWeight="semibold" foregroundStyle="#0D1117" />
+  }
+  return <ZStack frame={{ width: 34, height: 34 }}>
+    <Circle
+      stroke={{ shapeStyle: "rgba(13,17,23,0.20)", strokeStyle: { lineWidth: 4 } }}
+      frame={{ width: 34, height: 34 }}
+    />
+    <Circle
+      trim={{ from: 0, to: ratio }}
+      stroke={{ shapeStyle: "#0D1117", strokeStyle: { lineWidth: 4, lineCap: "round" } }}
+      frame={{ width: 34, height: 34 }}
+      rotationEffect={-90}
+      animation={animation}
+    />
+    <Text font={10} monospaced fontWeight="bold" foregroundStyle="#0D1117">
+      {`${Math.round(ratio * 100)}%`}
+    </Text>
+  </ZStack>
 }
 
 // 直接传入已载入的图片对象，首次渲染不依赖 filePath 的异步加载刷新。
@@ -1118,27 +1129,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const progressRatio = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.done / progress.total))
     : undefined
-  // 平滑追赶：显示值以恒定速率（约 1.3/s）追向真实进度。
-  // 小文件秒下时真实值瞬间到 100%，显示值仍会扫过完整动画。
-  const [displayRatio, setDisplayRatio] = useState<number | null>(null)
-  useEffect(() => {
-    if (progressRatio == null) {
-      if (displayRatio !== null) setDisplayRatio(null)
-      return
-    }
-    if (displayRatio == null) {
-      setDisplayRatio(0)
-      return
-    }
-    if (displayRatio >= progressRatio) return
-    // 指数趋近（+微小线性保底保证收敛）：显示值始终"追"真实值，
-    // 落后多就快追、接近就放缓——视觉上与日志里的实际进展保持耦合
-    const timer = setTimeout(() => {
-      setDisplayRatio((r) =>
-        r == null ? 0 : Math.min(progressRatio, r + (progressRatio - r) * 0.22 + 0.004))
-    }, 30)
-    return () => clearTimeout(timer)
-  }, [progressRatio, displayRatio])
   const kindHint = extractFirstURL(inputURL) ? KIND_LABELS[detectKind(extractFirstURL(inputURL)!)] : "-"
 
   return (
@@ -1186,7 +1176,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                             opacity={loading ? 0 : 1}
                           />
                         </Button>
-                        {loading ? <DownloadSpinner /> : null}
+                        {loading ? <DownloadProgress ratio={progressRatio} /> : null}
                       </ZStack>
                     </HStack>
                   ),
@@ -1230,7 +1220,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                       </Text>
                       <Spacer />
                       <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
-                        {displayRatio == null ? "--%" : `${Math.round(displayRatio * 100)}%`}
+                        {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
                       </Text>
                     </HStack>
                     {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
@@ -1241,19 +1231,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                         const gap = 2
                         const N = Math.max(20, Math.floor((trackW + gap) / 8))
                         const bw = (trackW - (N - 1) * gap) / N
-                        const lit = displayRatio == null ? 0 : Math.round(displayRatio * N)
+                        const lit = progressRatio == null ? 0 : Math.round(progressRatio * N)
                         return (
                           <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
                             {Array.from({ length: N }, (_, i) => (
                               <RoundedRectangle
                                 key={i}
                                 cornerRadius={1.5}
-                                fill={displayRatio == null
+                                fill={progressRatio == null
                                   ? "rgba(255,255,255,0.12)"
                                   : i < lit
                                     ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
                                     : "rgba(255,255,255,0.12)"}
-                                opacity={displayRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
+                                opacity={progressRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
                                 frame={{ width: bw, height: 14 }}
                               />
                             ))}
