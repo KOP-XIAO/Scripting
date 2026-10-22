@@ -17,7 +17,6 @@ import {
   Navigation,
   NavigationDestination,
   NavigationStack,
-  ProgressView,
   RoundedRectangle,
   Script,
   Section,
@@ -87,6 +86,22 @@ import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/the
 
 
 import { ConfettiOverlay } from "./components/confetti"
+
+// 只刷新圆弧自身，不让下载进度或整页跟着动画重渲染。
+function DownloadSpinner() {
+  const [angle, setAngle] = useState(0)
+  useEffect(() => {
+    const started = Date.now()
+    const timer = setInterval(() => setAngle((Date.now() - started) * 0.4), 33)
+    return () => clearInterval(timer)
+  }, [])
+  return <Circle
+    trim={{ from: 0, to: 0.72 }}
+    stroke={{ shapeStyle: "#0D1117", strokeStyle: { lineWidth: 4, lineCap: "round" } }}
+    frame={{ width: 28, height: 28 }}
+    rotationEffect={angle - 90}
+  />
+}
 
 // 直接传入已载入的图片对象，首次渲染不依赖 filePath 的异步加载刷新。
 function VideoThumb({ path }: { path?: string }) {
@@ -1150,30 +1165,29 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   content: (
                     <HStack padding={{ trailing: 20, leading: 20, top: 4, bottom: 10 }}>
                       <Spacer />
-                      <Button
-                        buttonStyle="plain"
-                        disabled={loading}
-                        accessibilityLabel={loading ? "正在下载" : "读取剪贴板链接并下载"}
-                        action={() => void pasteAndDownload()}
-                      >
-                        <ZStack frame={{ width: 54, height: 54 }}>
-                          <Circle
-                            fill={getTheme().bgTop}
-                            stroke={{ shapeStyle: getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
+                      <ZStack frame={{ width: 54, height: 54 }}>
+                        <Circle
+                          fill={loading ? getTheme().accent : getTheme().bgTop}
+                          stroke={{ shapeStyle: loading ? getTheme().accent : getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
+                          frame={{ width: 54, height: 54 }}
+                        />
+                        <Button
+                          buttonStyle="plain"
+                          disabled={loading}
+                          accessibilityLabel={loading ? "正在下载" : "读取剪贴板链接并下载"}
+                          action={() => void pasteAndDownload()}
+                        >
+                          <Image
+                            systemName="tray.and.arrow.down"
+                            font={23}
+                            fontWeight="medium"
+                            foregroundStyle={getTheme().accent}
                             frame={{ width: 54, height: 54 }}
+                            opacity={loading ? 0 : 1}
                           />
-                          {loading ? (
-                            <ProgressView
-                              progressViewStyle="circular"
-                              tint={getTheme().accent}
-                              scaleEffect={1.5}
-                              disabled={false}
-                            />
-                          ) : (
-                            <Image systemName="tray.and.arrow.down" font={23} fontWeight="medium" foregroundStyle={getTheme().accent} />
-                          )}
-                        </ZStack>
-                      </Button>
+                        </Button>
+                        {loading ? <DownloadSpinner /> : null}
+                      </ZStack>
                     </HStack>
                   ),
                 },
