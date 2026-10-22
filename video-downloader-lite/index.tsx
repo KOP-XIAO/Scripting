@@ -1156,17 +1156,19 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                         accessibilityLabel={loading ? "正在下载" : "读取剪贴板链接并下载"}
                         action={() => void pasteAndDownload()}
                       >
-                        <ZStack
-                          frame={{ width: 54, height: 54 }}
-                          opacity={loading ? 0.65 : 1}
-                        >
+                        <ZStack frame={{ width: 54, height: 54 }}>
                           <Circle
                             fill={getTheme().bgTop}
                             stroke={{ shapeStyle: getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
                             frame={{ width: 54, height: 54 }}
                           />
                           {loading ? (
-                            <ProgressView progressViewStyle="circular" tint={getTheme().accent} />
+                            <ProgressView
+                              progressViewStyle="circular"
+                              tint={getTheme().accent}
+                              scaleEffect={1.5}
+                              disabled={false}
+                            />
                           ) : (
                             <Image systemName="tray.and.arrow.down" font={23} fontWeight="medium" foregroundStyle={getTheme().accent} />
                           )}
