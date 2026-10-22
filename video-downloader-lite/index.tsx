@@ -31,6 +31,7 @@ import {
   Widget,
   ZStack,
   useEffect,
+  useMemo,
   useObservable,
   useState,
 } from "scripting"
@@ -87,12 +88,23 @@ import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/the
 
 import { ConfettiOverlay } from "./components/confetti"
 
-// 视频缩略图：纯 filePath 渲染（下载时已生成落盘，行内零 hooks 零异步——可靠）
+// 直接传入已载入的图片对象，首次渲染不依赖 filePath 的异步加载刷新。
 function VideoThumb({ path }: { path?: string }) {
-  if (path) {
+  const image = useMemo(() => {
+    if (!path) return null
+    try {
+      const loaded = UIImage.fromFile(path)
+      if (!loaded) appendDebug(`历史缩略图无法读取：${path}`)
+      return loaded
+    } catch (e) {
+      appendDebug(`历史缩略图读取失败：${path} · ${String(e)}`)
+      return null
+    }
+  }, [path])
+  if (image) {
     return (
       <Image
-        filePath={path}
+        image={image}
         resizable={true}
         scaleToFill={true}
         renderingMode="original"
@@ -885,8 +897,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [celebrate, setCelebrate] = useState(false)
   // 顶部链接输入区默认隐藏：首次通过底部按钮下载后（输入框有内容）或剪贴板无链接时才展开
   const [showInput, setShowInput] = useState(false)
-  // 缩略图挂载即显示：filePath 图像加载不触发行重渲染，用 tick 重建历史行强制加载
-  const [imgTick, setImgTick] = useState(0)
   // 编程式导航栈（主页「查看全部」push 历史页用）
   const navPath = useObservable<string[]>([])
   const selectedTab = useObservable<string>("home")
@@ -903,11 +913,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   useEffect(() => {
     void (async () => {
       await refreshHistory() // 先直接读库显示（listHistory 不依赖 initDatabase）
-      setImgTick((t) => t + 1) // 强制重建历史行，触发缩略图加载
-      setTimeout(() => {
-        void refreshHistory()
-        setImgTick((t) => t + 1) // 兜底二次刷新后再推一次
-      }, 600)
       await initDatabase()
       try {
         const list = await listHistory(50)
@@ -1372,7 +1377,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
                 ) : (
                   history.slice(0, 6).map((item, i) => (
-                    <HistoryRow key={`${item.id}-${imgTick}`} item={item} index={i} onChanged={refreshHistory} />
+                    <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
                   ))
                 )}
                 {history.length > 6 ? (
