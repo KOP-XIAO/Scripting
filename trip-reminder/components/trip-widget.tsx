@@ -3,6 +3,7 @@ import { GeometryReader, HStack, Image, Spacer, Text, VStack, ZStack } from "scr
 import { countdownText, departTimestamp, durationText, gateLabel, monthDayText, weekdayText, type TripMode } from "../services/parse"
 import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
+import { railJourneyStops } from "../services/rail-stops"
 import { ThemeBackground } from "./theme-background"
 
 const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
@@ -48,6 +49,9 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
   const delta = departTimestamp(trip) - now
   const soon = delta >= 0 && delta < 3600000
   const seat = hideSeatNumber ? "已隐藏" : displaySeat({ ...trip, seatClass: "" }, false)
+  const intermediateStops = railJourneyStops(trip).slice(1, -1)
+  const showStops = intermediateStops.length > 0 && width >= 200 && height >= 112
+  const footerHeight = showStops ? 34 : 48
   // 各列明确分宽，不能让第一列的 infinity frame 将内容推到中间。
   const countdownWidth = Math.floor(width * 0.44)
   const gateWidth = Math.floor(width * 0.19)
@@ -81,19 +85,19 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
       </VStack>
       <Spacer />
       {/* 三栏同高；每个标签、数值所在行同高，座别不再改变基线。 */}
-      <HStack spacing={8} frame={{ width, height: 48 }}>
-        <VStack alignment="leading" spacing={0} frame={{ width: countdownWidth, height: 48 }}>
+      <HStack spacing={8} frame={{ width, height: footerHeight }}>
+        <VStack alignment="leading" spacing={0} frame={{ width: countdownWidth, height: footerHeight }}>
           <HStack spacing={0} frame={{ width: countdownWidth, height: 13 }}>
             <Text font="caption2" foregroundStyle={theme.sub}>距出发</Text><Spacer />
           </HStack>
           <HStack spacing={0} frame={{ width: countdownWidth, height: 21 }}>
             <Text font="subheadline" fontWeight="semibold" foregroundStyle={soon ? theme.warn : theme.accent} lineLimit={1}>{countdownText(trip, now)}</Text><Spacer />
           </HStack>
-          <HStack spacing={0} frame={{ width: countdownWidth, height: 14 }}>
+          {!showStops ? <HStack spacing={0} frame={{ width: countdownWidth, height: 14 }}>
             {trip.mode === "flight" && trip.boardingTime ? <Text font="caption2" foregroundStyle={theme.sub}>{`登机 ${trip.boardingTime}`}</Text> : null}<Spacer />
-          </HStack>
+          </HStack> : null}
         </VStack>
-        <VStack alignment="leading" spacing={0} frame={{ width: gateWidth, height: 48 }}>
+        <VStack alignment="leading" spacing={0} frame={{ width: gateWidth, height: footerHeight }}>
           <HStack spacing={0} frame={{ width: gateWidth, height: 13 }}>
             <Text font="caption2" foregroundStyle={theme.sub}>{gateLabel(trip.mode)}</Text><Spacer />
           </HStack>
@@ -102,7 +106,7 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
           </HStack>
           <Spacer />
         </VStack>
-        <VStack alignment="leading" spacing={0} frame={{ width: seatWidth, height: 48 }}>
+        <VStack alignment="leading" spacing={0} frame={{ width: seatWidth, height: footerHeight }}>
           <HStack spacing={0} frame={{ width: seatWidth, height: 13 }}>
             <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass ? `座位｜${trip.seatClass}` : "座位"}</Text><Spacer />
           </HStack>
@@ -112,6 +116,12 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
           <Spacer />
         </VStack>
       </HStack>
+      {showStops ? <HStack spacing={0} frame={{ width, height: 14 }}>
+        <Text font={11} foregroundStyle={theme.sub} lineLimit={1}>
+          {`已识别经停 ${intermediateStops.length} 站 · ${intermediateStops.map(stop => stop.station).join(" · ")}`}
+        </Text>
+        <Spacer />
+      </HStack> : null}
     </VStack>
   )
 }
