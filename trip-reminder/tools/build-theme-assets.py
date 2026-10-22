@@ -65,7 +65,7 @@ def anime():
   for x,y in [(1130,45),(1160,58),(1190,41)]:d.line([(x-7,y+3),(x,y),(x+7,y+3)],fill=(54,94,128,180),width=2)
  return wash(layer(im,scene),(241,247,248),245,.65)
 def travel():
- im=gradient((247,238,218),(233,223,200))
+ im=gradient((220,239,233),(191,220,210))
  a=np.asarray(im).copy();a[...,:3]=np.clip(a[...,:3].astype(float)+np.random.default_rng(12).normal(0,1.5,(720,1440,1)),0,255).astype("uint8");im=Image.fromarray(a)
  def map_art(d):
   for i in range(18):
@@ -81,7 +81,7 @@ def travel():
   d.line((x-40,y,x+40,y),fill=(117,98,70,70),width=2)
   d.rounded_rectangle((1230,520,1400,670),radius=6,outline=(163,99,70,75),width=3)
   d.ellipse((1255,540,1375,654),outline=(163,99,70,65),width=3)
- return wash(layer(im,map_art),(246,239,223),245,.65)
+ return wash(layer(im,map_art),(220,239,233),255,.93)
 def midnight():
  im=gradient((18,26,40),(10,17,29))
  im=layer(im,lambda d:d.ellipse((840,-270,1610,500),fill=(41,75,119,90)),85)

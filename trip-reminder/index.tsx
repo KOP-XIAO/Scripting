@@ -657,18 +657,23 @@ function View() {
         <Section title="字体强调色" footer={<Text font="caption" foregroundStyle="secondaryLabel">
           用于车次／航班号、倒计时、检票口／登机口和座位。浅、深背景自动调整明度，保持文字清晰。
         </Text>}>
-          {(Object.keys(ACCENTS) as AccentKey[]).map((k) => (
-            <Button key={k} buttonStyle="automatic" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
-              <HStack spacing={10} padding={{ top: 8, bottom: 8 }}
-                frame={{ maxWidth: "infinity", minHeight: 44 }}
-                contentShape={{ kind: "interaction", shape: { type: "rect" } }}>
-                <RoundedRectangle cornerRadius={6} fill={k === "theme" ? THEMES[themeKey].accent : ACCENTS[k].color}
-                  frame={{ width: 28, height: 28 }} />
-                <Text foregroundStyle="label">{ACCENTS[k].label}</Text>
-                <Spacer />
-                {k === accentKey ? <Image systemName="checkmark" foregroundStyle="systemBlue" /> : null}
-              </HStack>
-            </Button>
+          {Array.from({ length: Math.ceil(Object.keys(ACCENTS).length / 3) }, (_, row) => (
+            <HStack key={`accent-row-${row}`} spacing={8}>
+              {(Object.keys(ACCENTS) as AccentKey[]).slice(row * 3, row * 3 + 3).map((k) => (
+                <Button key={k} buttonStyle="plain" action={() => { setAccentKeyLocal(k); setAccentKey(k) }}>
+                  <VStack spacing={6} padding={{ top: 8, bottom: 8 }}
+                    frame={{ maxWidth: "infinity", minHeight: 64 }}
+                    contentShape={{ kind: "interaction", shape: { type: "rect" } }}>
+                    <RoundedRectangle cornerRadius={6} fill={k === "theme" ? THEMES[themeKey].accent : ACCENTS[k].color}
+                      frame={{ width: 28, height: 28 }} />
+                    <HStack spacing={3}>
+                      {k === accentKey ? <Image systemName="checkmark.circle.fill" font="caption2" foregroundStyle="systemBlue" /> : null}
+                      <Text font="caption" foregroundStyle="label">{ACCENTS[k].label}</Text>
+                    </HStack>
+                  </VStack>
+                </Button>
+              ))}
+            </HStack>
           ))}
         </Section>
         <Section title="隐私显示" footer={<Text font="caption" foregroundStyle="secondaryLabel">隐藏车厢和座位号，保留座别；首页、列表、归档及小组件共用设置，编辑时仍可查看原始数据。</Text>}>
