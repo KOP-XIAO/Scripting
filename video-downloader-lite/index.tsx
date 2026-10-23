@@ -1157,14 +1157,14 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                       <Spacer />
                       <ZStack frame={{ width: 54, height: 54 }}>
                         <Circle
-                          fill={loading ? getTheme().accent : getTheme().bgTop}
-                          stroke={{ shapeStyle: loading ? getTheme().accent : getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
+                          fill={loading || celebrate ? getTheme().accent : getTheme().bgTop}
+                          stroke={{ shapeStyle: loading || celebrate ? getTheme().accent : getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
                           frame={{ width: 54, height: 54 }}
                         />
                         <Button
                           buttonStyle="plain"
                           disabled={loading}
-                          accessibilityLabel={loading ? "正在下载" : "读取剪贴板链接并下载"}
+                          accessibilityLabel={celebrate ? "下载完成，读取剪贴板链接继续下载" : loading ? "正在下载" : "读取剪贴板链接并下载"}
                           action={() => void pasteAndDownload()}
                         >
                           <Image
@@ -1173,10 +1173,12 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                             fontWeight="medium"
                             foregroundStyle={getTheme().accent}
                             frame={{ width: 54, height: 54 }}
-                            opacity={loading ? 0 : 1}
+                            opacity={loading || celebrate ? 0 : 1}
                           />
                         </Button>
-                        {loading ? <DownloadProgress ratio={progressRatio} /> : null}
+                        {celebrate ? (
+                          <Image systemName="checkmark" font={25} fontWeight="bold" foregroundStyle="#0D1117" />
+                        ) : loading ? <DownloadProgress ratio={progressRatio} /> : null}
                       </ZStack>
                     </HStack>
                   ),

@@ -49,7 +49,36 @@ assert.equal(buttons.length, 1); assert.equal(rings.length, 1)
 assert(!(rings[0].pos > buttons[0].pos && rings[0].end < buttons[0].end))
 assert(rings[0].getText(tree).includes('ratio={progressRatio}'))
 assert(buttons[0].getText(tree).includes('disabled={loading}'))
-assert(inset.getText(tree).includes('fill={loading ? getTheme().accent : getTheme().bgTop}'))
+assert(inset.getText(tree).includes('fill={loading || celebrate ? getTheme().accent : getTheme().bgTop}'))
+let surface
+const findSurface = n => {
+  if (ts.isJsxElement(n) && n.openingElement.tagName.getText(tree) === 'ZStack'
+    && n.getText(tree).includes('<Button')) surface = n
+  ts.forEachChild(n, findSurface)
+}
+findSurface(inset)
+const context = {
+  React: { createElement: (type, props, ...children) => ({ type, props, children }) },
+  getTheme: () => ({ accent: '#3FB950', accentSoft: '#3FB95088', bgTop: '#0D1117' }),
+  pasteAndDownload: () => {},
+}
+for (const name of ['ZStack', 'Circle', 'Button', 'Image', 'DownloadProgress']) context[name] = name
+vm.runInNewContext(ts.transpileModule(
+  `function render(loading, celebrate, progressRatio) { return (${surface.getText(tree)}) }`,
+  { compilerOptions: { jsx: ts.JsxEmit.React } },
+).outputText, context)
+for (const [loading, celebrate] of [[false, false], [true, false], [true, true], [false, true], [false, false]]) {
+  const rendered = context.render(loading, celebrate, 0.63)
+  const [circle, button, indicator] = rendered.children
+  assert.equal(button.props.disabled, loading)
+  assert.equal(button.children[0].props.opacity, loading || celebrate ? 0 : 1)
+  assert.equal(circle.props.fill, loading || celebrate ? '#3FB950' : '#0D1117')
+  if (celebrate) assert.equal(indicator.props.systemName, 'checkmark')
+  else if (loading) { assert.equal(indicator.type, 'DownloadProgress'); assert.equal(indicator.props.ratio, 0.63) }
+  else { assert.equal(indicator, null); assert.equal(button.children[0].props.systemName, 'tray.and.arrow.down') }
+}
+assert(src.indexOf('const action = await postDownloadAction') < src.indexOf('if (outcome.files.length > 0) setCelebrate(true)'))
+assert(src.includes('<ConfettiOverlay onFinish={() => setCelebrate(false)} />'))
 assert(!src.includes('displayRatio'))
 assert(!src.includes('setDisplayRatio'))
 console.log('PASS: actual progress, waiting state, native interpolation, no timed progress and disabled-state isolation')
