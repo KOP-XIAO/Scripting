@@ -617,7 +617,7 @@ function View() {
             </Text>
           }
         >
-          {/* 六套主题，两列三行；缩略图使用真实背景与当前强调色。 */}
+          {/* 八套主题，两列四行；缩略图使用真实背景与当前强调色。 */}
           {Array.from({ length: Math.ceil(Object.keys(THEMES).length / 2) }, (_, row) => (
             <HStack key={`theme-row-${row}`} spacing={12}>
               {(Object.keys(THEMES) as ThemeKey[]).slice(row * 2, row * 2 + 2).flatMap((k, i) => {

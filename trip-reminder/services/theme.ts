@@ -1,7 +1,7 @@
 // services/theme.ts — 小组件与 App 的配色（Storage 持久化，两个进程共享）
 // Storage / Widget 为全局对象，禁止从 scripting 导入
 
-export type ThemeKey = "ticket" | "midnight" | "cyberpunk" | "anime" | "travel" | "forest"
+export type ThemeKey = "ticket" | "midnight" | "cyberpunk" | "anime" | "travel" | "forest" | "film" | "space"
 
 export type Theme = {
   key: ThemeKey
@@ -94,6 +94,32 @@ export const THEMES: Record<ThemeKey, Theme> = {
     warn: "#89451D",
     badgeInk: "#FFFFFF",
   },
+  film: {
+    key: "film",
+    label: "胶片旅途",
+    backgroundAsset: "theme-film.png",
+    cardTop: "#211C17",
+    cardBottom: "#14120F",
+    ink: "#F6EEE2",
+    sub: "#CCBBA5",
+    accent: "#F3C785",
+    accentSoft: "rgba(243, 199, 133, 0.16)",
+    warn: "#FFBC79",
+    badgeInk: "#21180F",
+  },
+  space: {
+    key: "space",
+    label: "太空漫游",
+    backgroundAsset: "theme-space.png",
+    cardTop: "#0C1022",
+    cardBottom: "#151329",
+    ink: "#EFF2FF",
+    sub: "#BBC5E0",
+    accent: "#A9D8FF",
+    accentSoft: "rgba(169, 216, 255, 0.16)",
+    warn: "#DBBEFF",
+    badgeInk: "#13182D",
+  },
 }
 
 export function getThemeKey(): ThemeKey {
@@ -129,7 +155,7 @@ export function getAccentKey(): AccentKey {
 export function resolveTheme(key: ThemeKey, accentKey: AccentKey): Theme {
   const theme = THEMES[key]
   if (accentKey === "theme") return theme
-  const dark = key === "midnight" || key === "cyberpunk"
+  const dark = key === "midnight" || key === "cyberpunk" || key === "film" || key === "space"
   const accent = dark ? ACCENTS[accentKey].dark : ACCENTS[accentKey].light
   return { ...theme, accent, warn: accent, badgeInk: dark ? "#10202A" : "#FFFFFF" }
 }

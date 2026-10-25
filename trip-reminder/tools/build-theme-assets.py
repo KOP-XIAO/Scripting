@@ -4,7 +4,7 @@ from pathlib import Path
 import math
 import random
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, PngImagePlugin
 ASSETS=Path(__file__).resolve().parents[1]/"assets"
 SIZE=(1440,720)
 def gradient(top,bottom):
@@ -115,8 +115,44 @@ def mocha():
    pts=[(830+x,520+i*22+math.sin(x/155+i*.15)*28) for x in range(0,620,6)]
    d.line(pts,fill=(229,217,199,255),width=2)
  return wash(layer(im,paper),(250,246,239),70,.65)
+def film():
+ im=gradient((33,28,23),(20,18,15))
+ def stock(d):
+  # Sprockets stay inside the outer 5pt; the text begins at 14pt.
+  for y,hole_y in ((0,8),(684,694)):
+   d.rectangle((0,y,1440,y+35),fill=(76,50,29,255))
+   for x in range(10,1440,52):
+    d.rounded_rectangle((x,hole_y,x+25,hole_y+17),radius=3,fill=(14,12,9,255))
+  d.line((0,36,1440,36),fill=(57,40,25,255),width=2)
+  d.line((0,683,1440,683),fill=(57,40,25,255),width=2)
+  for x in (932,1284):
+   d.rounded_rectangle((x,100,x+328,340),radius=7,fill=(23,20,16,255),outline=(74,50,29,255),width=5)
+   d.rounded_rectangle((x+10,110,x+318,330),radius=3,outline=(45,34,23,255),width=2)
+  d.line((914,70,1440,70),fill=(60,42,26,255),width=3)
+  d.line((914,370,1440,370),fill=(60,42,26,255),width=3)
+ im=layer(im,stock)
+ im.info["pnginfo"]=PngImagePlugin.PngInfo()
+ im.info["pnginfo"].add_text("Source","Original procedural artwork: trip-reminder/tools/build-theme-assets.py:film")
+ im.info["pnginfo"].add_text("Description","Movie-film travel: warm charcoal, dark amber film rails, outer sprocket holes, and empty cropped footage frames at right. No scenic illustration; motif colors remain below 0.045 sRGB relative luminance.")
+ return im
+def space():
+ im=gradient((12,16,34),(21,19,41))
+ orbit=[(1276+438*math.cos(t)*math.cos(-.26)-92*math.sin(t)*math.sin(-.26),132+438*math.cos(t)*math.sin(-.26)+92*math.sin(t)*math.cos(-.26)) for t in np.linspace(0,2*math.pi,241)]
+ def odyssey(d):
+  for x,y,r in [(704,76,1),(782,266,1),(858,132,2),(932,43,1),(990,314,1),(1087,59,1),(1157,274,1),(1372,330,2),(1410,108,1),(825,344,1),(1050,174,1),(1322,39,1)]:
+   d.ellipse((x-r,y-r,x+r,y+r),fill=(49,45,71,255))
+  d.line(orbit,fill=(45,39,65,255),width=3)
+  # A large cropped planetary limb, with no moon or ground silhouette.
+  d.ellipse((1032,-322,1736,382),fill=(29,27,53,255),outline=(62,47,78,255),width=6)
+  d.arc((1042,-312,1726,372),80,244,fill=(44,38,67,255),width=6)
+  d.line(orbit[:121],fill=(57,45,74,255),width=4)
+ im=layer(im,odyssey)
+ im.info["pnginfo"]=PngImagePlugin.PngInfo()
+ im.info["pnginfo"].add_text("Source","Original procedural artwork: trip-reminder/tools/build-theme-assets.py:space")
+ im.info["pnginfo"].add_text("Description","Space odyssey: deep ink and indigo, a large cropped planetary limb and tilted elliptic orbit in the upper right, sparse dim stars, and a quiet lower text band. Motif colors remain below 0.045 sRGB relative luminance.")
+ return im
 if __name__=="__main__":
  ASSETS.mkdir(exist_ok=True)
- for name,build in [("cyberpunk",cyberpunk),("anime",anime),("travel",travel),("midnight",midnight),("mocha",mocha)]:
+ for name,build in [("cyberpunk",cyberpunk),("anime",anime),("travel",travel),("midnight",midnight),("mocha",mocha),("film",film),("space",space)]:
   im=build();assert im.size==SIZE and im.getextrema()[3]==(255,255)
-  im.save(ASSETS/f"theme-{name}.png",optimize=True);print(f"Built {name}: {im.size}")
+  im.save(ASSETS/f"theme-{name}.png",optimize=True,pnginfo=im.info.get("pnginfo"));print(f"Built {name}: {im.size}")
