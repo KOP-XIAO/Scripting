@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# tools/bake-style-assets.py — 烘焙小组件风格资产（海报/蓝图/霓虹）
-# 产物：assets/widget-style-<风格>-<small|medium>.png 与 assets/widget-style-badge-<风格>.png
-# 用法：python3 tools/bake-style-assets.py   （在脚本目录任意位置运行即可）
+# tools/bake-style-assets.py — 烘焙小组件背景与徽章
+# 产物：assets/widget-style-<风格>-<small|medium>.png 与各图标/配色徽章
+# 用法：python3 tools/bake-style-assets.py；仅重建胶片影院：加 --style cinema
 import math
 import os
 
@@ -573,14 +573,70 @@ def bake_theme_badges():
             badge.save(os.path.join(ASSETS, f"widget-style-badge-cyberpunk-{glyph}-{theme}.png"))
 
 
+def bake_cinema():
+    """暖黑电影胶片：边缘齿孔、琥珀曝光光与右侧低对比片盘，文字区域保持安静。"""
+    for family, (w, h) in SIZES.items():
+        yy, xx = np.mgrid[0:h, 0:w]
+        exposure = np.exp(-(((xx - w * 1.02) / (h * 0.65)) ** 2 + ((yy - h * 0.38) / (h * 0.85)) ** 2))
+        base = np.array([22, 19, 17], dtype=float) + exposure[..., None] * np.array([31, 17, 6])
+        grain = np.random.default_rng(35).normal(0, 0.7, (h, w, 1))
+        img = Image.fromarray(np.clip(base + grain, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
+        d = ImageDraw.Draw(img)
+        # 齿孔位于上下安全边缘，不进入标题与信息区。
+        d.line([(0, 52), (w, 52)], fill=(91, 67, 41, 110), width=1)
+        d.line([(0, h - 52), (w, h - 52)], fill=(91, 67, 41, 110), width=1)
+        for x in range(58, w - 40, 62):
+            for y in (16, h - 37):
+                d.rounded_rectangle([x, y, x + 30, y + 21], radius=4, fill=(83, 65, 46, 255))
+                d.line([(x + 4, y + 2), (x + 26, y + 2)], fill=(126, 96, 58, 255), width=1)
+        # 右侧片盘只在中号出现，避免小号正文被装饰覆盖。
+        if family == "medium":
+            cx, cy, r = int(w * 0.91), int(h * 0.48), int(h * 0.35)
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(87, 61, 35, 255), width=2)
+            d.ellipse([cx - r + 17, cy - r + 17, cx + r - 17, cy + r - 17], outline=(64, 47, 31, 255), width=1)
+            for i in range(5):
+                a = math.radians(-90 + i * 72)
+                hx, hy, hr = cx + math.cos(a) * r * 0.56, cy + math.sin(a) * r * 0.56, r * 0.18
+                d.ellipse([hx - hr, hy - hr, hx + hr, hy + hr], fill=(35, 27, 21, 255), outline=(67, 48, 30, 255), width=2)
+            d.ellipse([cx - 16, cy - 16, cx + 16, cy + 16], outline=(91, 65, 36, 255), width=2)
+        img.save(os.path.join(ASSETS, f"widget-style-cinema-{family}.png"))
+
+
+def bake_cinema_badges():
+    """复用六款既有字形，生成圆形片盘入口，适配全部配色。"""
+    S, OUT = 1024, 384
+    for theme, accent in theme_accents().items():
+        for glyph in GLYPHS:
+            base = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            d = ImageDraw.Draw(base)
+            d.ellipse([36, 36, S - 36, S - 36], fill=(37, 29, 22, 255), outline=(232, 211, 177, 255), width=17)
+            d.ellipse([83, 83, S - 83, S - 83], outline=(130, 100, 62, 255), width=4)
+            for i in range(8):
+                a = math.radians(i * 45)
+                cx, cy = S / 2 + math.cos(a) * S * 0.385, S / 2 + math.sin(a) * S * 0.385
+                d.ellipse([cx - 12, cy - 12, cx + 12, cy + 12], fill=(232, 211, 177, 255))
+            overlay = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            draw_glyph(ImageDraw.Draw(overlay), glyph, S / 2, S / 2, S * 0.43, hex_rgba(vivid_accent(accent)))
+            Image.alpha_composite(base, overlay).resize((OUT, OUT), Image.LANCZOS).save(
+                os.path.join(ASSETS, f"widget-style-badge-cinema-{glyph}-{theme}.png"))
+
+
 if __name__ == "__main__":
-    bake_anime()
-    print("anime ok")
-    bake_blueprint()
-    print("blueprint ok")
-    bake_neon()
-    print("neon ok")
-    bake_cyberpunk()
-    print("cyberpunk ok")
-    bake_theme_badges()
-    print("theme badges ok")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--style", choices=["all", "cinema"], default="all")
+    args = parser.parse_args()
+    if args.style == "all":
+        bake_anime()
+        print("anime ok")
+        bake_blueprint()
+        print("blueprint ok")
+        bake_neon()
+        print("neon ok")
+        bake_cyberpunk()
+        print("cyberpunk ok")
+        bake_theme_badges()
+        print("theme badges ok")
+    bake_cinema()
+    bake_cinema_badges()
+    print("cinema backgrounds and theme badges ok")

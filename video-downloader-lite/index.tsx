@@ -548,7 +548,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                 <Spacer />
                 {styleCell("cyberpunk", "赛博朋克")}
                 <Spacer />
-                <Spacer frame={{ width: 64 }} />
+                {styleCell("cinema", "胶片影院")}
               </HStack>
             </VStack>
           )

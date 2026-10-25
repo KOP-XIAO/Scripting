@@ -595,6 +595,55 @@ function CyberpunkMediumView({ snap }: { snap: WidgetSnapshot | null }) {
   )
 }
 
+// 胶片影院：暖黑胶片底、奶油色信息与片盘式下载入口。
+function CinemaBadge({ size }: { size: number }) {
+  return <ZStack frame={{ width: size, height: size }}>
+    <Image
+      filePath={`${Script.directory}/assets/widget-style-badge-cinema-${getBadgeGlyph()}-${getThemeKey()}.png`}
+      resizable={true} scaleToFit={true} frame={{ width: size, height: size }}
+    />
+    <Image systemName="hand.tap.fill" font={size * 0.36} foregroundStyle={getTheme().accent}
+      offset={{ x: size * 0.42, y: size * 0.42 }} />
+  </ZStack>
+}
+
+function CinemaView({ snap, medium }: { snap: WidgetSnapshot | null; medium: boolean }) {
+  const accent = getTheme().accent
+  const ink = "#F2E6D3"
+  const sub = "#BCAF9B"
+  const heading = <HStack spacing={6}>
+    <Image systemName="film" font={medium ? 14 : 13} foregroundStyle={accent} />
+    <Text font={medium ? "headline" : "subheadline"} fontWeight="bold" foregroundStyle={ink} monospaced>VIDEO DOWNLOADER</Text>
+  </HStack>
+  const info = <LatestInfo item={snap?.latest ?? null} lines={2} accent={accent} ink={ink} sub={sub} />
+  return <ZStack>
+    <Image filePath={`${Script.directory}/assets/widget-style-cinema-${medium ? "medium" : "small"}.png`}
+      resizable={true} frame={{ maxWidth: "infinity", maxHeight: "infinity" } as never} />
+    {medium ? (
+      <HStack spacing={4} padding={{ top: 14, bottom: 14, leading: 16, trailing: 16 }}>
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity" } as never} widgetURL={RUN_URL}>
+          {heading}
+          <VStack padding={{ top: 12 }}>{info}</VStack>
+          <VStack padding={{ top: 6 }}><SecondRow item={snap?.second ?? null} color={accent} /></VStack>
+          <Spacer />
+        </VStack>
+        <VStack padding={{ top: 28 }}>
+          <Spacer />
+          <Link url={RUN_URL}><CinemaBadge size={64} /></Link>
+          <Spacer />
+        </VStack>
+      </HStack>
+    ) : (
+      <VStack alignment="leading" spacing={3} padding={{ top: 12, bottom: 12, leading: 14, trailing: 14 }} widgetURL={RUN_URL}>
+        {heading}
+        {info}
+        <Spacer />
+        <CinemaBadge size={30} />
+      </VStack>
+    )}
+  </ZStack>
+}
+
 function run() {
   const snap = getWidgetSnapshot()
   const medium = Widget.family === "systemMedium"
@@ -604,11 +653,13 @@ function run() {
       : style === "blueprint" ? <BlueprintMediumView snap={snap} />
       : style === "neon" ? <NeonMediumView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkMediumView snap={snap} />
+      : style === "cinema" ? <CinemaView snap={snap} medium={true} />
       : <MediumView snap={snap} />
     : style === "anime" ? <AnimeSmallView snap={snap} />
       : style === "blueprint" ? <BlueprintSmallView snap={snap} />
       : style === "neon" ? <NeonSmallView snap={snap} />
       : style === "cyberpunk" ? <CyberpunkSmallView snap={snap} />
+      : style === "cinema" ? <CinemaView snap={snap} medium={false} />
       : <SmallView snap={snap} />
   Widget.present(view, {
     // 15 分钟重载兜底（iOS 按预算裁量）；主刷新靠 App 侧的 Widget.reloadAll()
