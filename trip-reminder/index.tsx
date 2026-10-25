@@ -637,8 +637,11 @@ function View() {
                           padding={3} background={t.accent}
                           clipShape={{ type: "rect", cornerRadius: 4, style: "continuous" }}
                           offset={{ x: -26, y: -18 }}>G1234</Text>
-                        <Text font="caption2" monospaced foregroundStyle={t.ink}
-                          offset={{ x: 0, y: 2 }}>09:00 → 10:24</Text>
+                        <HStack spacing={4} offset={{ x: 0, y: 2 }}>
+                          <Text font="caption2" monospaced foregroundStyle={t.ink}>09:00</Text>
+                          <Image systemName="arrow.right.circle.fill" font={9} foregroundStyle={t.accent} />
+                          <Text font="caption2" monospaced foregroundStyle={t.ink}>10:24</Text>
+                        </HStack>
                         <Text font="caption2" fontWeight="semibold" foregroundStyle={t.accent}
                           offset={{ x: -8, y: 20 }}>检票口 A1</Text>
                       </ZStack>

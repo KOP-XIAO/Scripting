@@ -12,7 +12,7 @@ import {
 } from "./services/parse"
 import { nextTrip } from "./services/trips"
 import { getTheme } from "./services/theme"
-import { TripWidget } from "./components/trip-widget"
+import { TripWidget, TripBadge } from "./components/trip-widget"
 
 const SCRIPT_NAME = "Trip Reminder"
 // 官方构造器：scripting://run_single/<name>（保证每次点按都重新执行入口文件）
@@ -23,22 +23,6 @@ try {
 } catch {}
 
 const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
-
-function Badge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
-  return (
-    <Text
-      font="headline"
-      fontWeight="bold"
-      monospaced
-      foregroundStyle={fg}
-      padding={{ top: 2, bottom: 2, leading: 6, trailing: 6 }}
-      background={bg}
-      clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
-    >
-      {text}
-    </Text>
-  )
-}
 
 function Background() {
   const theme = getTheme()
@@ -83,6 +67,7 @@ function MediumView() {
 function SmallView() {
   const theme = getTheme()
   const trip = nextTrip()
+  const now = Date.now()
   return (
     <ZStack>
       <Background />
@@ -97,7 +82,7 @@ function SmallView() {
           <VStack alignment="leading" spacing={4}>
             <HStack spacing={5}>
               <Image systemName={modeIcon(trip.mode)} font={11} foregroundStyle={theme.accent} />
-              <Badge text={trip.code || "—"} bg={theme.accent} fg={theme.badgeInk ?? "#FFFFFF"} />
+              <TripBadge trip={trip} theme={theme} now={now} />
             </HStack>
             <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
               {trip.departTime || "--:--"}
@@ -106,7 +91,7 @@ function SmallView() {
               {trip.fromPlace || "—"}
             </Text>
             <Text font="caption2" foregroundStyle={theme.warn} lineLimit={1}>
-              {countdownText(trip)}
+              {countdownText(trip, now)}
             </Text>
           </VStack>
         ) : (

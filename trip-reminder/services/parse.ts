@@ -419,6 +419,13 @@ export function countdownText(trip: TimeLike, now = Date.now()): string {
   return `${Math.floor(minutes / 60)} 小时｜${minutes % 60} 分`
 }
 
+export function isDepartureToday(dateStr: string, now = Date.now()): boolean {
+  const date = new Date(now)
+  if (!Number.isFinite(date.getTime())) return false
+  const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+  return dateStr === localDate
+}
+
 export function weekdayText(dateStr: string): string {
   if (!dateStr) return ""
   const d = new Date(`${dateStr}T00:00:00`)

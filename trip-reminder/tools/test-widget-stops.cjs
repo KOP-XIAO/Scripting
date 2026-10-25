@@ -19,8 +19,8 @@ const code = esbuild.buildSync({
   jsxFactory: "jsx", jsxFragment: '"Fragment"',
 }).outputFiles[0].text
 vm.runInContext(code, context)
-const { TripWidget, TripWidgetPreview } = context.module.exports
-const theme = { ink: "#173E35", sub: "#294A3E", accent: "#14654E", warn: "#854019", cardTop: "#DCEFE9", cardBottom: "#BFDCD2" }
+const { TripWidget, TripWidgetPreview, TripBadge } = context.module.exports
+const theme = { ink: "#173E35", sub: "#294A3E", accent: "#14654E", accentSoft: "rgba(20, 101, 78, 0.12)", badgeInk: "#FFFFFF", warn: "#854019", cardTop: "#DCEFE9", cardBottom: "#BFDCD2" }
 const stations = ["区间外甲", "上车站", "中间甲", "中间乙", "下车站", "区间外乙"]
 const trip = {
   id: "fictional", mode: "rail", code: "G1234", departDate: "2099-06-18", departTime: "09:00", arriveTime: "11:00", durationMin: 120,
@@ -98,4 +98,46 @@ test("preview and widget share summary; overnight, empty and run URL remain vali
   assert.equal(widget.props.widgetURL, "scripting://run")
   assert.equal(summary(render({ trip: null })).length, 0)
   assert.ok(text(render({ trip: null })).includes("暂无行程"))
+})
+test("today badge switches at local midnight and preserves rounded versus monospaced styling", () => {
+  const midnight = new Date(2099, 5, 18).getTime()
+  for (const [now, expected] of [[midnight - 1, false], [midnight, true], [new Date(2099, 5, 18, 23, 59, 59).getTime(), true], [new Date(2099, 5, 19).getTime(), false]]) {
+    const badge = expand(TripBadge({ trip, theme, now }))
+    assert.equal(badge.props.background, expected ? theme.accent : theme.accentSoft)
+    assert.equal(badge.props.foregroundStyle, expected ? theme.badgeInk : theme.ink)
+    assert.equal(badge.props.fontDesign, expected ? "rounded" : "monospaced")
+    assert.equal(badge.props.fontWeight, expected ? "bold" : "semibold")
+    assert.equal(text(render({ now })).some(value => value.startsWith("今天 ·")), expected)
+  }
+  for (const [date, now, expected] of [
+    ["2028-02-29", new Date(2028, 1, 29).getTime(), true],
+    ["2100-01-01", new Date(2099, 11, 31, 23, 59, 59).getTime(), false],
+    ["2100-01-01", new Date(2100, 0, 1).getTime(), true],
+    ["", midnight, false], ["2099-02-30", midnight, false], ["NaN-NaN-NaN", NaN, false],
+  ]) {
+    const badge = expand(TripBadge({ trip: { ...trip, departDate: date }, theme, now }))
+    assert.equal(badge.props.background, expected ? theme.accent : theme.accentSoft)
+  }
+  const flight = render({ trip: { ...trip, mode: "flight", departTime: "" }, now: midnight })
+  assert.ok(text(flight).some(value => value.startsWith("今天 ·")))
+})
+test("one symbol links the times while long station names align beneath each endpoint", () => {
+  for (const [width, height] of [[338, 158], [212, 124]]) {
+    const current = { ...trip, fromPlace: "虚构很长的出发车站名称", toPlace: "虚构很长的到达车站名称" }
+    const tree = render({ trip: current, width, height })
+    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right.circle.fill").length, 1)
+    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right").length, 0)
+    const contentWidth = width - (height >= 150 ? 28 : 12)
+    const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40 && n.props.frame?.width === contentWidth)[0]
+    assert.ok(route)
+    const columns = route.props.children.flat()
+    assert.equal(columns.length, 4)
+    assert.ok(columns.reduce((sum, col) => sum + col.props.frame.width, 3 * route.props.spacing) <= contentWidth)
+    assert.ok(text(columns[0]).includes(current.departTime) && text(columns[0]).includes(current.fromPlace))
+    assert.ok(text(columns[2]).includes(current.arriveTime) && text(columns[2]).includes(current.toPlace))
+    assert.equal(nodes(columns[0], n => n.type === "Image").length, 0)
+    assert.equal(nodes(columns[2], n => n.type === "Image").length, 0)
+    assert.ok(nodes(columns[0], n => n.type === "Text").every(n => n.props.lineLimit === 1))
+    assert.ok(nodes(columns[2], n => n.type === "Text").every(n => n.props.lineLimit === 1))
+  }
 })
