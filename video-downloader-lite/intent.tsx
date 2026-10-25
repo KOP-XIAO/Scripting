@@ -8,6 +8,7 @@ import { runDownload, detectKind, KIND_LABELS } from "./services/downloader"
 import { getPreferences } from "./services/preferences"
 import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote } from "./services/history"
 import { appendDebug } from "./services/debug"
+import { beginTaskLog, appendTaskLog, titleTaskLog, finishTaskLog } from "./services/task-log"
 import { postDownloadAction } from "./services/file-actions"
 import { resolutionLabel } from "./services/media-probe"
 import { extractFirstURL } from "./utils/common"
@@ -42,12 +43,16 @@ async function handleError(error: unknown) {
 }
 
 async function run() {
+  let taskId: string | undefined
   try {
     const url = resolveInputURL()
     if (!url) {
       throw new Error("未从分享内容中找到可用链接，请确认分享的是视频链接或包含 URL 的文本。")
     }
 
+    const currentTaskId = beginTaskLog(url, "intent")
+    taskId = currentTaskId
+    appendTaskLog(currentTaskId, "收到分享链接，准备下载")
     const prefs = getPreferences()
     await initDatabase()
     const kind = detectKind(url)
@@ -60,12 +65,15 @@ async function run() {
         const fileExists = await FileManager.exists(dup.file_path)
         const inPhotos = dup.note.includes("相册")
         if (fileExists || inPhotos) {
+          titleTaskLog(currentTaskId, dup.title || dup.file_name)
           if (fileExists) {
             const action = await postDownloadAction(
               [{ path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written, durationSec: dup.duration_sec }],
               prefs.defaultSaveMode,
             )
             if (action.savedToPhotos) await updateHistoryNote(dup.id, "已存入相册")
+            appendTaskLog(currentTaskId, action.message)
+            finishTaskLog(currentTaskId, "skipped", `已在历史中，未重复下载。${action.message}`)
             Script.exit(
               Intent.json({
                 ok: true,
@@ -76,6 +84,8 @@ async function run() {
               }),
             )
           } else {
+            appendTaskLog(currentTaskId, "已在历史中且已存入相册，未重复下载")
+            finishTaskLog(currentTaskId, "skipped", "已在历史中且已存入相册，未重复下载")
             Script.exit(
               Intent.json({
                 ok: true,
@@ -91,7 +101,11 @@ async function run() {
     }
 
     const logs: string[] = []
-    const outcome = await runDownload(url, { prefs, onLog: (l) => logs.push(l) })
+    const outcome = await runDownload(url, { prefs, onLog: (l) => {
+      logs.push(l)
+      appendTaskLog(currentTaskId, l)
+    } })
+    titleTaskLog(currentTaskId, outcome.title)
 
     const inserted: string[] = []
     for (const f of outcome.files) {
@@ -120,6 +134,8 @@ async function run() {
       Widget.reloadAll()
     } catch {}
     const message = action.message
+    appendTaskLog(currentTaskId, message)
+    finishTaskLog(currentTaskId, outcome.files.length > 0 ? "success" : "cancelled", message)
     appendDebug(`intent 完成: ${outcome.title} -> ${message}`)
 
     if (outcome.files.length === 1) {
@@ -138,6 +154,15 @@ async function run() {
       )
     }
   } catch (error) {
+    if (taskId) {
+      const message = error instanceof Error ? error.message : String(error)
+      appendTaskLog(taskId, message === "已取消下载" ? message : `失败：${message}`)
+      finishTaskLog(taskId, message === "已取消下载" ? "cancelled" : "failed", message)
+      if (message === "已取消下载") {
+        Script.exit(Intent.text(message))
+        return
+      }
+    }
     await handleError(error)
   }
 }

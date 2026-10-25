@@ -16,6 +16,7 @@ import {
   List,
   Navigation,
   NavigationDestination,
+  NavigationLink,
   NavigationStack,
   RoundedRectangle,
   Script,
@@ -86,6 +87,8 @@ import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/the
 
 
 import { ConfettiOverlay } from "./components/confetti"
+import { TaskLogsSection } from "./components/task-logs"
+import { beginTaskLog, appendTaskLog, titleTaskLog, finishTaskLog, clearTaskLogs } from "./services/task-log"
 
 declare const Animation: any
 
@@ -355,12 +358,12 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         header={
           <HStack spacing={6}>
             <Image systemName="paintpalette" font={11} foregroundStyle="secondaryLabel" />
-            <Text>外观主题与徽章</Text>
+            <Text>界面配色</Text>
           </HStack>
         }
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            影响小组件背景与按钮配色、日志终端的点缀色；切换后小组件立即换肤。
+            选择强调色与深浅底色的配色方案，影响按钮、进度、日志点缀和小组件配色。
           </Text>
         }
       >
@@ -412,6 +415,20 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             </HStack>
           ))
         })()}
+        <HStack spacing={6}>
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            当前配色
+          </Text>
+          <RoundedRectangle frame={{ width: 10, height: 10 }} cornerRadius={5} fill={THEMES[themeKey].accent} />
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            {THEMES[themeKey].label}
+          </Text>
+        </HStack>
+      </Section>
+
+      <Section title="小组件入口图标" footer={
+        <Text font="caption" foregroundStyle="secondaryLabel">只更换小组件下载入口的图标，不改变配色和背景样式。</Text>
+      }>
         {/* 入口徽章款式：与主题色板同款结构（Button 直接挂 HStack，实证可点） */}
         {(() => {
           const keys = BADGE_GLYPHS.map((b) => b.key)
@@ -462,6 +479,11 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             </HStack>
           ))
         })()}
+      </Section>
+
+      <Section title="小组件背景样式" footer={
+        <Text font="caption" foregroundStyle="secondaryLabel">只更换小组件背景的视觉风格；与上方配色、入口图标分别选择，组合生效。</Text>
+      }>
         {/* 小组件风格预览：直接用烘焙 PNG 实物缩略（纹理风跟随当前主题/徽章实时变化） */}
         {(() => {
           const styleCell = (key: WidgetStyle, label: string) => {
@@ -513,28 +535,24 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             )
           }
           return (
-            <HStack spacing={0}>
-              {styleCell("texture", "暗色纹理")}
-              <Spacer />
-              {styleCell("anime", "动漫风景")}
-              <Spacer />
-              {styleCell("blueprint", "蓝图")}
-              <Spacer />
-              {styleCell("neon", "霓虹")}
-              <Spacer />
-              {styleCell("cyberpunk", "赛博朋克")}
-            </HStack>
+            <VStack spacing={14}>
+              <HStack spacing={0}>
+                {styleCell("texture", "暗色纹理")}
+                <Spacer />
+                {styleCell("anime", "动漫风景")}
+                <Spacer />
+                {styleCell("blueprint", "蓝图")}
+              </HStack>
+              <HStack spacing={0}>
+                {styleCell("neon", "霓虹")}
+                <Spacer />
+                {styleCell("cyberpunk", "赛博朋克")}
+                <Spacer />
+                <Spacer frame={{ width: 64 }} />
+              </HStack>
+            </VStack>
           )
         })()}
-        <HStack spacing={6}>
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            当前主题
-          </Text>
-          <RoundedRectangle frame={{ width: 10, height: 10 }} cornerRadius={5} fill={THEMES[themeKey].accent} />
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {THEMES[themeKey].label}
-          </Text>
-        </HStack>
       </Section>
 
       <Section
@@ -623,11 +641,11 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         }
         footer={
           <Text font="caption" foregroundStyle="secondaryLabel">
-            开启后下载过程会写入诊断日志，可在首页「诊断中心」查看与导出。
+            开启后额外记录系统诊断信息，可在「诊断」标签查看与导出。任务日志始终按任务保留，不受此开关影响。
           </Text>
         }
       >
-        <Toggle title="记录诊断日志" value={draft.debugLog} onChanged={(v) => update({ debugLog: v })} />
+        <Toggle title="记录系统诊断日志" value={draft.debugLog} onChanged={(v) => update({ debugLog: v })} />
       </Section>
 
       <Section
@@ -657,6 +675,56 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
       </Section>
     </List>
   )
+}
+
+function SystemLogPage({ logs }: { logs: string[] }) {
+  const shown = logs.slice(-40).reverse()
+  return <List navigationTitle="系统诊断" navigationBarTitleDisplayMode="inline">
+      <Section
+        header={
+          <HStack spacing={6}>
+            <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
+            <Text>系统诊断日志</Text>
+          </HStack>
+        }
+        footer={
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            红色为错误/失败行；导出时可只选这部分。此处显示最近 40 条。旧版未分任务日志也保留在此。
+          </Text>
+        }
+      >
+        {shown.length === 0 ? (
+          <Text foregroundStyle="secondaryLabel">暂无日志。</Text>
+        ) : (
+          <VStack
+            alignment="leading"
+            spacing={3}
+            padding={10}
+            frame={{ maxWidth: "infinity" } as never}
+            background="#0D1117"
+            clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
+          >
+            <HStack>
+              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                vdl@ios:~$ diag --tail 40
+              </Text>
+              <Spacer />
+            </HStack>
+            {shown.map((l, i) => (
+              <Text
+                key={i}
+                font="caption2"
+                monospaced
+                foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
+                lineLimit={2}
+              >
+                {l}
+              </Text>
+            ))}
+          </VStack>
+        )}
+      </Section>
+  </List>
 }
 
 // -------------------------------------------------------------
@@ -709,11 +777,15 @@ function DiagnosticsPage() {
     }
   }
 
-  const shown = logs.slice(-40).reverse()
 
   return (
-    <List navigationTitle="诊断中心" navigationBarTitleDisplayMode="inline">
-      <Section title="概览">
+    <List navigationTitle="诊断中心" navigationBarTitleDisplayMode="inline" onAppear={() => {
+      setLogs(getDebugLog())
+      void countHistory().then(setHistoryCount).catch(() => {})
+      void reloadDirs().catch(() => {})
+    }}>
+      <TaskLogsSection />
+      <Section title="系统概览">
         <HStack>
           <Text>版本</Text>
           <Spacer />
@@ -729,7 +801,7 @@ function DiagnosticsPage() {
           </Text>
         </HStack>
         <HStack>
-          <Text>诊断日志</Text>
+          <Text>系统诊断行数</Text>
           <Spacer />
           <Text monospaced foregroundStyle="secondaryLabel">
             {logs.length}
@@ -790,7 +862,7 @@ function DiagnosticsPage() {
       </Section>
 
       <Section title="操作">
-        <Button title="导出诊断包（可选范围）" action={() => void doExport()} />
+        <Button title="导出系统诊断（可选范围）" action={() => void doExport()} />
         <Button
           title="导出设置到剪贴板"
           action={async () => {
@@ -816,8 +888,11 @@ function DiagnosticsPage() {
             }
           }}
         />
+        <Button title="清空任务日志" role="destructive" action={async () => {
+          if (await Dialog.confirm({ title: "清空任务日志", message: "只删除任务日志，不影响下载历史和视频文件。", confirmLabel: "清空" })) clearTaskLogs()
+        }} />
         <Button
-          title="清空诊断日志"
+          title="清空系统诊断日志"
           role="destructive"
           action={() => {
             clearDebugLog()
@@ -826,49 +901,10 @@ function DiagnosticsPage() {
         />
       </Section>
 
-      <Section
-        header={
-          <HStack spacing={6}>
-            <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
-            <Text>日志终端</Text>
-          </HStack>
-        }
-        footer={
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            红色为错误/失败行；导出时可只选这部分。此处显示最近 40 条。
-          </Text>
-        }
-      >
-        {shown.length === 0 ? (
-          <Text foregroundStyle="secondaryLabel">暂无日志。</Text>
-        ) : (
-          <VStack
-            alignment="leading"
-            spacing={3}
-            padding={10}
-            frame={{ maxWidth: "infinity" } as never}
-            background="#0D1117"
-            clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
-          >
-            <HStack>
-              <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                vdl@ios:~$ diag --tail 40
-              </Text>
-              <Spacer />
-            </HStack>
-            {shown.map((l, i) => (
-              <Text
-                key={i}
-                font="caption2"
-                monospaced
-                foregroundStyle={ERROR_LINE_RE.test(l) ? "#F85149" : "#3FB950"}
-                lineLimit={2}
-              >
-                {l}
-              </Text>
-            ))}
-          </VStack>
-        )}
+      <Section title="系统诊断">
+        <NavigationLink destination={<SystemLogPage logs={logs} />}>
+          <Text>查看系统诊断与旧版日志</Text>
+        </NavigationLink>
       </Section>
     </List>
   )
@@ -916,7 +952,6 @@ function View(props: { initialHistory: HistoryRecord[] }) {
   const [progress, setProgress] = useState<{
     done: number; total: number; bytes: number; totalBytes: number; speedBps: number; etaSec: number | null
   } | null>(null)
-  const [logs, setLogs] = useState<string[]>([])
   const [status, setStatus] = useState("就绪")
   const [history, setHistory] = useState<HistoryRecord[]>(props.initialHistory)
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
@@ -1009,18 +1044,15 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       await Dialog.alert({ message: "请先输入有效的视频链接" })
       return
     }
+    const taskId = beginTaskLog(url, "app")
+    appendTaskLog(taskId, "开始下载")
     setLoading(true)
     setCelebrate(false)
-    setLogs([])
     setLastFiles([])
     setProgress(null)
     let sawProgress = false
 
-    const log = (line: string) => {
-      const d = new Date()
-      const p = (n: number) => String(n).padStart(2, "0")
-      setLogs((prev) => [...prev, `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}] ${line}`])
-    }
+    const log = (line: string) => appendTaskLog(taskId, line)
     try {
       // 历史去重：文件还在本地，或已标记"已存入相册"，都视为已下载
       if (prefs.dedupe) {
@@ -1037,6 +1069,9 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                 { path: dup.file_path, name: dup.file_name, bytes: dup.bytes_written, durationSec: dup.duration_sec },
               ])
             }
+            titleTaskLog(taskId, dup.title || dup.file_name)
+            log("已在历史中，跳过重复下载")
+            finishTaskLog(taskId, "skipped", "已在历史中，未重复下载")
             setLoading(false)
             return
           }
@@ -1071,6 +1106,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
           : undefined,
       })
 
+      titleTaskLog(taskId, outcome.title)
       const inserted: string[] = []
       for (const f of outcome.files) {
         const rec = await insertHistory({
@@ -1098,11 +1134,21 @@ function View(props: { initialHistory: HistoryRecord[] }) {
         await refreshHistory()
         setLastFiles([])
       }
+      log(action.message)
+      finishTaskLog(taskId, outcome.files.length > 0 ? "success" : "cancelled", action.message)
       setStatus(action.message)
       appendDebug(`下载完成: ${outcome.title} (${outcome.files.length} 个文件) -> ${action.message}`)
       if (outcome.files.length > 0) setCelebrate(true)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
+      if (message === "已取消下载") {
+        log(message)
+        finishTaskLog(taskId, "cancelled", message)
+        setStatus(message)
+        return
+      }
+      log(`失败：${message}`)
+      finishTaskLog(taskId, "failed", message)
       setStatus(`失败：${message}`)
       appendDebug(`下载失败: ${message}`)
       await Dialog.alert({ title: "下载失败", message })
@@ -1298,43 +1344,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                 )}
               </Section>
 
-              {logs.length > 0 ? (
-                <Section
-                  header={
-                    <HStack spacing={6}>
-                      <Image systemName="terminal" font={11} foregroundStyle="secondaryLabel" />
-                      <Text>实时日志</Text>
-                    </HStack>
-                  }
-                >
-                  {/* 终端风日志卡：单 VStack 挂背景（ZStack+Shape 在 List 行里不满宽） */}
-                  <VStack
-                    alignment="leading"
-                    spacing={3}
-                    padding={10}
-                    frame={{ maxWidth: "infinity" } as never}
-                    background="#0D1117"
-                    clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
-                  >
-                    <HStack>
-                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                        vdl@ios:~$ run
-                      </Text>
-                      <Spacer />
-                    </HStack>
-                    {logs.map((l, i) => (
-                      <Text key={i} font="caption2" monospaced foregroundStyle="#3FB950" lineLimit={2}>
-                        {"▸ " + l}
-                      </Text>
-                    ))}
-                    {loading ? (
-                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                        {"▌"}
-                      </Text>
-                    ) : null}
-                  </VStack>
-                </Section>
-              ) : null}
+              <TaskLogsSection limit={3} />
 
               {lastFiles.length > 0 ? (
                 <Section title="本次文件">
