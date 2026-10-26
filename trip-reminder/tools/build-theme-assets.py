@@ -117,6 +117,12 @@ def mocha():
  return wash(layer(im,paper),(250,246,239),70,.65)
 def film():
  im=gradient((33,28,23),(20,18,15))
+ # Confine the exposure wash to the film frames, away from the primary text zones.
+ y,x=np.mgrid[:720,:1440]
+ frames=(((x>=940)&(x<=1250)&(y>=110)&(y<=330))|((x>=1292)&(y>=90)&(y<=308)))
+ exposure=np.exp(-((x-1190)/230)**2-((y-190)/150)**2)*frames
+ veil=np.zeros((720,1440,4),dtype=np.uint8);veil[...,:3]=(78,45,24);veil[...,3]=(exposure*170).astype('uint8')
+ im=Image.alpha_composite(im,Image.fromarray(veil))
  def stock(d):
   # Sprockets stay inside the outer 5pt; the text begins at 14pt.
   for y,hole_y in ((0,8),(684,694)):
@@ -125,15 +131,29 @@ def film():
     d.rounded_rectangle((x,hole_y,x+25,hole_y+17),radius=3,fill=(14,12,9,255))
   d.line((0,36,1440,36),fill=(57,40,25,255),width=2)
   d.line((0,683,1440,683),fill=(57,40,25,255),width=2)
-  for x in (932,1284):
-   d.rounded_rectangle((x,100,x+328,340),radius=7,fill=(23,20,16,255),outline=(74,50,29,255),width=5)
-   d.rounded_rectangle((x+10,110,x+318,330),radius=3,outline=(45,34,23,255),width=2)
-  d.line((914,70,1440,70),fill=(60,42,26,255),width=3)
-  d.line((914,370,1440,370),fill=(60,42,26,255),width=3)
+  for x,y in ((932,100),(1284,80)):
+   d.rounded_rectangle((x,y,x+328,y+240),radius=7,outline=(68,47,29,255),width=3)
+   for xx,yy,sx,sy in ((x+13,y+13,1,1),(x+315,y+13,-1,1),(x+13,y+227,1,-1),(x+315,y+227,-1,-1)):
+    d.line([(xx+sx*28,yy),(xx,yy),(xx,yy+sy*22)],fill=(70,50,32,255),width=3)
+   for tick in range(6):
+    xx=x+18+tick*9;d.line((xx,y-14,xx,y-6),fill=(65,46,28,255),width=2)
+  # A faint six-blade aperture etching stays decorative, with no extra labels.
+  cx,cy=1052,224
+  opening=[(cx+32*math.cos(i*math.pi/3+.3),cy+32*math.sin(i*math.pi/3+.3)) for i in range(7)]
+  d.line(opening,fill=(64,47,30,255),width=3)
+  for i in range(6):
+   angle=i*math.pi/3+.3
+   d.line([opening[i],(cx+76*math.cos(angle+.45),cy+76*math.sin(angle+.45))],fill=(56,42,28,255),width=3)
+  d.arc((cx-82,cy-82,cx+82,cy+82),110,300,fill=(47,36,25,255),width=2)
+  for offset in (0,15,30):
+   d.line([(1304+offset,292),(1330+offset,266)],fill=(65,45,28,255),width=3)
+  d.line((914,70,1440,70),fill=(51,37,25,255),width=2)
+  d.line((914,370,1245,370),fill=(60,42,26,255),width=3)
+  d.line((1270,350,1440,350),fill=(53,39,26,255),width=2)
  im=layer(im,stock)
  im.info["pnginfo"]=PngImagePlugin.PngInfo()
  im.info["pnginfo"].add_text("Source","Original procedural artwork: trip-reminder/tools/build-theme-assets.py:film")
- im.info["pnginfo"].add_text("Description","Movie-film travel: warm charcoal, dark amber film rails, outer sprocket holes, and empty cropped footage frames at right. No scenic illustration; motif colors remain below 0.045 sRGB relative luminance.")
+ im.info["pnginfo"].add_text("Description","Movie-film travel: warm charcoal and sprocket rails, staggered exposure frames with a soft amber wash, six-blade aperture etching, viewfinder crop corners and splice marks. No text or personal imagery; dark decoration preserves itinerary readability.")
  return im
 def space():
  im=gradient((12,16,34),(21,19,41))
