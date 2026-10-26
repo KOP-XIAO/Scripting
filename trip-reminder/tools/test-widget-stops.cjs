@@ -121,23 +121,77 @@ test("today badge switches at local midnight and preserves rounded versus monosp
   const flight = render({ trip: { ...trip, mode: "flight", departTime: "" }, now: midnight })
   assert.ok(text(flight).some(value => value.startsWith("今天 ·")))
 })
-test("one symbol links the times while long station names align beneath each endpoint", () => {
+test("centered duration and lower arrow sit between symmetric time/place columns", () => {
   for (const [width, height] of [[338, 158], [212, 124]]) {
     const current = { ...trip, fromPlace: "虚构很长的出发车站名称", toPlace: "虚构很长的到达车站名称" }
     const tree = render({ trip: current, width, height })
-    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right.circle.fill").length, 1)
-    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right").length, 0)
+    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrowtriangle.right.fill").length, 1)
+    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right.circle.fill").length, 0)
     const contentWidth = width - (height >= 150 ? 28 : 12)
     const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40 && n.props.frame?.width === contentWidth)[0]
     assert.ok(route)
     const columns = route.props.children.flat()
-    assert.equal(columns.length, 4)
-    assert.ok(columns.reduce((sum, col) => sum + col.props.frame.width, 3 * route.props.spacing) <= contentWidth)
+    assert.equal(columns.length, 3)
+    assert.equal(columns[0].props.frame.width, columns[2].props.frame.width)
+    assert.equal(columns.reduce((sum, col) => sum + col.props.frame.width, 2 * route.props.spacing), contentWidth)
     assert.ok(text(columns[0]).includes(current.departTime) && text(columns[0]).includes(current.fromPlace))
     assert.ok(text(columns[2]).includes(current.arriveTime) && text(columns[2]).includes(current.toPlace))
     assert.equal(nodes(columns[0], n => n.type === "Image").length, 0)
     assert.equal(nodes(columns[2], n => n.type === "Image").length, 0)
     assert.ok(nodes(columns[0], n => n.type === "Text").every(n => n.props.lineLimit === 1))
     assert.ok(nodes(columns[2], n => n.type === "Text").every(n => n.props.lineLimit === 1))
+    assert.equal(columns[1].props.alignment, "center")
+    assert.equal(columns[1].props.children[0].type, "Text")
+    assert.equal(columns[1].props.children[1].type, "HStack")
+  }
+})
+test("short, hour-long, overnight and missing durations keep text and proportional arrow centered", () => {
+  for (const [width, height] of [[338, 158], [300, 150], [212, 124]]) {
+    const arrows = []
+    for (const durationMin of [18, 60, 84, 754, 1559, 60000, 0]) {
+      const current = { ...trip, durationMin, ...(durationMin ? {} : { departTime: "", arriveTime: "" }) }
+      const tree = render({ trip: current, width, height })
+      const contentWidth = width - (height >= 150 ? 28 : 12)
+      const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40 && n.props.frame?.width === contentWidth)[0]
+      const [left, center, right] = route.props.children
+      assert.equal(left.props.frame.width + route.props.spacing + center.props.frame.width / 2, contentWidth / 2)
+      const [label, arrow] = center.props.children
+      assert.equal(label.props.frame.alignment, "center")
+      assert.equal(label.props.frame.width, center.props.frame.width)
+      assert.equal(label.props.minScaleFactor, 0.75)
+      assert.equal(label.props.lineLimit, 1)
+      assert.equal(label.props.frame.height + center.props.spacing + arrow.props.frame.height, 40)
+      assert.ok(arrow.props.frame.width >= 24 && arrow.props.frame.width <= center.props.frame.width - 12)
+      assert.equal(arrow.props.children.reduce((sum, child) => sum + child.props.frame.width, 0), arrow.props.frame.width)
+      assert.equal(right.props.alignment, "trailing")
+      if (durationMin === 18) assert.equal(label.props.children[0], "18 分")
+      if (durationMin === 84) assert.equal(label.props.children[0], "1 小时 24 分")
+      if (durationMin === 0) assert.equal(label.props.children[0], "时长待补")
+      arrows.push(arrow.props.frame.width)
+    }
+    assert.ok(arrows[2] > arrows[0], "longer duration needs a longer arrow")
+  }
+})
+test("arrival and seat rows share the date's trailing boundary", () => {
+  const tree = render()
+  const contentWidth = base.width - 28
+  const body = nodes(tree, n => n.type === "VStack" && n.props.frame?.width === contentWidth && n.props.frame?.height === 130)[0]
+  const header = body.props.children[0]
+  assert.equal(header.props.frame.width, contentWidth)
+  assert.equal(header.props.children.at(-2).type, "Spacer")
+  assert.equal(header.props.children.at(-1).type, "Text")
+  const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40 && n.props.frame?.width === contentWidth)[0]
+  const arrival = route.props.children.at(-1)
+  for (const row of arrival.props.children) {
+    assert.equal(row.props.children[0].type, "Spacer")
+    assert.equal(row.props.children.at(-1).type, "Text")
+  }
+  const footer = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 34)[0]
+  assert.equal(footer.props.frame.width, contentWidth)
+  const seat = footer.props.children.at(-1)
+  assert.equal(seat.props.alignment, "trailing")
+  for (const row of seat.props.children.slice(0, 2)) {
+    assert.equal(row.props.children[0].type, "Spacer")
+    assert.equal(row.props.children.at(-1).type, "Text")
   }
 })

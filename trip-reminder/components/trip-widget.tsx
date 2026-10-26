@@ -1,5 +1,5 @@
 // 首页、设置预览与中号小组件共用布局、背景、字号及间距。
-import { GeometryReader, HStack, Image, Spacer, Text, VStack, ZStack } from "scripting"
+import { GeometryReader, HStack, Image, RoundedRectangle, Spacer, Text, VStack, ZStack } from "scripting"
 import { countdownText, departTimestamp, durationText, gateLabel, isDepartureToday, monthDayText, weekdayText, type TripMode } from "../services/parse"
 import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
@@ -51,8 +51,13 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
   const delta = departTimestamp(trip) - now
   const soon = delta >= 0 && delta < 3600000
   const today = isDepartureToday(trip.departDate, now)
-  const durationWidth = Math.floor(width * 0.24)
-  const endpointWidth = Math.max(0, Math.floor((width - durationWidth - 16 - 24) / 2))
+  const journeyDuration = durationText(trip)
+  // 预留中英文字宽；长文案用原生缩字兜底，左右列始终等宽。
+  const durationUnits = Array.from(journeyDuration).reduce((sum, char) => sum + (char === " " ? 0.35 : char.charCodeAt(0) < 128 ? 0.6 : 1), 0)
+  const durationInkWidth = Math.ceil(durationUnits * 11)
+  const durationWidth = Math.min(Math.max(64, durationInkWidth + 12), Math.floor(width * 0.34))
+  const endpointWidth = Math.max(0, (width - durationWidth - 16) / 2)
+  const arrowWidth = Math.max(0, Math.min(durationWidth - 12, Math.max(24, Math.round(durationInkWidth * 0.9))))
   const seat = hideSeatNumber ? "已隐藏" : displaySeat({ ...trip, seatClass: "" }, false)
   const intermediateStops = railJourneyStops(trip).slice(1, -1)
   const showStops = intermediateStops.length > 0 && width >= 200 && height >= 112
@@ -82,23 +87,21 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
             <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>{trip.fromPlace || "未填出发地"}</Text><Spacer />
           </HStack>
         </VStack>
-        <VStack spacing={0} frame={{ width: 16, height: 40 }}>
-          <Image systemName="arrow.right.circle.fill" font={12} foregroundStyle={theme.accent} frame={{ height: 20 }} />
-          <Spacer />
+        <VStack alignment="center" spacing={4} frame={{ width: durationWidth, height: 40 }}>
+          <Text font={11} foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.75}
+            multilineTextAlignment="center" frame={{ width: durationWidth, height: 20, alignment: "center" }}>{journeyDuration}</Text>
+          <HStack spacing={0} frame={{ width: arrowWidth, height: 16 }}>
+            <RoundedRectangle cornerRadius={1} fill={theme.accent} frame={{ width: Math.max(0, arrowWidth - 6), height: 1 }} />
+            <Image systemName="arrowtriangle.right.fill" font={6} foregroundStyle={theme.accent} frame={{ width: 6, height: 6 }} />
+          </HStack>
         </VStack>
-        <VStack alignment="leading" spacing={4} frame={{ width: endpointWidth, height: 40 }}>
+        <VStack alignment="trailing" spacing={4} frame={{ width: endpointWidth, height: 40 }}>
           <HStack spacing={0} frame={{ width: endpointWidth, height: 20 }}>
-            <Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{trip.arriveTime || "--:--"}</Text><Spacer />
+            <Spacer /><Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{trip.arriveTime || "--:--"}</Text>
           </HStack>
           <HStack spacing={0} frame={{ width: endpointWidth, height: 16 }}>
-            <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>{trip.toPlace || "未填到达地"}</Text><Spacer />
+            <Spacer /><Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>{trip.toPlace || "未填到达地"}</Text>
           </HStack>
-        </VStack>
-        <VStack alignment="leading" spacing={0} frame={{ width: durationWidth, height: 40 }}>
-          <HStack spacing={0} frame={{ width: durationWidth, height: 20 }}>
-            <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{durationText(trip)}</Text><Spacer />
-          </HStack>
-          <Spacer />
         </VStack>
       </HStack>
       <Spacer />
@@ -124,12 +127,12 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
           </HStack>
           <Spacer />
         </VStack>
-        <VStack alignment="leading" spacing={0} frame={{ width: seatWidth, height: footerHeight }}>
+        <VStack alignment="trailing" spacing={0} frame={{ width: seatWidth, height: footerHeight }}>
           <HStack spacing={0} frame={{ width: seatWidth, height: 13 }}>
-            <Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass ? `座位｜${trip.seatClass}` : "座位"}</Text><Spacer />
+            <Spacer /><Text font="caption2" foregroundStyle={theme.sub} lineLimit={1}>{trip.seatClass ? `座位｜${trip.seatClass}` : "座位"}</Text>
           </HStack>
           <HStack spacing={0} frame={{ width: seatWidth, height: 21 }}>
-            <Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.accent} lineLimit={1}>{seat}</Text><Spacer />
+            <Spacer /><Text font="headline" fontWeight="bold" monospaced foregroundStyle={theme.accent} lineLimit={1}>{seat}</Text>
           </HStack>
           <Spacer />
         </VStack>
