@@ -125,7 +125,8 @@ test("centered duration and lower arrow sit between symmetric time/place columns
   for (const [width, height] of [[338, 158], [212, 124]]) {
     const current = { ...trip, fromPlace: "虚构很长的出发车站名称", toPlace: "虚构很长的到达车站名称" }
     const tree = render({ trip: current, width, height })
-    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrowtriangle.right.fill").length, 1)
+    assert.equal(nodes(tree, n => n.type === "PathShape").length, 1)
+    assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrowtriangle.right.fill").length, 0)
     assert.equal(nodes(tree, n => n.type === "Image" && n.props.systemName === "arrow.right.circle.fill").length, 0)
     const contentWidth = width - (height >= 150 ? 28 : 12)
     const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40 && n.props.frame?.width === contentWidth)[0]
@@ -142,7 +143,7 @@ test("centered duration and lower arrow sit between symmetric time/place columns
     assert.ok(nodes(columns[2], n => n.type === "Text").every(n => n.props.lineLimit === 1))
     assert.equal(columns[1].props.alignment, "center")
     assert.equal(columns[1].props.children[0].type, "Text")
-    assert.equal(columns[1].props.children[1].type, "HStack")
+    assert.equal(columns[1].props.children[1].type, "PathShape")
   }
 })
 test("short, hour-long, overnight and missing durations keep text and proportional arrow centered", () => {
@@ -161,8 +162,8 @@ test("short, hour-long, overnight and missing durations keep text and proportion
       assert.equal(label.props.minScaleFactor, 0.75)
       assert.equal(label.props.lineLimit, 1)
       assert.equal(label.props.frame.height + center.props.spacing + arrow.props.frame.height, 40)
-      assert.ok(arrow.props.frame.width >= 24 && arrow.props.frame.width <= center.props.frame.width - 12)
-      assert.equal(arrow.props.children.reduce((sum, child) => sum + child.props.frame.width, 0), arrow.props.frame.width)
+      assert.ok(arrow.props.frame.width >= 46 && arrow.props.frame.width <= center.props.frame.width - 12)
+      assert.equal(arrow.type, "PathShape")
       assert.equal(right.props.alignment, "trailing")
       if (durationMin === 18) assert.equal(label.props.children[0], "18 分")
       if (durationMin === 84) assert.equal(label.props.children[0], "1 小时 24 分")
@@ -171,6 +172,39 @@ test("short, hour-long, overnight and missing durations keep text and proportion
     }
     assert.ok(arrows[2] > arrows[0], "longer duration needs a longer arrow")
   }
+})
+test("custom journey path keeps ring, separated arc and open tip within its frame", () => {
+  const connector = nodes(render(), n => n.type === "PathShape")[0]
+  assert.equal(connector.props.fill, undefined)
+  assert.equal(connector.props.stroke.shapeStyle, theme.accent)
+  assert.equal(connector.props.stroke.strokeStyle.lineCap, "round")
+  assert.equal(connector.props.stroke.strokeStyle.lineJoin, "round")
+  const tipLengths = []
+  for (const width of [0, 12, 46, 52, 64, 93]) {
+    const commands = []
+    const path = new Proxy({}, { get: (_, op) => (...args) => commands.push({ op, args }) })
+    connector.props.draw(path, { width, height: 16 })
+    if (width < 20) { assert.equal(commands.length, 0); continue }
+    assert.deepEqual(commands.map(c => c.op), ["addEllipse", "move", "addQuadCurve", "move", "addQuadCurve", "move", "addQuadCurve", "move", "addLine", "addLine"])
+    const ring = commands[0].args[0]
+    assert.equal(ring.width, 5)
+    assert.equal(ring.height, 5)
+    const points = commands.slice(1).flatMap(c => c.args)
+    points.push({ x: ring.x, y: ring.y }, { x: ring.x + ring.width, y: ring.y + ring.height })
+    const margin = connector.props.stroke.strokeStyle.lineWidth / 2
+    for (const p of points) {
+      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y))
+      assert.ok(p.x >= margin && p.x <= width - margin)
+      assert.ok(p.y >= margin && p.y <= 16 - margin)
+    }
+    assert.ok(commands[3].args[0].x > commands[2].args[0].x)
+    assert.ok(commands[5].args[0].x > commands[4].args[0].x)
+    assert.deepEqual(commands[8].args[0], commands[6].args[0], "tip connects to arc endpoint")
+    const [wing, tip, otherWing] = [7, 8, 9].map(i => commands[i].args[0])
+    assert.ok(wing.x < tip.x && otherWing.x < tip.x)
+    tipLengths.push(Math.hypot(tip.x - wing.x, tip.y - wing.y).toFixed(10))
+  }
+  assert.equal(new Set(tipLengths).size, 1, "arrow tip retains its size as track stretches")
 })
 test("arrival and seat rows share the date's trailing boundary", () => {
   const tree = render()

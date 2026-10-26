@@ -1,5 +1,5 @@
 // 首页、设置预览与中号小组件共用布局、背景、字号及间距。
-import { GeometryReader, HStack, Image, RoundedRectangle, Spacer, Text, VStack, ZStack } from "scripting"
+import { GeometryReader, HStack, Image, PathShape, Spacer, Text, VStack, ZStack } from "scripting"
 import { countdownText, departTimestamp, durationText, gateLabel, isDepartureToday, monthDayText, weekdayText, type TripMode } from "../services/parse"
 import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
@@ -57,7 +57,7 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
   const durationInkWidth = Math.ceil(durationUnits * 11)
   const durationWidth = Math.min(Math.max(64, durationInkWidth + 12), Math.floor(width * 0.34))
   const endpointWidth = Math.max(0, (width - durationWidth - 16) / 2)
-  const arrowWidth = Math.max(0, Math.min(durationWidth - 12, Math.max(24, Math.round(durationInkWidth * 0.9))))
+  const arrowWidth = Math.max(0, Math.min(durationWidth - 12, Math.max(46, Math.round(durationInkWidth * 0.9))))
   const seat = hideSeatNumber ? "已隐藏" : displaySeat({ ...trip, seatClass: "" }, false)
   const intermediateStops = railJourneyStops(trip).slice(1, -1)
   const showStops = intermediateStops.length > 0 && width >= 200 && height >= 112
@@ -90,10 +90,29 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
         <VStack alignment="center" spacing={4} frame={{ width: durationWidth, height: 40 }}>
           <Text font={11} foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.75}
             multilineTextAlignment="center" frame={{ width: durationWidth, height: 20, alignment: "center" }}>{journeyDuration}</Text>
-          <HStack spacing={0} frame={{ width: arrowWidth, height: 16 }}>
-            <RoundedRectangle cornerRadius={1} fill={theme.accent} frame={{ width: Math.max(0, arrowWidth - 6), height: 1 }} />
-            <Image systemName="arrowtriangle.right.fill" font={6} foregroundStyle={theme.accent} frame={{ width: 6, height: 6 }} />
-          </HStack>
+          <PathShape frame={{ width: arrowWidth, height: 16 }}
+            stroke={{ shapeStyle: theme.accent, strokeStyle: { lineWidth: 1.3, lineCap: "round", lineJoin: "round" } }}
+            draw={(path, size) => {
+              if (size.width < 20) return
+              const span = size.width - 12
+              const point = (t: number) => ({ x: 9.5 + span * t, y: 9 - 14 * t * (1 - t) })
+              path.addEllipse({ x: 1, y: 6.5, width: 5, height: 5 })
+              // All segments follow the same arc; gaps suggest a journey without extra labels.
+              for (const [a, b] of [[0, 0.13], [0.23, 0.36], [0.46, 1]]) {
+                const start = point(a)
+                path.move(start)
+                path.addQuadCurve(point(b), {
+                  x: start.x + span * (b - a) / 2,
+                  y: start.y + (-14 + 28 * a) * (b - a) / 2,
+                })
+              }
+              const tip = point(1)
+              const angle = Math.atan2(14, span)
+              const dx = Math.cos(angle), dy = Math.sin(angle)
+              path.move({ x: tip.x - 5 * dx + 3 * dy, y: tip.y - 5 * dy - 3 * dx })
+              path.addLine(tip)
+              path.addLine({ x: tip.x - 5 * dx - 3 * dy, y: tip.y - 5 * dy + 3 * dx })
+            }} />
         </VStack>
         <VStack alignment="trailing" spacing={4} frame={{ width: endpointWidth, height: 40 }}>
           <HStack spacing={0} frame={{ width: endpointWidth, height: 20 }}>
