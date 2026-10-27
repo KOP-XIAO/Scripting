@@ -45,6 +45,15 @@ function TaskDetail({ task }: { task: TaskLog }) {
     </Section>
   </List>
 }
+export function TaskLogLink({ taskId }: { taskId: string | null }) {
+  const { tasks } = useTaskLogs()
+  const task = tasks.find(t => t.id === taskId)
+  if (!task) return null
+  return <NavigationLink destination={<TaskDetail task={task} />}>
+    <Text font="caption" foregroundStyle={getTheme().accent}>查看日志</Text>
+  </NavigationLink>
+}
+
 export function TaskLogsSection({ limit = MAX_TASKS }: { limit?: number }) {
   const { tasks, reload } = useTaskLogs()
   return <Section title="任务日志" onAppear={reload}

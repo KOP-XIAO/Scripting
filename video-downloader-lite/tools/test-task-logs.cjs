@@ -52,7 +52,7 @@ const handlerCode = compile('const ' + handler.getText(tree)) + '\nglobalThis.ru
 async function exercise(entry, scenario) {
   const { api, Storage } = store()
   const url = 'https://video.example/item'
-  let alerts = 0
+  let alerts = 0, linkedTaskId
   const history = { initDatabase: async () => {}, findBySourceURL: async () => scenario === 'skipped'
     ? [{ id: 'old', title: 'Old video', file_name: 'old.mp4', file_path: '/old.mp4', note: '', created_at: '2026-10-25' }] : [],
     insertHistory: async () => ({ id: 'history' }), updateHistoryNote: async () => {} }
@@ -74,6 +74,7 @@ async function exercise(entry, scenario) {
   if (entry === 'app') {
     Object.assign(ctx, { loading: false, prefs: ctx.getPreferences(), inputURL: url,
       extractFirstURL: s => s, formatDate: s => s,
+      setLastTaskId: id => { linkedTaskId = id },
       setLoading: () => {}, setCelebrate: () => {}, setLastFiles: () => {}, setProgress: () => {}, setStatus: () => {},
       refreshHistory: async () => {}, setTimeout: fn => fn() })
     vm.runInNewContext(handlerCode, ctx)
@@ -100,6 +101,7 @@ async function exercise(entry, scenario) {
   assert.equal(records[0].status, expected === 'success' ? 'success' : expected, `${entry}/${scenario}`)
   assert(records[0].endedAt)
   assert.equal(records[0].entry, entry)
+  if (entry === 'app') assert.equal(linkedTaskId, records[0].id)
   if (scenario === 'success') assert.equal(records[0].title, 'Video title')
   if (scenario === 'cancelled' && entry === 'app') assert.equal(alerts, 0)
 }

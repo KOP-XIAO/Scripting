@@ -87,7 +87,7 @@ import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/the
 
 
 import { ConfettiOverlay } from "./components/confetti"
-import { TaskLogsSection } from "./components/task-logs"
+import { TaskLogLink, TaskLogsSection } from "./components/task-logs"
 import { beginTaskLog, appendTaskLog, titleTaskLog, finishTaskLog, clearTaskLogs } from "./services/task-log"
 
 declare const Animation: any
@@ -953,6 +953,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
     done: number; total: number; bytes: number; totalBytes: number; speedBps: number; etaSec: number | null
   } | null>(null)
   const [status, setStatus] = useState("就绪")
+  const [lastTaskId, setLastTaskId] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryRecord[]>(props.initialHistory)
   const [lastFiles, setLastFiles] = useState<DownloadedFile[]>([])
   const [celebrate, setCelebrate] = useState(false)
@@ -1045,6 +1046,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       return
     }
     const taskId = beginTaskLog(url, "app")
+    setLastTaskId(taskId)
     appendTaskLog(taskId, "开始下载")
     setLoading(true)
     setCelebrate(false)
@@ -1337,14 +1339,16 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                       {status}
                     </Text>
                     <Spacer />
-                    <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
-                      {status === "就绪" ? "idle" : "done"}
-                    </Text>
+                    {status.startsWith("失败") ? (
+                      <TaskLogLink taskId={lastTaskId} />
+                    ) : (
+                      <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
+                        {status === "就绪" ? "idle" : "done"}
+                      </Text>
+                    )}
                   </HStack>
                 )}
               </Section>
-
-              <TaskLogsSection limit={3} />
 
               {lastFiles.length > 0 ? (
                 <Section title="本次文件">
