@@ -21,14 +21,15 @@ declare const WebViewController: {
     present(options?: { fullscreen?: boolean; navigationTitle?: string }): Promise<void>
     evaluateJavaScript<T = any>(javascript: string): Promise<T>
     getHTML(): Promise<string | null>
+    getCookies?(url: string): Promise<{ name: string; value: string }[]>
     addScriptMessageHandler<P = any>(name: string, handler: (params?: P) => any): Promise<void>
     dispose(): void
   }
 }
 
 // 注入钩子：包裹 fetch 与 XHR，回传 { url, method, reqBody, body }
-const INJECT_HOOK = `
-(function () {
+const INJECT_HOOK = String.raw`
+return (function () {
   if (window.__cmhkHooked) return true
   window.__cmhkHooked = true
   function send(info) {
@@ -41,8 +42,8 @@ const INJECT_HOOK = `
     var out = {}
     try {
       if (!h) return out
-      if (typeof h.forEach === "function") { h.forEach(function (v, k) { out[k] = String(v) }); return out }
       if (Array.isArray(h)) { h.forEach(function (p) { if (p) out[String(p[0])] = String(p[1]) }); return out }
+      if (typeof h.forEach === "function") { h.forEach(function (v, k) { out[k] = String(v) }); return out }
       Object.keys(h).forEach(function (k) { out[k] = String(h[k]) })
     } catch (e) {}
     return out
@@ -51,14 +52,21 @@ const INJECT_HOOK = `
   if (of) {
     window.fetch = function (input, init) {
       var url = (input && input.url) || String(input)
-      var method = (init && init.method) || "GET"
-      var reqBody = (init && init.body) ? String(init.body).slice(0, 2000) : ""
+      var method = (init && init.method) || (input && input.method) || "GET"
+      var reqBody = (init && init.body != null) ? String(init.body).slice(0, 2000) : ""
+      var bodyReady = Promise.resolve(reqBody)
+      if ((!init || init.body == null) && input && typeof input.clone === "function" && !/^(GET|HEAD)$/i.test(method)) {
+        try { bodyReady = input.clone().text().then(function (b) { return String(b).slice(0, 2000) }).catch(function () { return "" }) } catch (e) {}
+      }
       var headers = hdrs((init && init.headers) || (input && input.headers))
+      if (/\/single\/(accountLogin|oneClickLogin)(?:\?|$)/i.test(url)) {
+        send({ url: url, method: method, reqBody: reqBody, headers: headers, body: "" })
+      }
       return of.apply(this, arguments).then(function (r) {
         try {
           var c = r.clone()
           c.text().then(function (t) {
-            if (t && t.length > 2) send({ url: url, method: method, reqBody: reqBody, headers: headers, body: t.slice(0, 60000) })
+            if (t && t.length > 2) bodyReady.then(function (b) { send({ url: url, method: method, reqBody: b, headers: headers, body: t.slice(0, 60000) }) })
           }).catch(function () {})
         } catch (e) {}
         return r
@@ -80,6 +88,9 @@ const INJECT_HOOK = `
   }
   XMLHttpRequest.prototype.send = function (b) {
     var xhr = this
+    if (/\/single\/(accountLogin|oneClickLogin)(?:\?|$)/i.test(String(xhr.__cmhkUrl))) {
+      send({ url: String(xhr.__cmhkUrl), method: xhr.__cmhkMethod || "GET", reqBody: b ? String(b).slice(0, 2000) : "", headers: xhr.__cmhkHeaders || {}, body: "" })
+    }
     xhr.addEventListener("load", function () {
       try {
         send({ url: String(xhr.__cmhkUrl), method: xhr.__cmhkMethod || "GET", headers: xhr.__cmhkHeaders || {},
@@ -145,16 +156,14 @@ async function runWebLoginInner(): Promise<{ captured: boolean; url: string | nu
       }
       if (!body) return null
       if (looksLikeUsageJson(url, body)) {
+        const json = JSON.parse(body)
+        if (isApiError(json)) return null
         saveCapture(url, body)
         if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)
         if (/getNickname/i.test(url)) saveNicknameJson(body)
-        // 用量接口评分：cbs/usageQuery（数据最全：total/usage/margin）> indexUsageQuery > 其他。
-        // v1.19.10 修：旧逻辑 /usageQuery/i 一律覆盖——indexUsageQuery 晚到会把会话
-        // 从真身拽走，之后重放的是一个没有 total/usage 的残缺接口。
-        const usageRank = (u: string) => (/cbs\/usageQuery/i.test(u) ? 3 : /usageQuery/i.test(u) ? 2 : 1)
-        if (!best || usageRank(url) > usageRank(best.url)) {
+        if (/cbs\/usageQuery(?:\?|$)/i.test(url) && summaryHasUsage(json)) {
           best = { url, method: String(msg?.method ?? "GET"), reqBody: String(msg?.reqBody ?? ""), body, headers: msg?.headers }
-          appendDebug(`捕获 API: ${best.method} ${url.slice(0, 120)}`)
+          appendDebug("捕获本次有效用量响应")
         }
       }
     } catch { /* 忽略 */ }
@@ -204,7 +213,8 @@ async function runWebLoginInner(): Promise<{ captured: boolean; url: string | nu
 
   if (!closed) await presentP
   try {
-    cookie = await webView.evaluateJavaScript<string>("return document.cookie")
+    const apiUrl = best?.url?.startsWith("http") ? best.url : `https://www.hk.chinamobile.com${best?.url ?? "/"}`
+    cookie = (await withTimeout(readSessionCookie(webView, apiUrl), 2000, "读取会话")).value
   } catch { /* 拿不到就算了 */ }
   const finalPage = await webView.evaluateJavaScript<string>("return location.href").catch(() => null)
   if (finalPage) pageUrl = finalPage
@@ -239,146 +249,250 @@ const USAGE_PAGE_URL = "https://www.hk.chinamobile.com/tc/home/my-zone/menu/usag
 
 // 填表并提交（只执行一次）：返回 clicked / captcha / no-form / no-button / already-submitted
 function buildFillLoginJs(phone: string, password: string): string {
-  return `
+  return String.raw`
 return (function () {
+  if (/^about:(blank|srcdoc)(?:[?#]|$)/i.test(location.href)) return "loading"
+  if (!/^https:\/\/(?:[a-z0-9-]+\.)*hk\.chinamobile\.com(?::\d+)?(?:\/|$)/i.test(location.href)) return "untrusted-page"
   if (window.__cmhkAutoSubmitted) return "already-submitted"
   function vis(el) { return !!(el && (el.offsetParent !== null || (el.getClientRects && el.getClientRects().length > 0))) }
+  function text(el) { return String(el.textContent || el.value || "").replace(/\s+/g, " ").trim() }
+  function disabled(el) { return !!(el.disabled || el.getAttribute("aria-disabled") === "true" || el.hasAttribute("disabled")) }
   var inputs = Array.prototype.slice.call(document.querySelectorAll("input"))
-  var pwd = null
-  for (var i = 0; i < inputs.length; i++) {
-    if (vis(inputs[i]) && (inputs[i].type || "").toLowerCase() === "password") { pwd = inputs[i]; break }
+  var pwd = inputs.find(function (el) { return vis(el) && el.type.toLowerCase() === "password" })
+  try {
+    window.webkit.messageHandlers.cmhkCapture.postMessage({ kind: "loginForm", inputCount: inputs.length,
+      passwordCount: inputs.filter(function (el) { return el.type.toLowerCase() === "password" }).length,
+      visiblePasswordCount: inputs.filter(function (el) { return vis(el) && el.type.toLowerCase() === "password" }).length })
+  } catch (e) {}
+  if (!pwd) {
+    if (!window.__cmhkPasswordModeSelected) {
+      var tabs = document.querySelectorAll('[role="tab"], button, a, span, div')
+      for (var i = 0; i < tabs.length; i++) {
+        var tab = tabs[i]
+        if (vis(tab) && !disabled(tab) && /^(?:(?:帳戶|賬戶|账户|帳號|账号)?(?:密碼|密码)(?:登錄|登录|登入)?|password(?: login)?|log in with password)$/i.test(text(tab))) {
+          window.__cmhkPasswordModeSelected = true
+          tab.click()
+          return "switching-mode"
+        }
+      }
+    }
+    return "no-form"
   }
-  var phoneEl = null
-  for (var i = 0; i < inputs.length; i++) {
-    var el = inputs[i]
-    if (el === pwd || !vis(el)) continue
-    var t = (el.type || "").toLowerCase()
-    if (t !== "text" && t !== "tel" && t !== "number" && t !== "") continue
-    var hint = [el.placeholder, el.name, el.id, el.getAttribute("aria-label")].join(" ")
-    if (/手機|手机|號碼|号码|phone|mobile|msisdn|賬戶|账户|account|用戶名|用户名/i.test(hint)) { phoneEl = el; break }
-  }
+  var scope = pwd.closest("form") || document
+  var candidates = Array.prototype.slice.call(scope.querySelectorAll("input"))
+  var phoneEl = candidates.find(function (el) {
+    if (el === pwd || !vis(el) || !/^(text|tel|number|email)?$/i.test(el.type || "")) return false
+    return /手機|手机|號碼|号码|phone|mobile|msisdn|賬戶|账户|account|用戶名|用户名/i.test([el.placeholder, el.name, el.id, el.getAttribute("aria-label")].join(" "))
+  })
   if (!phoneEl) {
-    // 兜底：密码框之前的最后一个可见文本输入
-    for (var i = 0; i < inputs.length; i++) {
-      var el = inputs[i]
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i]
       if (el === pwd) break
-      var t = (el.type || "").toLowerCase()
-      if (vis(el) && (t === "text" || t === "tel" || t === "number" || t === "")) phoneEl = el
+      if (vis(el) && /^(text|tel|number|email)?$/i.test(el.type || "")) phoneEl = el
     }
   }
-  if (!pwd || !phoneEl) return "no-form"
-  // 可见验证码（图/滑块/输入框）→ 放弃自动，交回手动
-  var caps = document.querySelectorAll('img[src*="captcha"], img[src*="verify"], img[src*="vcode"], canvas[class*="captcha"], div[class*="verify-slider"], input[name*="captcha"], input[placeholder*="驗證碼"], input[placeholder*="验证码"]')
-  for (var i = 0; i < caps.length; i++) { if (vis(caps[i])) return "captcha" }
+  if (!phoneEl) return "no-form"
+  var caps = scope.querySelectorAll('img[src*="captcha"], img[src*="vcode"], canvas[class*="captcha"], div[class*="verify-slider"], input[name*="captcha"], input[autocomplete="one-time-code"], input[placeholder*="驗證碼"], input[placeholder*="验证码"]')
+  for (var i = 0; i < caps.length; i++) if (vis(caps[i])) return "captcha"
+  var checks = scope.querySelectorAll('input[type="checkbox"]')
+  for (var i = 0; i < checks.length; i++) if (vis(checks[i]) && checks[i].required && !checks[i].checked) return "terms-required"
   function setVal(el, v) {
     el.focus()
-    var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")
+    var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
     if (d && d.set) d.set.call(el, v); else el.value = v
     el.dispatchEvent(new Event("input", { bubbles: true }))
     el.dispatchEvent(new Event("change", { bubbles: true }))
     el.blur()
   }
-  setVal(phoneEl, ${JSON.stringify(phone)})
-  setVal(pwd, ${JSON.stringify(password)})
-  var btns = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"], input[type="submit"], a'))
+  if (!window.__cmhkAutoFilled || phoneEl.value !== ${JSON.stringify(phone)} || pwd.value !== ${JSON.stringify(password)}) {
+    setVal(phoneEl, ${JSON.stringify(phone)})
+    setVal(pwd, ${JSON.stringify(password)})
+    window.__cmhkAutoFilled = true
+    return "filled"
+  }
+  var btns = scope.querySelectorAll('button, [role="button"], input[type="submit"], a')
+  var waiting = false
   for (var i = 0; i < btns.length; i++) {
     var b = btns[i]
-    if (!vis(b)) continue
-    var txt = ((b.textContent || "") + " " + (b.value || "")).trim()
-    if (/登錄|登录|登入|log\s*in|sign\s*in/i.test(txt)) {
-      window.__cmhkAutoSubmitted = true
-      b.click()
-      return "clicked"
-    }
+    if (!vis(b) || b.getAttribute("role") === "tab" || !/^(登錄|登录|登入|log in|sign in)$/i.test(text(b))) continue
+    if (b.tagName === "A" && b.getAttribute("href") && !/^(#|javascript:)/i.test(b.getAttribute("href"))) continue
+    if (disabled(b)) { waiting = true; continue }
+    window.__cmhkAutoSubmitted = true
+    b.click()
+    return "clicked"
   }
-  return "no-button"
+  return waiting ? "waiting-enabled" : "no-button"
 })()
 `
 }
 
+export type AutoLoginReport = {
+  startedAt: number
+  finishedAt?: number
+  fresh: boolean
+  stage: string
+  submitted: boolean
+  loginConfirmed: boolean
+  usageCaptured: boolean
+  hookInstalled?: boolean
+  form?: { inputCount: number; passwordCount: number; visiblePasswordCount: number }
+  cookieSource?: "native" | "document"
+  reason?: string
+}
+const KEY_AUTO_LOGIN_REPORT = "cmhk.login.autoReport"
+export function readAutoLoginReport(): AutoLoginReport | null {
+  return Storage.get<AutoLoginReport>(KEY_AUTO_LOGIN_REPORT)
+}
+
+// Newer Scripting versions expose HttpOnly cookies; older versions retain document.cookie fallback.
+async function readSessionCookie(wv: InstanceType<typeof WebViewController>, apiUrl: string) {
+  if (typeof wv.getCookies === "function") {
+    const cookies = await wv.getCookies(apiUrl)
+    return { value: cookies.map((c) => `${c.name}=${c.value}`).join("; "), source: "native" as const }
+  }
+  return { value: await wv.evaluateJavaScript<string>("return document.cookie"), source: "document" as const }
+}
+
 // 无头自动重登：成功返回最新 usageQuery JSON；失败返回原因（上层照旧走快照回退+手动提示）
-export async function autoRelogin(): Promise<{ summary: any | null; reason?: string }> {
-  if (!hasCredentials()) return { summary: null, reason: "未保存凭据" }
-  if (isWebLoginBusy()) return { summary: null, reason: "手动登录窗口进行中" }
+export async function autoRelogin(opts?: { fresh?: boolean }): Promise<{ summary: any | null; reason?: string }> {
+  const report: AutoLoginReport = {
+    startedAt: Date.now(), fresh: opts?.fresh === true, stage: "准备",
+    submitted: false, loginConfirmed: false, usageCaptured: false,
+  }
+  const phase = (stage: string) => {
+    if (report.stage !== stage) appendDebug(`自动重登: ${stage}`)
+    report.stage = stage
+    Storage.set(KEY_AUTO_LOGIN_REPORT, { ...report })
+  }
+  const fail = (reason: string) => {
+    report.reason = reason
+    report.finishedAt = Date.now()
+    phase("未完成")
+    return { summary: null, reason }
+  }
+  if (!hasCredentials()) return fail("未保存凭据，请先在「自动登录凭据」中保存手机号和密码")
+  if (isWebLoginBusy()) return fail("手动登录窗口进行中")
   const phone = getPhone()!
   const password = getPassword()!
-  appendDebug("自动重登: 开始（无头 WebView 填表）")
-  const wv = new WebViewController()
+  const wv = new WebViewController(opts?.fresh ? { ephemeral: true } : undefined)
   let best: { url: string; method: string; reqBody: string; body: string; headers?: Record<string, string> } | null = null
-  let submitAt = 0
-  let loginOk = false
+  let clicked = false
+  let loginAccepted = false
+  let confirmationSeen = false
+  let pendingUsage: { url: string; method: string; reqBody: string; body: string; headers?: Record<string, string> } | null = null
   let loginRejected: string | null = null
   let active = true
-  const startedAt = Date.now()
-  const deadline = startedAt + 15000
+  const deadline = report.startedAt + 15000
   const step = <T,>(operation: Promise<T>, label: string) =>
     withTimeout(operation, Math.max(1, Math.min(2000, deadline - Date.now())), `自动重登·${label}`)
   try {
+    phase(opts?.fresh ? "独立会话验证" : "开始（无头 WebView 填表）")
     await step(wv.addScriptMessageHandler<any>("cmhkCapture", (msg) => {
       if (!active) return null
       try {
+        if (msg?.kind === "loginForm") {
+          const count = (n: any) => Number.isInteger(n) && n >= 0 && n < 1000 ? n : 0
+          report.form = { inputCount: count(msg.inputCount), passwordCount: count(msg.passwordCount), visiblePasswordCount: count(msg.visiblePasswordCount) }
+          Storage.set(KEY_AUTO_LOGIN_REPORT, { ...report })
+          return null
+        }
         const url = String(msg?.url ?? "")
         const body = String(msg?.body ?? "")
         const method = String(msg?.method ?? "")
-        if (!url) return null
+        const absoluteUrl = url.startsWith("/") && !url.startsWith("//") ? `https://www.hk.chinamobile.com${url}` : url
+        if (!/^https:\/\/(?:[a-z0-9-]+\.)*hk\.chinamobile\.com(?::\d+)?(?:\/|$)/i.test(absoluteUrl)) return null
         if (isLoginRequest(url, method)) saveLoginRequest(url, method, String(msg?.reqBody ?? ""), body)
+        const isAuthRequest = /\/single\/(accountLogin|oneClickLogin)(?:\?|$)/i.test(url) && method.toUpperCase() === "POST"
+        if (isAuthRequest && !report.submitted) { report.submitted = true; phase("已观察到登录请求") }
         if (!body) return null
-        // 登录成功信号：提交后 queryLoginInfo 返回 000000（诊断包实证：未登录时返回 999999 用戶未登錄）
-        if (submitAt > 0 && /\/single\/queryLoginInfo/i.test(url) && body.includes('"code":"000000"')) loginOk = true
-        if (/\/single\/accountLogin/i.test(url) && !body.includes('"code":"000000"')) loginRejected = body.slice(0, 120)
-        if (/cbs\/usageQuery/i.test(url)) {
-          const usage = JSON.parse(body)
-          if (!isApiError(usage) && summaryHasUsage(usage)) {
-            best = { url, method, reqBody: String(msg?.reqBody ?? ""), body, headers: msg?.headers }
-          }
+        const json = JSON.parse(body)
+        if (isAuthRequest) {
+          if (String(json.code) !== "000000") loginRejected = `登录被拒（返回码 ${String(json.code).replace(/[^a-z0-9_-]/gi, "").slice(0, 20)}）`
+          else { loginAccepted = true; phase("登录请求已接受") }
         }
-      } catch { /* 忽略 */ }
+        if (report.submitted && /\/single\/(queryLoginInfo|successLogin)(?:\?|$)/i.test(url) && String(json.code) === "000000") confirmationSeen = true
+        if (loginAccepted && confirmationSeen && !report.loginConfirmed) {
+          report.loginConfirmed = true
+          phase("登录已确认，等待用量")
+        }
+        if (isApiError(json)) return null
+        if (/cbs\/usageQuery(?:\?|$)/i.test(url) && summaryHasUsage(json)) {
+          // Keep post-confirmation usage while a slower auth-response clone is still pending.
+          if (!opts?.fresh || (report.submitted && confirmationSeen)) {
+            pendingUsage = { url, method, reqBody: String(msg?.reqBody ?? ""), body, headers: msg?.headers }
+          }
+        } else if (/queryAccountInfo|getNickname|memberLevelRightBaseInfo|wealth|iddAndExtraUsage/i.test(url)) {
+          saveCapture(url, body)
+          if (/memberLevel|wealth/i.test(url)) saveMemberJson(body)
+          if (/getNickname/i.test(url)) saveNicknameJson(body)
+        }
+        if (pendingUsage && (!opts?.fresh || report.loginConfirmed)) {
+          best = pendingUsage
+          report.usageCaptured = true
+        }
+      } catch { /* 非 JSON 与导航中的消息不作为成功证据 */ }
       return null
     }), "建立捕获通道")
 
-    const startUrl = readLoginPageUrl() ?? USAGE_PAGE_URL
-    let loadErr: string | null = null
-    void wv.loadURL(startUrl).catch((e) => { loadErr = String(e) })
+    const savedUrl = opts?.fresh ? null : readLoginPageUrl()
+    const startUrl = savedUrl && /^https:\/\/(?:[a-z0-9-]+\.)*hk\.chinamobile\.com(?::\d+)?(?:\/|$)/i.test(savedUrl) ? savedUrl : USAGE_PAGE_URL
+    let loadErr = false
+    void wv.loadURL(startUrl).catch(() => { loadErr = true })
     let navigatedToUsage = false
-    let lastFillState = "尚未找到登录表单"
+    let lastProgressAt = report.startedAt
+    let lastFillState = "未找到登录表单"
     while (Date.now() < deadline) {
-      if (isWebLoginBusy()) return { summary: null, reason: "手动登录窗口优先" }
-      await step(wv.evaluateJavaScript(INJECT_HOOK).catch(() => false), "注入钩子")
-      if (loginRejected) return { summary: null, reason: `登录被拒：${loginRejected}` }
+      if (isWebLoginBusy()) return fail("手动登录窗口优先")
+      const installed = await step(wv.evaluateJavaScript(INJECT_HOOK).catch(() => false), "注入钩子")
+      if (installed === true && !report.hookInstalled) { report.hookInstalled = true; phase("捕获通道已启用") }
+      if (loginRejected) return fail(loginRejected)
       if (best) break
-      if (loadErr) return { summary: null, reason: `页面加载失败：${loadErr.slice(0, 60)}` }
-      if (loginOk && !navigatedToUsage) {
+      if (loadErr) return fail("登录页面加载失败")
+      if (report.loginConfirmed && !navigatedToUsage) {
         navigatedToUsage = true
-        void wv.loadURL(USAGE_PAGE_URL).catch(() => {})
+        void wv.loadURL(USAGE_PAGE_URL).catch(() => { loadErr = true })
       }
-      if (submitAt === 0) {
+      if (!clicked && !loginAccepted) {
         const r = await step(wv.evaluateJavaScript<string>(buildFillLoginJs(phone, password)).catch(() => "error"), "填表提交")
-        if (r === "captcha") { appendDebug("自动重登: 检测到验证码，放弃自动"); return { summary: null, reason: "出现验证码，需手动登录" } }
-        if (r === "clicked") { submitAt = Date.now(); appendDebug("自动重登: 已填表并提交") }
-        else {
-          const state = r === "no-form" ? "未找到登录表单" : r === "no-button" ? "未找到登录按钮" : "填表脚本未返回有效状态"
-          if (state !== lastFillState) appendDebug(`自动重登: ${state}`)
-          lastFillState = state
-          if (Date.now() - startedAt >= 6000) return { summary: null, reason: `${lastFillState}，请手动网页登录` }
+        if (r === "captcha") return fail("出现验证码，需手动登录")
+        if (r === "terms-required") return fail("登录页需要确认条款，请先手动确认")
+        if (r === "untrusted-page") return fail("当前页面不属于 CMHK，未填写凭据")
+        const states: Record<string, string> = {
+          loading: "正在加载登录页", "switching-mode": "正在切换密码登录", filled: "已填写，等待页面校验", clicked: "已点击登录，等待登录请求",
+          "waiting-enabled": "登录按钮尚未启用", "no-form": "未找到登录表单", "no-button": "未找到登录按钮",
         }
+        lastFillState = states[r] ?? "填表脚本未返回有效状态"
+        phase(lastFillState)
+        if (r === "loading" || r === "switching-mode" || r === "filled") lastProgressAt = Date.now()
+        if (r === "clicked") clicked = true
+        else if (Date.now() - lastProgressAt >= 6000) return fail(`${lastFillState}，请手动网页登录`)
       }
-      await new Promise((r2) => setTimeout(r2, Math.max(0, Math.min(900, deadline - Date.now()))))
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(900, deadline - Date.now()))))
     }
-    if (!best) return { summary: null, reason: submitAt > 0 ? "已提交但未捕获到用量数据" : "超时（未完成登录）" }
-    const cookie = await step(wv.evaluateJavaScript<string>("return document.cookie"), "读取会话")
+    if (!best) return fail(!report.submitted && clicked ? "点击登录后未观察到登录请求" : report.submitted ? "登录请求后未取得已认证用量" : `${lastFillState}，未完成自动登录`)
+    const captured = best
+    const apiUrl = captured.url.startsWith("http") ? captured.url : `https://www.hk.chinamobile.com${captured.url}`
+    const cookie = await step(readSessionCookie(wv, apiUrl), "读取会话")
+    if (loginRejected) return fail(loginRejected)
+    if (isWebLoginBusy()) return fail("手动登录窗口优先")
+    active = false
+    report.cookieSource = cookie.source
     saveWebSession({
-      url: best.url, method: best.method, reqBody: best.reqBody,
+      url: captured.url, method: captured.method, reqBody: captured.reqBody,
       pageUrl: USAGE_PAGE_URL, at: Date.now(), authorization: null,
-      cookie: cookie ?? null, headers: best.headers,
+      cookie: cookie.value ?? null, headers: captured.headers,
     })
-    saveCapture(best.url, best.body)
-    saveCapturedBody(best.body)
-    appendDebug("自动重登: 成功，新会话已保存")
-    return { summary: JSON.parse(best.body) }
+    saveCapture(captured.url, captured.body)
+    saveCapturedBody(captured.body)
+    phase(report.loginConfirmed ? "自动登录成功并取得用量" : "现有会话取得新用量")
+    return { summary: JSON.parse(captured.body) }
   } catch (e) {
-    return { summary: null, reason: String((e as any)?.message ?? e).slice(0, 100) }
+    const message = String((e as any)?.message ?? e)
+    return fail(/^自动重登·(建立捕获通道|注入钩子|填表提交|读取会话)超时$/.test(message) ? message : "自动登录网页操作失败")
   } finally {
     active = false
+    report.finishedAt = Date.now()
+    Storage.set(KEY_AUTO_LOGIN_REPORT, { ...report })
     wv.dispose()
   }
 }

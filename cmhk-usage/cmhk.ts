@@ -13,7 +13,7 @@
 import { fetch } from "scripting"
 import { withTimeout } from "./timeout"
 
-export const VERSION = "1.20.2"  // 与 script.json 同步
+export const VERSION = "1.20.3"  // 与 script.json 同步
 import { parseUsageText, parseUsageQueryJson, parseAccountInfoJson, parseWealthJson, parseNicknameJson, parseMembershipJson, ParsedUsage } from "./usage-parser"
 
 export type UsageData = {
@@ -756,19 +756,20 @@ async function authedGet(path: string): Promise<any> {
 }
 
 // ---- v1.20.0 自动重登（DI：App 入口注册 handler；widget/AppIntent 不注册则不触发） ----
-// 触发条件苛刻：仅当页内捕获拿到"会话真死"证据（重定向登录页/服务端未登录响应）、
-// 且 Keychain 有凭据时，才在后台无头 WebView 自动填表登录。冷却 5 分钟防重复提交。
+// App 在没有会话或确认会话过期时自动登录，后台尝试冷却 5 分钟。
+// 用户主动的独立验证使用隔离会话；widget/AppIntent 不注册 handler。
 export type AutoReloginResult = { summary: any | null; reason?: string }
-let autoReloginHandler: (() => Promise<AutoReloginResult>) | null = null
-export function setAutoReloginHandler(fn: () => Promise<AutoReloginResult>) { autoReloginHandler = fn }
+type AutoReloginOptions = { fresh?: boolean }
+let autoReloginHandler: ((opts?: AutoReloginOptions) => Promise<AutoReloginResult>) | null = null
+export function setAutoReloginHandler(fn: (opts?: AutoReloginOptions) => Promise<AutoReloginResult>) { autoReloginHandler = fn }
 const KEY_RELOGIN_AT = "cmhk.relogin.at"
-async function tryAutoRelogin(): Promise<AutoReloginResult> {
+async function tryAutoRelogin(opts?: AutoReloginOptions): Promise<AutoReloginResult> {
   if (!autoReloginHandler) return { summary: null, reason: "当前上下文不支持自动重登" }
   const last = Storage.get<number>(KEY_RELOGIN_AT) ?? 0
-  if (Date.now() - last < 5 * 60 * 1000) return { summary: null, reason: "冷却中（5 分钟内已尝试）" }
+  if (!opts?.fresh && Date.now() - last < 5 * 60 * 1000) return { summary: null, reason: "冷却中（5 分钟内已尝试）" }
   Storage.set(KEY_RELOGIN_AT, Date.now())
   try {
-    return await autoReloginHandler()
+    return await autoReloginHandler(opts)
   } catch (e) {
     return { summary: null, reason: String((e as any)?.message ?? e).slice(0, 80) }
   }
@@ -778,15 +779,22 @@ async function tryAutoRelogin(): Promise<AutoReloginResult> {
 // opts.directOnly：只走轻量路径（手动接口 / 直连重放），不创建 WebView。
 //   供 widget 进程与 AppIntent 快路径使用：命中返回新数据（已写缓存），未命中返回 null。
 // v1.19.15 刷新去重：自动刷新与手动点击重叠时不再叠加第二个无头 WebView
+type RefreshOptions = { directOnly?: boolean; via?: string; snapshotFirst?: boolean; autoLoginOnly?: boolean }
 let refreshInFlight: Promise<UsageData | null> | null = null
+let inFlightIsLoginTest = false
 
-export async function refreshUsage(opts?: { directOnly?: boolean; via?: string; snapshotFirst?: boolean }): Promise<UsageData | null> {
+export async function refreshUsage(opts?: RefreshOptions): Promise<UsageData | null> {
   if (opts?.directOnly === true || isDemoMode()) return runRefresh(opts)
+  if (refreshInFlight && opts?.autoLoginOnly && !inFlightIsLoginTest) {
+    await refreshInFlight.catch(() => null)
+    return refreshUsage(opts)
+  }
   if (refreshInFlight) {
     appendDebug("刷新: 已有刷新在途，复用其结果")
     return refreshInFlight
   }
   const p = runRefresh(opts)
+  inFlightIsLoginTest = opts?.autoLoginOnly === true
   refreshInFlight = p
   try {
     return await p
@@ -795,13 +803,15 @@ export async function refreshUsage(opts?: { directOnly?: boolean; via?: string; 
   }
 }
 
-async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotFirst?: boolean }): Promise<UsageData | null> {
+async function runRefresh(opts?: RefreshOptions): Promise<UsageData | null> {
   const directOnly = opts?.directOnly === true
   const via = opts?.via ?? "app"
   let fromCaptured = false // 本次数据是否来自登录时捕获的旧 body（诚实标记 stale）
   let pathLabel = ""      // 本次数据来源（写入刷新报告）
   try {
+    if (opts?.autoLoginOnly && directOnly) throw new Error("小组件上下文不支持自动登录验证")
     if (isDemoMode()) {
+      if (opts?.autoLoginOnly) throw new Error("请关闭演示模式后验证自动登录")
       if (directOnly) return null
       const d = demoData()
       writeCache(d)
@@ -820,10 +830,10 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
     lastDirectAuthError = null
     let fetchedAtOverride: number | null = null // 快路径用真实捕获时间，不谎报"刚刚"
     let snapReady = false
-    if (!manual && opts?.snapshotFirst === true) {
+    if (!opts?.autoLoginOnly && !manual && opts?.snapshotFirst === true) {
       const body = readCapturedBody()
       const at = readCapturedBodyAt()
-      if (body && at != null && Date.now() - at < 120_000) {
+      if (body && at != null && Date.now() - at < 120_000 && !cacheBeatsSnapshot(readCache(), at)) {
         try {
           const j = JSON.parse(body)
           if (summaryHasUsage(j)) {
@@ -837,7 +847,18 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
         } catch { /* 非 JSON 忽略，走常规链路 */ }
       }
     }
-    if (snapReady) {
+    if (opts?.autoLoginOnly) {
+      const rl = await tryAutoRelogin({ fresh: true })
+      if (rl.summary == null || isApiError(rl.summary) || !summaryHasUsage(rl.summary)) {
+        throw new Error(`自动登录验证未完成：${rl.reason ?? "未取得本次用量响应"}`)
+      }
+      const freshUsage = parseUsageQueryJson(rl.summary)
+      if (!(freshUsage.buckets ?? []).some((b) => b.totalGB != null && b.totalGB > 0 && b.remainingGB != null)) {
+        throw new Error("自动登录验证未完成：本次响应没有可用流量明细")
+      }
+      summary = rl.summary
+      pathLabel = "自动登录验证"
+    } else if (snapReady) {
       // 已有登录现场数据，无需任何网络尝试
     } else if (manual) {
       // 手动接口：抓包粘贴的真实用量接口（最优先）
@@ -936,6 +957,7 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
             }
             try { summary = JSON.parse(body) } catch { summary = body }
             fromCaptured = true
+            fetchedAtOverride = readCapturedBodyAt() ?? readCache()?.fetchedAt ?? null
             pathLabel = `登录时快取${shortReason}`
             appendDebug("刷新: 回退登录时捕获 body（已标记快取）")
           } else {
@@ -943,6 +965,13 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
           }
         }
       }
+    } else if (hasCredentials() && autoReloginHandler) {
+      const rl = await tryAutoRelogin()
+      if (rl.summary == null || isApiError(rl.summary) || !summaryHasUsage(rl.summary)) {
+        throw new Error(`自动登录未完成：${rl.reason ?? "未取得用量响应"}`)
+      }
+      summary = rl.summary
+      pathLabel = "自动登录"
     } else if (readCaptures().length) {
       // 无会话但有历史捕获：现有缓存更新时保留，否则用最近一次捕获内容
       const cur = readCache()
@@ -951,19 +980,19 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
         return cur
       }
       summary = readCaptures()[0].body
+      fetchedAtOverride = readCaptures()[0].at
       fromCaptured = true
       pathLabel = "捕获环快取"
       appendDebug("刷新: 回退捕获环（已标记快取）")
     } else if (hasCredentials()) {
-      summary = await authedGet(CMHK.paths.usageSummary)
-      pathLabel = "密码接口"
+      throw new Error("请打开 App 完成自动登录，小组件不能创建登录网页")
     } else {
       throw new Error("尚未登录：请先「网页登录」，或在「手动配置接口」粘贴抓包结果")
     }
 
     let balanceHKD: number | null = null
     try {
-      const bal = hasWebSession() || manual
+      const bal = hasWebSession() || manual || pathLabel === "自动登录" || opts?.autoLoginOnly
         ? summary // 会话/手动方式暂用同一响应取余额字段
         : await authedGet(CMHK.paths.balance)
       balanceHKD = toNum(getPath(bal, CMHK.fieldMap.balanceHKD) ?? getPath(bal, "data.remainFee"))
@@ -1109,6 +1138,10 @@ async function runRefresh(opts?: { directOnly?: boolean; via?: string; snapshotF
     return data
   } catch (e) {
     if (directOnly) return null
+    if (opts?.autoLoginOnly) {
+      saveReport(`自动登录验证失败·${String((e as any)?.message ?? e)}`, via, false, true, false)
+      throw e
+    }
     const cached = readCache()
     if (cached) {
       saveReport("刷新失败·网络或会话异常", via, false, true, false)

@@ -62,7 +62,7 @@ import {
   setWebStartUrl,
   UsageData,
 } from "./cmhk"
-import { autoRelogin, runWebLogin } from "./web-login"
+import { autoRelogin, readAutoLoginReport, runWebLogin } from "./web-login"
 import { dataTierColor, theme, usageRatio } from "./theme"
 
 declare const ShareSheet: { present(items: any[]): Promise<boolean> }
@@ -98,7 +98,7 @@ function Page() {
       }
       const ok = await Dialog.confirm({
         title: "保存憑據",
-        message: "手机号与密码将仅保存在本机系统钥匙串（Keychain）中，仅用于登录 CMHK 接口，不会上传或写入任何日志。是否继续？",
+        message: "手机号与密码将保存在本机系统钥匙串（Keychain），仅在 CMHK 官方网页中用于自动登录，不发送给第三方、不写入日志。是否继续？",
         confirmLabel: "保存",
       })
       if (!ok) return
@@ -138,9 +138,8 @@ function Page() {
     setBusy(true)
     setStatus("正在刷新；若会话已过期，将尝试重新登录…")
     try {
-      // v1.19.17：手动刷新按钮同样走快路径——刚登录完手上就有现场数据，
-      // 此前只有"登录完成"那一刻走快路径，点按钮仍要白等直连 3s + 页内捕获 12s。
-      const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst !== false })
+      // Only immediate login completion may use its captured response; ordinary refresh goes to the network.
+      const d = await refreshUsage({ via: "app", snapshotFirst: opts?.snapshotFirst === true })
       if (!d) {
         setStatus("刷新未取得数据，请重新「網頁登入」后再试。")
         return
@@ -164,7 +163,7 @@ function Page() {
   // 静默自动刷新：失败不弹窗，仅更新状态行
   async function handleRefreshSilent() {
     try {
-      const d = await refreshUsage({ via: "app-auto", snapshotFirst: true })
+      const d = await refreshUsage({ via: "app-auto" })
       if (!d) return
       setData(d)
       Widget.reloadUserWidgets()
@@ -173,6 +172,28 @@ function Page() {
         ? `自动刷新未成功（${r?.path ?? "会话失效"}）：建议重新「網頁登入」`
         : `已自动刷新 · ${r?.path ?? ""}${r?.changed === false ? " · 数值无变化" : ""}`)
     } catch { /* 静默失败不打扰 */ }
+  }
+
+  async function handleVerifyAutoLogin() {
+    if (busy || isWebLoginBusy()) return
+    if (!hasCredentials()) {
+      setStatus("请先在「自动登录凭据」保存手机号和密码，再验证自动登录。")
+      return
+    }
+    setBusy(true)
+    setStatus("正在独立验证自动登录，并等待本次用量响应…")
+    try {
+      const d = await refreshUsage({ autoLoginOnly: true, via: "app-login-test" })
+      if (!d || d.stale || readRefreshReport()?.ok !== true) throw new Error("本次未取得已认证用量")
+      setData(d)
+      setWebSession(hasWebSession())
+      Widget.reloadUserWidgets()
+      setStatus("自动登录验证成功 · 已新建会话并取得本次用量响应。")
+    } catch (e) {
+      setStatus(`自动登录验证未完成：${friendlyError(e)}。可在诊断包中查看本次阶段记录。`)
+    } finally {
+      setBusy(false)
+    }
   }
 
   // 打开页面即自动刷新一次；页面存活期间每 30 分钟续刷
@@ -240,7 +261,7 @@ function Page() {
       "cmhk.usage.cache", "cmhk.demo", "cmhk.manual.url", "cmhk.manual.headers",
       "cmhk.web.starturl", "cmhk.web.body", "cmhk.captures", "cmhk.debuglog",
       "cmhk.overview.html", "cmhk.member.json", "cmhk.nickname.json", "cmhk.profile",
-      "cmhk.refresh.report", "cmhk.login.pageurl", "cmhk.relogin.at",
+      "cmhk.refresh.report", "cmhk.login.pageurl", "cmhk.relogin.at", "cmhk.login.autoReport",
     ]
   }
 
@@ -281,7 +302,8 @@ function Page() {
       const loginReqs = readLoginRequests().map((r, i) =>
         `\n===== 登录报文 ${i + 1} ${new Date(r.at).toLocaleString()} =====\n${r.method} ${r.url}\n请求(密码已打码): ${r.reqBody.slice(0, 400)}\n响应: ${r.body.slice(0, 300)}`
       ).join("")
-      const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 最近刷新 =====\n${reportLine}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}\n\n===== 登录报文(密码已打码) =====${loginReqs || "\n(无)"}`
+      const autoLogin = JSON.stringify(readAutoLoginReport(), null, 2)
+      const text = `CMHK Usage 诊断包\n版本: ${V}\n生成: ${new Date().toLocaleString()}\n\n===== 最近刷新 =====\n${reportLine}\n\n===== 自动登录阶段（不含凭据） =====\n${autoLogin}\n\n===== 调试日志 =====\n${log}\n\n===== 当前缓存(已解析) =====\n${cache}\n${captures}\n\n===== 登录报文(密码已打码) =====${loginReqs || "\n(无)"}`
       const ok = await ShareSheet.present([text])
       if (!ok) setStatus("已取消导出")
     } catch (e) {
@@ -394,7 +416,11 @@ function Page() {
 
         {/* ===== 登入 ===== */}
         <Section header={<Text>登入</Text>}>
-          <Button title={webSession ? "重新網頁登入（已保存會話）" : "網頁登入 CMHK（推薦）"} action={handleWebLogin} />
+          <Button title="验证自动登录并刷新" action={handleVerifyAutoLogin} disabled={busy} />
+          <Text font="caption2" foregroundStyle="secondary">
+            使用已保存凭据建立独立会话，只有取得本次登录和用量响应才显示验证成功。
+          </Text>
+          <Button title={webSession ? "重新網頁登入（已保存會話）" : "網頁登入 CMHK"} action={handleWebLogin} />
           <Text font="caption" foregroundStyle="secondary">
             在打开的官网页面中登录并进入「用量查询」页面，脚本会自动捕获数据接口。
           </Text>
@@ -413,7 +439,7 @@ function Page() {
             }
           >
             <VStack alignment="leading" spacing={2}>
-              <Text>賬戶密碼（備選）</Text>
+              <Text>自動登入憑據</Text>
               <Text font="caption2" foregroundStyle="secondary">Keychain 憑據 · 清除帳戶 / 重置</Text>
             </VStack>
           </NavigationLink>
@@ -495,7 +521,7 @@ function PasswordPage(props: {
   status: string | null
 }) {
   return (
-    <List navigationTitle="賬戶密碼（備選）">
+    <List navigationTitle="自動登入憑據">
       <Section header={<Text>憑據（僅存本機 Keychain）</Text>}>
         <TextField title="手機號" value={props.phone} onChanged={props.setPhone} prompt="CMHK 手機號" />
         <SecureField title="MyLink 密碼" value={props.password} onChanged={props.setPassword}
@@ -508,7 +534,7 @@ function PasswordPage(props: {
       </Section>
       <Section header={<Text>說明</Text>}>
         <Text font="caption2" foregroundStyle="secondary">
-          保存憑據後，會話過期時腳本會在後台自動重新登入（遇驗證碼自動退回手動）；密碼僅存本機 Keychain，不寫日誌。
+          保存憑據後，App 可在沒有會話或會話過期時嘗試自動登入；返回主頁點「验证自动登录并刷新」可獨立驗證。遇驗證碼或待確認條款時需手動處理。
         </Text>
         {props.status && <Text font="caption" foregroundStyle="secondary">{props.status}</Text>}
       </Section>
@@ -577,6 +603,7 @@ function DiagnosticsPage(props: {
   const [captures, setCaptures] = useState(readCaptures())
   const [showCaptures, setShowCaptures] = useState(false)
   const report = readRefreshReport()
+  const autoLogin = readAutoLoginReport()
   return (
     <List navigationTitle="診斷中心">
       <Section header={<Text>刷新報告</Text>}>
@@ -590,6 +617,13 @@ function DiagnosticsPage(props: {
             刷新链路：手动接口 → 直连重放 → 页内捕获（加载官网页面截获其请求）→ 会话过期且有凭据时自动重登 → 登录时快取。小組件（系統每 30 分鐘重載）只能走直連/手動接口——若官網會話依賴 httpOnly Cookie，直連會失敗，組件會顯示緩存，直到 App 打開後完成一次完整刷新。
           </Text>
         </VStack>
+      </Section>
+      <Section header={<Text>自動登入驗證</Text>}>
+        <Text font="caption">
+          {autoLogin
+            ? `${new Date(autoLogin.startedAt).toLocaleTimeString()} · ${autoLogin.stage} · 独立会话${autoLogin.fresh ? "是" : "否"} · 登录请求${autoLogin.submitted ? "已观察" : "未观察"} · 登录${autoLogin.loginConfirmed ? "已确认" : "未确认"} · 用量${autoLogin.usageCaptured ? "已捕获" : "未捕获"}${autoLogin.reason ? ` · ${autoLogin.reason}` : ""}`
+            : "尚无自动登录记录"}
+        </Text>
       </Section>
       <Section header={<Text>導出</Text>}>
         <Button title="導出診斷包（發給開發者分析）" action={props.onExport} />
