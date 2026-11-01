@@ -3,7 +3,7 @@ import { GeometryReader, HStack, Image, PathShape, Spacer, Text, VStack, ZStack 
 import { countdownText, departTimestamp, durationText, gateLabel, isDepartureToday, monthDayText, weekdayText, type TripMode } from "../services/parse"
 import { displaySeat, getHideSeatNumber, type TripRecord } from "../services/trips"
 import { type Theme } from "../services/theme"
-import { railJourneyStops } from "../services/rail-stops"
+import { railJourneyStops, railStationState, type RailStationState } from "../services/rail-stops"
 import { ThemeBackground } from "./theme-background"
 
 const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
@@ -24,6 +24,23 @@ export function TripBadge({ trip, theme, now = Date.now() }: { trip: { code: str
       {trip.code || "—"}
     </Text>
   )
+}
+
+export function StationLabel({ name, state, theme, font = "caption" }: {
+  name: string; state?: RailStationState; theme: Theme; font?: "caption" | "caption2"
+}) {
+  const label = <Text font={font} foregroundStyle={theme.ink} lineLimit={1}>{name}</Text>
+  if (!state) return label
+  return <HStack alignment="top" spacing={3}>
+    <Text font={9} fontWeight="semibold" lineLimit={1}
+      foregroundStyle={theme.ink}
+      padding={{ top: 1, bottom: 1, leading: 2, trailing: 2 }}
+      frame={{ width: 13, height: 12 }} background={theme.accentSoft}
+      clipShape={{ type: "rect", cornerRadius: 3 }} offset={{ x: 0, y: -1 }}>
+      {{ origin: "起", intermediate: "过", terminal: "终" }[state]}
+    </Text>
+    {label}
+  </HStack>
 }
 
 function EmptyView({ theme }: { theme: Theme }) {
@@ -84,7 +101,7 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
             <Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{trip.departTime || "--:--"}</Text><Spacer />
           </HStack>
           <HStack spacing={0} frame={{ width: endpointWidth, height: 16 }}>
-            <Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>{trip.fromPlace || "未填出发地"}</Text><Spacer />
+            <StationLabel name={trip.fromPlace || "未填出发地"} state={railStationState(trip, trip.fromPlace)} theme={theme} /><Spacer />
           </HStack>
         </VStack>
         <VStack alignment="center" spacing={4} frame={{ width: durationWidth, height: 40 }}>
@@ -119,7 +136,7 @@ function TripBody({ trip, theme, width, height, now, hideSeatNumber }: { trip: T
             <Spacer /><Text font="headline" fontWeight="semibold" monospaced foregroundStyle={theme.ink} lineLimit={1}>{trip.arriveTime || "--:--"}</Text>
           </HStack>
           <HStack spacing={0} frame={{ width: endpointWidth, height: 16 }}>
-            <Spacer /><Text font="caption" foregroundStyle={theme.ink} lineLimit={1}>{trip.toPlace || "未填到达地"}</Text>
+            <Spacer /><StationLabel name={trip.toPlace || "未填到达地"} state={railStationState(trip, trip.toPlace)} theme={theme} />
           </HStack>
         </VStack>
       </HStack>

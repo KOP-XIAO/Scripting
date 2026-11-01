@@ -19,7 +19,7 @@ const code = esbuild.buildSync({
   jsxFactory: "jsx", jsxFragment: '"Fragment"',
 }).outputFiles[0].text
 vm.runInContext(code, context)
-const { TripWidget, TripWidgetPreview, TripBadge } = context.module.exports
+const { TripWidget, TripWidgetPreview, TripBadge, StationLabel } = context.module.exports
 const theme = { ink: "#173E35", sub: "#294A3E", accent: "#14654E", accentSoft: "rgba(20, 101, 78, 0.12)", badgeInk: "#FFFFFF", warn: "#854019", cardTop: "#DCEFE9", cardBottom: "#BFDCD2" }
 const stations = ["区间外甲", "上车站", "中间甲", "中间乙", "下车站", "区间外乙"]
 const trip = {
@@ -205,6 +205,54 @@ test("custom journey path keeps ring, separated arc and open tip within its fram
     tipLengths.push(Math.hypot(tip.x - wing.x, tip.y - wing.y).toFixed(10))
   }
   assert.equal(new Set(tipLengths).size, 1, "arrow tip retains its size as track stretches")
+})
+const stateBadges = tree => nodes(tree, n => n.type === "Text" && n.props.font === 9 && n.props.frame?.width === 13)
+const stateTrip = (fromState, toState) => ({ ...trip, railStationStates: { code: trip.code, stations: [
+  { station: trip.fromPlace, state: fromState }, { station: trip.toPlace, state: toState },
+] } })
+test("known train station states render separate raised badges within the original route rows", () => {
+  for (const [fromState, toState, labels] of [["origin", "terminal", ["起", "终"]], ["intermediate", "terminal", ["过", "终"]], ["intermediate", "intermediate", ["过", "过"]]]) {
+    for (const [width, height] of [[338, 158], [300, 150], [212, 124]]) {
+      const current = stateTrip(fromState, toState)
+      const tree = render({ trip: current, width, height })
+      const badges = stateBadges(tree)
+      assert.deepEqual(badges.map(b => b.props.children[0]), labels)
+      for (const badge of badges) {
+        assert.equal(badge.props.frame.height, 12)
+        assert.equal(badge.props.offset.y, -1)
+        assert.equal(badge.props.lineLimit, 1)
+      }
+      const route = nodes(tree, n => n.type === "HStack" && n.props.frame?.height === 40)[0]
+      assert.equal(route.props.children[0].props.frame.width, route.props.children[2].props.frame.width)
+      const departure = route.props.children[0].props.children[1]
+      const arrival = route.props.children[2].props.children[1]
+      assert.equal(departure.props.frame.height, 16)
+      assert.equal(arrival.props.frame.height, 16)
+      assert.equal(departure.props.children.at(-1).type, "Spacer")
+      assert.equal(arrival.props.children[0].type, "Spacer")
+      assert.equal(text(arrival).at(-1), current.toPlace)
+      assert.ok(text(tree).includes(current.fromPlace) && text(tree).includes(current.toPlace))
+    }
+  }
+})
+test("legacy, unknown, changed train and conflicting facts do not invent station badges", () => {
+  const current = stateTrip("intermediate", "terminal")
+  for (const sample of [trip, { ...current, code: "G4321" }, { ...current, mode: "flight" },
+    { ...current, fromPlace: "无状态甲", toPlace: "无状态乙" },
+    { ...current, railStationStates: { code: trip.code, stations: [] } }]) {
+    assert.equal(stateBadges(render({ trip: sample })).length, 0)
+  }
+  const conflict = { ...current, railStationStates: { ...current.railStationStates, stations: [
+    ...current.railStationStates.stations, { station: trip.fromPlace, state: "origin" },
+  ] } }
+  assert.deepEqual(stateBadges(render({ trip: conflict })).map(b => b.props.children[0]), ["终"])
+})
+test("small-widget station label preserves caption size and single-line station text", () => {
+  const label = expand(StationLabel({ name: "虚构很长的上车车站名", state: "intermediate", theme, font: "caption2" }))
+  assert.equal(stateBadges(label)[0].props.children[0], "过")
+  const station = nodes(label, n => n.type === "Text" && n.props.font === "caption2")[0]
+  assert.equal(station.props.lineLimit, 1)
+  assert.equal(station.props.children[0], "虚构很长的上车车站名")
 })
 test("arrival and seat rows share the date's trailing boundary", () => {
   const tree = render()

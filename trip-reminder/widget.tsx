@@ -12,7 +12,8 @@ import {
 } from "./services/parse"
 import { nextTrip } from "./services/trips"
 import { getTheme } from "./services/theme"
-import { TripWidget, TripBadge } from "./components/trip-widget"
+import { TripWidget, TripBadge, StationLabel } from "./components/trip-widget"
+import { railStationState } from "./services/rail-stops"
 
 const SCRIPT_NAME = "Trip Reminder"
 // 官方构造器：scripting://run_single/<name>（保证每次点按都重新执行入口文件）
@@ -87,9 +88,7 @@ function SmallView() {
             <Text font="title3" fontWeight="bold" monospaced foregroundStyle={theme.ink}>
               {trip.departTime || "--:--"}
             </Text>
-            <Text font="caption2" foregroundStyle={theme.ink} lineLimit={1}>
-              {trip.fromPlace || "—"}
-            </Text>
+            <StationLabel name={trip.fromPlace || "—"} state={railStationState(trip, trip.fromPlace)} theme={theme} font="caption2" />
             <Text font="caption2" foregroundStyle={theme.warn} lineLimit={1}>
               {countdownText(trip, now)}
             </Text>

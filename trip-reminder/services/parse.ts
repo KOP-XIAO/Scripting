@@ -2,8 +2,8 @@
 // 纯函数模块：不引用任何 Scripting 全局对象，可在 Node 里直接跑断言（tools/test-parse.cjs）。
 // 隐私：本模块只做字符串处理，不含任何网络请求；识别结果仅交给调用方写入本机 Storage。
 
-import { extractRailTimetable, stripRailStationMarker, type RailStop } from "./rail-stops"
-export { railJourneyStops, type RailStop } from "./rail-stops"
+import { extractRailTimetable, railStationMarkerState, stripRailStationMarker, type RailStop, type RailStationStates } from "./rail-stops"
+export { railJourneyStops, railStationState, type RailStop, type RailStationState } from "./rail-stops"
 
 export type TripMode = "rail" | "flight"
 
@@ -27,6 +27,7 @@ export type ParsedTrip = {
   seatClass: string // 二等座 / 经济舱
   passenger: string
   railStops?: RailStop[] // 完整识别表；显示时按用户区间裁剪
+  railStationStates?: RailStationStates // 显式徽章/标签，绑定识别时的车次与站名
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
@@ -133,20 +134,38 @@ const cleanPlace = (s: string) => {
 
 // 明确乘车区间优先；标记可能粘连、分隔、拆行，也可能两端都标「过」。
 const RAIL_PLACE = "((?:[起过终始发到]\\s*[·.、:：]?\\s*)?[\\u4e00-\\u9fa5]{2,12})"
-function parseRailPlaces(text: string): { from: string; to: string } {
+type RailPlaces = { from: string; to: string; stationStates: RailStationStates["stations"] }
+
+function recordStationState(stations: RailStationStates["stations"], raw: string, label?: "始发站" | "终到站") {
+  const station = cleanPlace(raw)
+  if (!station) return
+  const badge = railStationMarkerState(raw)
+  if (badge) stations.push({ station, state: badge })
+  if (label) stations.push({ station, state: label === "始发站" ? "origin" : "terminal" })
+}
+
+function parseRailPlaces(text: string): RailPlaces {
+  const stationStates: RailStationStates["stations"] = []
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
   const explicitFrom = text.match(new RegExp(`(?:乘车站|出发站)\\s*[:：]?\\s*${RAIL_PLACE}`))
   const explicitTo = text.match(new RegExp(`到达站\\s*[:：]?\\s*${RAIL_PLACE}`))
-  const arrow = text.match(new RegExp(`${RAIL_PLACE}\\s*(?:→|->|—|~|至|-)\\s*${RAIL_PLACE}`))
-  const from = cleanPlace(explicitFrom?.[1] ?? arrow?.[1] ?? "")
-  const to = cleanPlace(explicitTo?.[1] ?? arrow?.[2] ?? "")
-  if (from && to) return { from, to }
+  const arrows = [...text.matchAll(new RegExp(`${RAIL_PLACE}\\s*(?:→|->|—|~|至|-)\\s*${RAIL_PLACE}`, "g"))]
+  const from = cleanPlace(explicitFrom?.[1] ?? arrows[0]?.[1] ?? "")
+  const to = cleanPlace(explicitTo?.[1] ?? arrows[0]?.[2] ?? "")
+  for (const raw of [explicitFrom?.[1], explicitTo?.[1], ...arrows.flatMap((m) => [m[1], m[2]])]) {
+    if (raw) recordStationState(stationStates, raw)
+  }
+  for (const label of text.matchAll(new RegExp(`(?:^|[\\s|,，;；])(始发站|终到站)\\s*[:：]?\\s*${RAIL_PLACE}`, "g"))) {
+    if (/(?:非|不\s*是|并\s*非)\s*$/.test(text.slice(0, label.index))) continue
+    recordStationState(stationStates, label[2], label[1] as "始发站" | "终到站")
+  }
   const fromList: string[] = []
   const toList: string[] = []
   let labeledFrom = "", labeledTo = ""
   const push = (marker: string, raw: string) => {
     const name = cleanPlace(raw)
     if (!name) return
+    recordStationState(stationStates, raw)
     const list = marker === "终" || marker === "到" ? toList : fromList
     if (!list.includes(name)) list.push(name)
   }
@@ -155,6 +174,7 @@ function parseRailPlaces(text: string): { from: string; to: string } {
     const labeled = line.match(new RegExp(`^(出发站|始发站|乘车站|到达站|终到站)\\s*[:：]?\\s*${RAIL_PLACE}`))
     if (labeled) {
       const name = cleanPlace(labeled[2])
+      recordStationState(stationStates, labeled[2])
       if (/到达|终到/.test(labeled[1])) labeledTo ||= name
       else labeledFrom ||= name
       // 保留字段内的实际徽章，标签本身不能算作第二个站点。
@@ -178,7 +198,7 @@ function parseRailPlaces(text: string): { from: string; to: string } {
   }
   const origin = from || labeledFrom || fromList[0] || ""
   const badgeTo = fromList.length === 2 && fromList[0] === origin ? fromList[1] : ""
-  return { from: origin, to: to || labeledTo || toList[0] || badgeTo }
+  return { from: origin, to: to || labeledTo || toList[0] || badgeTo, stationStates }
 }
 
 // 机场：优先逐行找「出发 - 到达」区间（覆盖 北京首都T3 → 上海虹桥T2、成都天府T2 - 北京大兴），
@@ -214,35 +234,42 @@ const PLACE_STOPWORDS = /^(起|过|终|始|发|到|改签|退票|灵活行|乘�
 const PLACE_BAD_PART = /[0-9:：]|乘车|检票|座位|历时|出发|到达|时间|日期|车次|票价|信息|订单|起\s*售|终\s*止|售票|规则|说明|提示|须知|状态/
 
 // 用候选块位置兜底车站：站名在时间行下方（±0.14 内）左右各一个中文块
-function placesFromCandidates(candidates: OCRCandidateBlock[]): { from: string; to: string } {
-  if (!candidates.length) return { from: "", to: "" }
+function placesFromCandidates(candidates: OCRCandidateBlock[]): RailPlaces {
+  const stationStates: RailStationStates["stations"] = []
+  const empty = { from: "", to: "", stationStates }
   const timed = candidates.filter((c) => /^\d{2}:\d{2}$/.test(c.content.trim()))
-  if (!timed.length) return { from: "", to: "" }
+  if (!timed.length) return empty
   const timeY = timed[0].y + timed[0].h / 2
 
   const stationish = candidates.filter((c) => {
     const t = c.content.trim()
-    if (!/^[\u4e00-\u9fa5][\u4e00-\u9fa5]{1,9}[^\u4e00-\u9fa5]{0,2}$/.test(t)) return false
+    if (!/^(?:[起过终始发到]\s*[·.、:：]?\s*)?[\u4e00-\u9fa5]{2,10}[^\u4e00-\u9fa5]{0,2}$/.test(t)) return false
     if (!cleanPlace(t)) return false
     const dy = Math.abs(c.y + c.h / 2 - timeY)
     return dy > 0.04 && dy < 0.14
   })
-  if (!stationish.length) return { from: "", to: "" }
+  if (!stationish.length) return empty
   stationish.sort((a, b) => a.x + a.w / 2 - (b.x + b.w / 2))
+  for (const block of stationish) {
+    recordStationState(stationStates, block.content)
+    for (const badge of candidates) {
+      const gap = block.x - (badge.x + badge.w)
+      const dy = Math.abs(block.y + block.h / 2 - badge.y - badge.h / 2)
+      if (/^[起过终始]$/.test(badge.content.trim()) && gap >= -0.01 && gap < 0.06 && dy < 0.025) {
+        recordStationState(stationStates, `${badge.content.trim()} ${block.content}`)
+      }
+    }
+  }
   const from = cleanPlace(stationish[0].content)
   const to = cleanPlace(stationish[stationish.length - 1].content)
-  return { from, to }
+  return { from, to, stationStates }
 }
 
 function parseRail(text: string, flat: string, now: Date, candidates: OCRCandidateBlock[] = []): ParsedTrip {
-  let places = parseRailPlaces(text)
-  if (!places.from || !places.to) {
-    const positional = placesFromCandidates(candidates)
-    places = {
-      from: places.from || positional.from,
-      to: places.to || positional.to,
-    }
-  }
+  const main = parseRailPlaces(text)
+  const positional = placesFromCandidates(candidates)
+  const places = { from: main.from || positional.from, to: main.to || positional.to }
+  const stationStates = [...main.stationStates, ...positional.stationStates]
   const times = pickTime(flat)
   const code = (flat.match(/\b([GDCZTKY]\s?\d{1,4})\b/) ?? ["", ""])[1].replace(/\s+/g, "")
   const carrier = (flat.match(/(复兴号|和谐号|智能动车组|绿巨人)/) ?? ["", ""])[1]
@@ -271,6 +298,7 @@ function parseRail(text: string, flat: string, now: Date, candidates: OCRCandida
   return {
     mode: "rail",
     code,
+    ...(stationStates.length ? { railStationStates: { code, stations: stationStates } } : {}),
     carrier,
     fromPlace: places.from,
     toPlace: places.to,
@@ -364,7 +392,12 @@ export function parseTripText(
   const flat = text.replace(/\n/g, " ")
   const mode = modeHint === "auto" ? detectMode(normalized) : modeHint
   const trip = mode === "flight" ? parseFlight(text, flat, now) : parseRail(text, flat, now, table.hasTable ? [] : candidates)
-  if (mode === "rail" && table.stops.length) trip.railStops = table.stops
+  if (mode === "rail") {
+    if (table.stops.length) trip.railStops = table.stops
+    const stations = [...(trip.railStationStates?.stations ?? []), ...table.stationStates]
+      .filter((fact, i, facts) => facts.findIndex((other) => other.station === fact.station && other.state === fact.state) === i)
+    if (stations.length) trip.railStationStates = { code: trip.code, stations }
+  }
   return trip
 }
 

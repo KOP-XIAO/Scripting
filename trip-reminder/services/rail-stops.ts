@@ -1,3 +1,6 @@
+export type RailStationState = "origin" | "intermediate" | "terminal"
+export type RailStationStates = { code: string; stations: Array<{ station: string; state: RailStationState }> }
+
 // Timetable recognition is gated by an explicit screenshot section heading.
 export type RailStop = {
   station: string
@@ -6,6 +9,7 @@ export type RailStop = {
   stopMinutes?: number
   // Relative to the first table event; an overnight dwell uses its arrival day.
   dayOffset?: number
+  state?: RailStationState
 }
 
 type RailJourney = { mode?: string; fromPlace: string; toPlace: string; railStops?: RailStop[] }
@@ -20,6 +24,28 @@ export function stripRailStationMarker(raw: string): string {
 
 const stationKey = (name: string) => stripRailStationMarker(name).replace(/站$/, "")
 
+export function railStationMarkerState(raw: string): RailStationState | undefined {
+  const name = raw.trim()
+  if (stripRailStationMarker(name) === name) return undefined
+  return name[0] === "起" || name[0] === "始" ? "origin"
+    : name[0] === "过" ? "intermediate" : name[0] === "终" ? "terminal" : undefined
+}
+
+export function railStationState(
+  trip: { mode?: string; code: string; railStationStates?: RailStationStates },
+  station: string,
+): RailStationState | undefined {
+  const metadata = trip.railStationStates
+  if (trip.mode !== "rail" || !metadata || metadata.code !== trip.code || !Array.isArray(metadata.stations)) return undefined
+  const key = stationKey(station)
+  if (!key) return undefined
+  const states = new Set(metadata.stations
+    .filter((fact) => fact && typeof fact.station === "string" && stationKey(fact.station) === key)
+    .map((fact) => fact.state))
+  const state = states.size === 1 ? states.values().next().value : undefined
+  return state === "origin" || state === "intermediate" || state === "terminal" ? state : undefined
+}
+
 export function railJourneyStops(trip: RailJourney): RailStop[] {
   if (trip.mode && trip.mode !== "rail") return []
   const stops = trip.railStops ?? []
@@ -32,7 +58,7 @@ export function railJourneyStops(trip: RailJourney): RailStop[] {
 
 const SECTION = /经停站|经停信息|列车时刻表|时刻表/g
 const SLOT = "(?:[0-2]?\\d:[0-5]\\d|--|—|始发|终到)"
-const ROW = new RegExp(`^\\s*(?:\\d{1,3}[.、]?\\s+)?(?:[起始过终发到](?:\\s*[·.、:：]\\s*|\\s+))?([\\u4e00-\\u9fa5]{2,12})\\s+(${SLOT})\\s+(${SLOT})(?:[ \\t]*(?:\\n[ \\t]*)?(?:停留\\s*[:：]?\\s*)?(\\d{1,3})\\s*(?:分钟|分))?(?=\\s|$)`)
+const ROW = new RegExp(`^\\s*(?:\\d{1,3}[.、]?\\s+)?((?:[起始过终发到](?:\\s*[·.、:：]\\s*|\\s+))?[\\u4e00-\\u9fa5]{2,12})\\s+(${SLOT})\\s+(${SLOT})(?:[ \\t]*(?:\\n[ \\t]*)?(?:停留\\s*[:：]?\\s*)?(\\d{1,3})\\s*(?:分钟|分))?(?=\\s|$)`)
 const HEADER = /^(?:站序|序号|站名|车站|到达时间|到站时间|到时|到达|出发时间|发车时间|开车时间|发车|开车|发时|出发|停留时间|停站时间|停留|停站|站点|时间|\s|[|:：])+$/
 const NOT_STATION = /站序|序号|站名|到达|出发|发车|开车|停留|停站|时间|检票|乘车|订单|车票|行程|日期|起售|终止|售票|规则|说明|提示|须知|状态/
 
@@ -43,8 +69,9 @@ function timeValue(raw: string): string {
 
 // End the table only at recognizable ticket content. Damaged rows must not leak times.
 const TICKET_START = /^(?:[GDCZTKY]\s?\d{1,4}\b|车次|乘车站|出发站|到达站|始发站|终到站|乘车人|检票口|座位|订单|行程|\d{4}[-/年]\d|\d{1,2}月\d)|[→]|[\u4e00-\u9fa5]{2,12}\s*(?:->|至|—|~)\s*[\u4e00-\u9fa5]{2,12}/
-export function extractRailTimetable(text: string): { text: string; hasTable: boolean; stops: RailStop[] } {
+export function extractRailTimetable(text: string): { text: string; hasTable: boolean; stops: RailStop[]; stationStates: RailStationStates["stations"] } {
   const stops: RailStop[] = []
+  const stationStates: RailStationStates["stations"] = []
   let primary = "", last = 0, match: RegExpExecArray | null
   SECTION.lastIndex = 0
   while ((match = SECTION.exec(text)) !== null) {
@@ -73,6 +100,15 @@ export function extractRailTimetable(text: string): { text: string; hasTable: bo
       }
       const stop: RailStop = { station: stripRailStationMarker(row[1]), arrival, departure }
       if (row[4] != null) stop.stopMinutes = Number(row[4])
+      const states = new Set<RailStationState>()
+      const badge = railStationMarkerState(row[1])
+      if (badge) states.add(badge)
+      for (const slot of [row[2], row[3]]) {
+        if (slot === "始发") states.add("origin")
+        if (slot === "终到") states.add("terminal")
+      }
+      for (const state of states) stationStates.push({ station: stop.station, state })
+      if (states.size === 1) stop.state = states.values().next().value
       stops.push(stop)
       cursor += row[0].length
     }
@@ -94,5 +130,5 @@ export function extractRailTimetable(text: string): { text: string; hasTable: bo
     }
     if (arrivalDay != null) stop.dayOffset = arrivalDay
   }
-  return { text: primary, hasTable: last > 0, stops }
+  return { text: primary, hasTable: last > 0, stops, stationStates }
 }
