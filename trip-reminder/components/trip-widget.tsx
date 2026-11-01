@@ -26,19 +26,25 @@ export function TripBadge({ trip, theme, now = Date.now() }: { trip: { code: str
   )
 }
 
+export function StationStateBadge({ state, theme }: { state?: RailStationState; theme?: Theme }) {
+  if (!state) return null
+  return <Text font={9} fontWeight="semibold" lineLimit={1}
+    foregroundStyle={theme?.ink ?? "label"}
+    padding={{ top: 1, bottom: 1, leading: 2, trailing: 2 }}
+    frame={{ width: 13, height: 12 }} background={theme?.accentSoft ?? "rgba(127,127,127,0.12)"}
+    clipShape={{ type: "rect", cornerRadius: 3 }} offset={{ x: 0, y: -1 }}
+    accessibilityLabel={{ origin: "始发站", intermediate: "经停站", terminal: "终点站" }[state]}>
+    {{ origin: "起", intermediate: "过", terminal: "终" }[state]}
+  </Text>
+}
+
 export function StationLabel({ name, state, theme, font = "caption" }: {
   name: string; state?: RailStationState; theme: Theme; font?: "caption" | "caption2"
 }) {
   const label = <Text font={font} foregroundStyle={theme.ink} lineLimit={1}>{name}</Text>
   if (!state) return label
   return <HStack alignment="top" spacing={3}>
-    <Text font={9} fontWeight="semibold" lineLimit={1}
-      foregroundStyle={theme.ink}
-      padding={{ top: 1, bottom: 1, leading: 2, trailing: 2 }}
-      frame={{ width: 13, height: 12 }} background={theme.accentSoft}
-      clipShape={{ type: "rect", cornerRadius: 3 }} offset={{ x: 0, y: -1 }}>
-      {{ origin: "起", intermediate: "过", terminal: "终" }[state]}
-    </Text>
+    <StationStateBadge state={state} theme={theme} />
     {label}
   </HStack>
 }

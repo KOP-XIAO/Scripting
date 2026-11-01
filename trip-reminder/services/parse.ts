@@ -260,15 +260,35 @@ function placesFromCandidates(candidates: OCRCandidateBlock[]): RailPlaces {
       }
     }
   }
-  const from = cleanPlace(stationish[0].content)
-  const to = cleanPlace(stationish[stationish.length - 1].content)
-  return { from, to, stationStates }
+  const first = stationish[0], last = stationish[stationish.length - 1]
+  const stationAt = (block: OCRCandidateBlock) => {
+    const name = cleanPlace(block.content)
+    const ambiguous = stationish.some((other) => cleanPlace(other.content) !== name &&
+      block.x < other.x + other.w && other.x < block.x + block.w &&
+      block.y < other.y + other.h && other.y < block.y + block.h)
+    return ambiguous ? "" : name
+  }
+  const from = stationAt(first), to = stationAt(last)
+  if (from === to) {
+    const columns = timed.filter((block) => Math.abs(block.y + block.h / 2 - timeY) < 0.025).sort((a, b) => a.x - b.x)
+    if (!from || stationish.some((block) => cleanPlace(block.content) !== from) || columns.length !== 2 ||
+      columns[0].x + columns[0].w > columns[1].x) return empty
+    const overlaps = (station: OCRCandidateBlock, time: OCRCandidateBlock) => station.x < time.x + time.w && time.x < station.x + station.w
+    const inColumn = (i: number) => stationish.every((block) => overlaps(block, columns[i]) && !overlaps(block, columns[1 - i]))
+    // A single station needs independent column evidence; duplicates cannot establish a second endpoint.
+    return { from: inColumn(0) ? from : "", to: inColumn(1) ? to : "", stationStates }
+  }
+  return { from, to: first.x + first.w <= last.x ? to : "", stationStates }
 }
 
 function parseRail(text: string, flat: string, now: Date, candidates: OCRCandidateBlock[] = []): ParsedTrip {
   const main = parseRailPlaces(text)
+  if (main.from && main.from === main.to) main.to = ""
   const positional = placesFromCandidates(candidates)
-  const places = { from: main.from || positional.from, to: main.to || positional.to }
+  const places = {
+    from: main.from || (positional.from !== main.to ? positional.from : ""),
+    to: main.to || (positional.to !== main.from ? positional.to : ""),
+  }
   const stationStates = [...main.stationStates, ...positional.stationStates]
   const times = pickTime(flat)
   const code = (flat.match(/\b([GDCZTKY]\s?\d{1,4})\b/) ?? ["", ""])[1].replace(/\s+/g, "")

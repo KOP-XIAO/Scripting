@@ -135,4 +135,23 @@ test("seat preference tolerates missing, malformed and failed storage", () => {
     assert.equal(reloads, 0)
   }
 })
+test("target deletion preserves other records and never writes an unreadable list", () => {
+  const original = [trip("active", { departDate: "2099-06-18", note: "active stays" }),
+    trip("remove", { departDate: "2099-06-18", archivedAt: "2026-11-01T00:00:00Z" }),
+    trip("keep-archive", { departDate: "2099-06-18", archivedAt: "2026-11-01T00:00:00Z", note: "archive stays" })]
+  reset(original)
+  failRead = true
+  T.deleteTrip("remove")
+  assert.deepEqual(values.get("rail.trips"), original)
+  assert.equal(writes, 0)
+  for (const failure of ["false", "throw"]) {
+    reset(original); failWrite = failure
+    assert.deepEqual(T.deleteTrip("remove"), original)
+    assert.deepEqual(values.get("rail.trips"), original)
+  }
+  reset(original)
+  assert.deepEqual(T.deleteTrip("remove"), [original[0], original[2]])
+  assert.deepEqual(values.get("rail.trips"), [original[0], original[2]])
+  assert.equal(reloads, 1)
+})
 console.log(`Passed ${count} trip-service checks.`)

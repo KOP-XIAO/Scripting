@@ -21,6 +21,8 @@ require.extensions[".ts"] = (mod, filename) => {
 const P = require(path.join(root, "services/parse.ts"))
 const parse = (text, candidates = []) => P.parseTripText(text, new Date("2026-10-01T09:00:00"), "auto", candidates)
 const stations = (stops) => stops.map((stop) => stop.station)
+const block = (content, x, y = 0.58, w = 0.18) => ({content, x, y, w, h: 0.06})
+const timeBlocks = [block("09:00", 0.05, 0.68), block("09:18", 0.75, 0.68)]
 const ticket = "G1234\n乘车站：始兴站\n到达站：广州南站\n2026-10-12\n23:40\n01:20\n检票口 3B"
 const rows = "北京南 始发 21:00\n始兴 23:38 23:40 停留2分\n韶关 00:10 00:10 0分\n广州南 01:20 01:25 5分\n深圳北 02:00 终到"
 let count = 0
@@ -179,6 +181,96 @@ test("positional OCR candidates clean badges without mutating source blocks or t
   assert.equal(trip.toPlace, "香港西九龙")
   assert.equal(JSON.stringify(candidates), before)
   assert.equal(P.normalizeOCR("过深圳北\n终香港西九龙"), "过深圳北\n终香港西九龙")
+})
+test("one positional station cannot supply both endpoints or replace a known arrival", () => {
+  for (const x of [0.10, 0.70]) {
+    const candidates = [...timeBlocks, block("过深圳北站", x)]
+    const before = JSON.stringify(candidates)
+    for (const [route, expected] of [["", x < 0.5 ? ["深圳北", ""] : ["", "深圳北"]], ["过深圳北", ["深圳北", ""]], ["到达站：深圳北", ["", "深圳北"]]]) {
+      const trip = parse(`G1234\n${route}\n09:00\n09:18`, candidates)
+      assert.deepEqual([trip.fromPlace, trip.toPlace], expected, route)
+      assert.ok(P.missingFields(trip).includes(expected[0] ? "到达车站" : "出发车站"))
+      assert.equal(P.railStationState(trip, "深圳北"), "intermediate")
+      assert.equal(trip.railStationStates.code, "G1234")
+      assert.equal(trip.departTime, "09:00")
+      assert.equal(trip.arriveTime, "09:18")
+    }
+    assert.equal(JSON.stringify(candidates), before)
+  }
+})
+test("single-station direction requires two aligned time columns and an unambiguous horizontal match", () => {
+  for (const [clocks, station, expected] of [
+    [timeBlocks, block("过深圳北", 0.10), ["深圳北", ""]],
+    [[...timeBlocks].reverse(), block("过深圳北", 0.70), ["", "深圳北"]],
+    [timeBlocks, block("过深圳北", 0.40), ["", ""]],
+    [timeBlocks, block("过深圳北", 0.10, 0.58, 0.80), ["", ""]],
+    [[timeBlocks[0]], block("过深圳北", 0.10), ["", ""]],
+    [[timeBlocks[0], block("09:18", 0.75, 0.72)], block("过深圳北", 0.70), ["", ""]],
+  ]) {
+    const candidates = [...clocks, station], before = JSON.stringify(candidates)
+    const trip = parse("G1234\n09:00\n09:18", candidates)
+    assert.deepEqual([trip.fromPlace, trip.toPlace], expected)
+    assert.equal(P.railStationState(trip, "深圳北"), "intermediate")
+    assert.equal(JSON.stringify(candidates), before)
+  }
+  const knownFrom = parse("G1234\n乘车站：深圳北\n09:00\n09:18", [...timeBlocks, block("深圳东", 0.70)])
+  assert.deepEqual([knownFrom.fromPlace, knownFrom.toPlace], ["深圳北", "深圳东"])
+  const knownTo = parse("G1234\n到达站：深圳东\n09:00\n09:18", [...timeBlocks, block("深圳北", 0.10)])
+  assert.deepEqual([knownTo.fromPlace, knownTo.toPlace], ["深圳北", "深圳东"])
+})
+test("duplicate station blocks and normalized aliases leave the other endpoint missing", () => {
+  for (const x of [0.10, 0.12, 0.70]) {
+    const candidates = [...timeBlocks, block("过深圳北", 0.10), block("深圳北站", x)]
+    for (const [route, expected] of [["", x < 0.5 ? ["深圳北", ""] : ["", ""]], ["乘车站：深圳北", ["深圳北", ""]], ["到达站：深圳北站", ["", "深圳北"]]]) {
+      const trip = parse(`G1234\n${route}\n09:00\n09:18`, candidates)
+      assert.deepEqual([trip.fromPlace, trip.toPlace], expected, `${route}, x=${x}`)
+    }
+  }
+})
+test("overlapping OCR alternatives cannot invent an endpoint; identical overlaps retain valid routes", () => {
+  for (const route of ["", "乘车站：深圳北", "到达站：深圳东"]) {
+    const trip = parse(`G1234\n${route}\n09:00\n09:18`, [...timeBlocks, block("深圳北", 0.10), block("深圳东", 0.12)])
+    assert.deepEqual([trip.fromPlace, trip.toPlace], route.startsWith("乘车") ? ["深圳北", ""] : route ? ["", "深圳东"] : ["", ""])
+  }
+  const uncertainArrival = parse("G1234\n过深圳北\n09:00\n09:18", [...timeBlocks,
+    block("深圳北", 0.10), block("香港西九龙", 0.70), block("深圳东", 0.72)])
+  assert.deepEqual([uncertainArrival.fromPlace, uncertainArrival.toPlace], ["深圳北", ""])
+  const valid = parse("G1234\n过深圳北\n09:00\n09:18", [...timeBlocks,
+    block("过深圳北", 0.10), block("深圳北站", 0.12), block("香港西九龙", 0.70)])
+  assert.deepEqual([valid.fromPlace, valid.toPlace], ["深圳北", "香港西九龙"])
+})
+test("partial main routes preserve direction; distinct same-city routes and complete main routes survive", () => {
+  const candidates = [...timeBlocks, block("深圳北站", 0.10), block("深圳东", 0.70)]
+  for (const [route, expected] of [
+    ["", ["深圳北", "深圳东"]], ["乘车站：深圳北", ["深圳北", "深圳东"]], ["到达站：深圳东站", ["深圳北", "深圳东"]],
+    ["乘车站：深圳东", ["深圳东", ""]], ["到达站：深圳北", ["", "深圳北"]],
+    ["深圳北站 → 深圳东站", ["深圳北", "深圳东"]], ["福田 → 香港西九龙", ["福田", "香港西九龙"]],
+  ]) {
+    const trip = parse(`G1234\n${route}\n09:00\n09:18`, candidates)
+    assert.deepEqual([trip.fromPlace, trip.toPlace], expected, route)
+  }
+  const complete = parse("G1234\n深圳北 → 深圳东\n09:00\n09:18", [...timeBlocks, block("深圳北", 0.10)])
+  assert.deepEqual([complete.fromPlace, complete.toPlace], ["深圳北", "深圳东"])
+})
+test("identical main stations leave arrival missing or recover only from a safe distinct positional pair", () => {
+  for (const route of [
+    "深圳北 → 深圳北", "过深圳北站 → 终深圳北", "深圳北站 → 深圳北",
+    "乘车站：深圳北站\n到达站：深圳北", "出发站：过深圳北\n到达站：终深圳北站",
+    "过深圳北\n终深圳北站", "起 深圳北站\n终 深圳北",
+  ]) {
+    const raw = `G1234\n${route}\n09:00\n09:18`
+    const missing = parse(raw)
+    assert.deepEqual([missing.fromPlace, missing.toPlace], ["深圳北", ""], route)
+    assert.ok(P.missingFields(missing).includes("到达车站"))
+    const recovered = parse(raw, [...timeBlocks, block("深圳北站", 0.10), block("深圳东", 0.70)])
+    assert.deepEqual([recovered.fromPlace, recovered.toPlace], ["深圳北", "深圳东"], route)
+    assert.equal(P.missingFields(recovered).includes("到达车站"), false)
+    assert.equal(recovered.departTime, "09:00")
+    assert.equal(recovered.arriveTime, "09:18")
+    assert.deepEqual(recovered.railStationStates, missing.railStationStates)
+    const reversed = parse(raw, [...timeBlocks, block("深圳东", 0.10), block("深圳北", 0.70)])
+    assert.deepEqual([reversed.fromPlace, reversed.toPlace], ["深圳北", ""], route)
+  }
 })
 test("timetable badges are removed with suffixes, clocks and passenger interval retained", () => {
   for (const table of [

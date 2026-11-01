@@ -44,10 +44,10 @@ trip-reminder/
 ├── utils/common.ts      # 版本号
 └── tools/
     ├── test-parse.cjs   # 解析器离线断言（假数据，16 组）
-    ├── test-rail-stops.cjs # 站名标记、时刻表与区间裁切断言（17 组）
+    ├── test-rail-stops.cjs # 端点去重、方向、站名与时刻表（23 组）
     ├── test-station-states.cjs # 起／过／终状态、冲突、保存与兼容（16 组）
-    ├── test-review-states.cjs # 实际 App 识别核对、编辑与保存入口（6 组）
-    ├── test-trips.cjs   # 存储、归档与小组件选择断言
+    ├── test-review-states.cjs # 实际 App 核对标记、编辑、保存及归档滑动删除（9 组）
+    ├── test-trips.cjs   # 存储、归档、定向删除与小组件选择（9 组）
     ├── test-widget-stops.cjs # 站点状态、经停、日期强调、轨迹与隐私（14 组）
     └── test-themes.cjs # 八套主题持久化与新主题强调色可读性
 ```
@@ -71,8 +71,8 @@ https://raw.githubusercontent.com/KOP-XIAO/Scripting/main/trip-reminder.scriptin
 ## 开发
 
 ```bash
-# 改完后同步到仓库并打包（与其它项目同一套流程）
-bash ~/Documents/Scripting/sync.sh trip-reminder
+# 在源码项目目录运行核对、保存与归档滑动删除入口回归
+NODE_PATH=<含 esbuild 的 node_modules> node tools/test-review-states.cjs
 
 # 解析器离线测试（需要 esbuild）
 NODE_PATH=<含 esbuild 的 node_modules> node tools/test-parse.cjs
@@ -81,10 +81,17 @@ NODE_PATH=<含 esbuild 的 node_modules> node tools/test-parse.cjs
 ## 归档与小组件（v1.3.0）
 
 - 行程左滑可选择归档、删除、编辑。归档保留完整记录，退出当前行程和小组件候选。
-- 点「查看归档记录」进入只读历史视图；清空未归档行程不会删除归档。
+- 点「查看归档记录」回看行程；v1.6.12 起可左滑删除单条记录。清空未归档行程不会删除归档。
 - 倒计时统一显示「4 天｜11 小时」；不足 24 小时时显示「4 小时｜38 分」。
 - 时间表旁显示行程时长（如「｜1 小时 24 分」），检票口/登机口和座位用大字号突出。
 - 已填历时优先；缺失时根据钟点差推算跨午夜时长。跨时区航班请填写实际历时。
+
+## 端点纠错、独立标记与归档删除（v1.6.12）
+
+- 修复单个车站候选被同时填到出发和到达的问题。重复别名、重叠歧义及主文本重复指向同一站时，保留可靠的一端，缺失的一端留空；有不同站点的安全证据时再补齐。单站候选按同一行左右时间列定位，方向不明时不猜测；「深圳北 → 深圳东」等同城不同站区间可正常识别。
+- 核对表单改为独立圆角「起／过／终」小标记，复用小组件的徽章组件；系统自适应色适配表单，辅助功能朗读完整含义。车站输入继续保存干净站名，未知显示「未识别」。
+- 归档记录支持左滑后点红色「删除」，删除后同步更新归档列表、空状态和首页数量，保留其他记录。删除前检查读取结果，读取失败时不回写空列表。
+- 87 组回归通过：23 组端点／时刻表、16 组原解析、16 组状态、9 组 App 入口、14 组小组件、9 组行程服务；两个入口编译通过。实际 Vision 选图和 iPhone 原生排版／滑动仍需复验。已经保存的错误区间请重新识别或手动更正。
 
 ## 识别核对页的站点状态（v1.6.11）
 

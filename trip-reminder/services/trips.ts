@@ -75,7 +75,11 @@ export function upsertTrip(trip: TripRecord): TripRecord[] {
 }
 
 export function deleteTrip(id: string): TripRecord[] {
-  write(read().filter((t) => t.id !== id))
+  // 读取失败不能当作空列表回写，否则会删除无关记录。
+  let stored: unknown
+  try { stored = Storage.get<TripRecord[]>(KEY) } catch { return listTrips() }
+  if (!Array.isArray(stored)) return listTrips()
+  write(stored.filter((t) => t && typeof t === "object" && t.id !== id))
   return listTrips()
 }
 

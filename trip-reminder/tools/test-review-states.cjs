@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Execute the real OCR -> root View -> save workflow with native APIs kept in memory.
+// Execute real OCR -> review -> save and archive deletion with native APIs kept in memory.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -12,7 +12,7 @@ let bundled;
 
 async function compile() {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse"; export { StationStateBadge } from "./components/trip-widget";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false,
     external: ['scripting'], jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });
@@ -20,17 +20,18 @@ async function compile() {
   bundled = result.outputFiles[0].text;
 }
 
-function fixture(text) {
-  const storage = new Map(), states = [];
-  let cursor = 0, root, tree, reloads = 0, picks = 0, recognitions = 0;
+function fixture(text = '', { candidates = [], trips = [] } = {}) {
+  const storage = new Map(), rootStates = [];
+  if (trips.length) storage.set('rail.trips', JSON.parse(JSON.stringify(trips)));
+  let states = rootStates, cursor = 0, root, tree, reloads = 0, picks = 0, recognitions = 0;
   const native = new Proxy({
     __esModule: false,
     Navigation: { present: async ({ element }) => { root = element; }, useDismiss: () => () => {} },
     Script: { exit() {} },
     useState(initial) {
-      const index = cursor++;
-      if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
-      return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }];
+      const bag = states, index = cursor++;
+      if (!(index in bag)) bag[index] = typeof initial === 'function' ? initial() : initial;
+      return [bag[index], value => { bag[index] = typeof value === 'function' ? value(bag[index]) : value; }];
     },
     useEffect() {},
     useObservable: () => ({ value: 'home' }),
@@ -44,18 +45,21 @@ function fixture(text) {
     Widget: { reloadAll() { reloads++; } },
     Photos: { pick: async () => { picks++; return [{ uiImage: async () => ({}) }]; } },
     PHPickerFilter: { images: () => 'mock-images' },
-    Vision: { recognizeText: async () => { recognitions++; return { text }; } },
+    Vision: { recognizeText: async () => { recognitions++; return { text, candidates }; } },
     Dialog: { alert: async options => { throw new Error(`Unexpected alert: ${JSON.stringify(options)}`); } },
   };
   sandbox.exports = sandbox.module.exports;
   vm.runInNewContext(bundled, sandbox, { filename: 'review-states-memory.cjs' });
   assert.equal(typeof root?.type, 'function', 'Navigation.present must capture the actual root View');
-  const render = () => { cursor = 0; tree = root.type(root.props); return tree; };
-  // Child components stay opaque: review fields are already nodes in the root output.
+  const { StationStateBadge } = sandbox.module.exports;
+  const render = () => { states = rootStates; cursor = 0; tree = root.type(root.props); return tree; };
+  // Only the pure badge expands; every other child component stays opaque.
   const nodes = (value = tree) => {
     if (!value || typeof value !== 'object') return [];
     if (Array.isArray(value)) return value.flatMap(item => nodes(item));
     if (!value.type || !value.props) return [];
+    if (value.type === StationStateBadge) return [value, ...nodes(StationStateBadge(value.props))];
+    if (typeof value.type === 'function') return [value];
     return [value, ...Object.values(value.props).flatMap(item => nodes(item))];
   };
   const one = (type, title) => {
@@ -63,11 +67,26 @@ function fixture(text) {
     assert.equal(found.length, 1, `expected one ${type} titled ${title}`);
     return found[0];
   };
-  const texts = () => nodes().filter(node => node.type === 'Text').map(node => node.props.children.flat(Infinity).join(''));
+  const texts = (value = tree) => nodes(value).filter(node => node.type === 'Text').map(textContent);
   render();
   return {
-    storage, render, nodes, texts, one,
+    storage, render, nodes, texts, one, StationStateBadge,
     parse: () => sandbox.module.exports.parseTripText(text),
+    mountArchive() {
+      const links = nodes().filter(node => node.type === 'NavigationLink' &&
+        texts(node.props.children).some(text => /^查看归档记录（\d+）$/.test(text)));
+      assert.equal(links.length, 1, 'must open the actual archive navigation link');
+      const destination = links[0].props.destination, archiveStates = [];
+      assert.equal(typeof destination?.type, 'function', 'archive destination must be the real ArchivePage');
+      let archiveTree;
+      const renderArchive = () => {
+        states = archiveStates; cursor = 0;
+        archiveTree = destination.type(destination.props);
+        return archiveTree;
+      };
+      renderArchive();
+      return { render: renderArchive, nodes: () => nodes(archiveTree), texts: () => texts(archiveTree) };
+    },
     get reloads() { return reloads; },
     async ocr() {
       one('Button', '从相册选行程截图识别').props.action();
@@ -82,8 +101,41 @@ function fixture(text) {
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
+const textContent = node => node.props.children.flat(Infinity).join('');
 function label(f, expected) {
   assert.ok(f.texts().includes(expected), `missing visible review label: ${expected}`);
+}
+function badgeText(f, badge, glyph) {
+  const texts = f.nodes(badge).filter(node => node.type === 'Text');
+  assert.equal(texts.length, 1, 'a station badge must render one native Text');
+  const text = texts[0];
+  assert.equal(textContent(text), glyph);
+  assert.equal(text.props.font, 9);
+  assert.equal(text.props.frame?.width, 13);
+  assert.equal(text.props.frame?.height, 12);
+  assert.equal(text.props.clipShape?.type, 'rect');
+  assert.equal(text.props.clipShape?.cornerRadius, 3);
+  assert.equal(text.props.offset?.y, -1);
+  return text;
+}
+function fieldState(f, title, glyph) {
+  const field = f.one('TextField', title);
+  const columns = f.nodes().filter(node => node.type === 'VStack' && node.props.children.flat(Infinity).includes(field));
+  assert.equal(columns.length, 1, `${title} must have its own field column`);
+  const headers = columns[0].props.children.flat(Infinity).filter(node => node?.type === 'HStack' &&
+    f.texts(node).includes(title));
+  assert.equal(headers.length, 1, `${title} must have a plain label in its own header HStack`);
+  const header = headers[0], badges = f.nodes(header).filter(node => node.type === f.StationStateBadge);
+  assert.equal(f.texts(columns[0]).some(text => text.startsWith(`${title} ·`)), false, 'status cannot be appended to the field label');
+  if (glyph === '未识别') {
+    assert.equal(badges.length, 0, `${title} must not show a badge without a matching fact`);
+    assert.equal(f.texts(header).filter(text => text === '未识别').length, 1);
+  } else {
+    assert.equal(badges.length, 1, `${title} must show its actual StationStateBadge`);
+    assert.equal(badges[0].props.state, { 起: 'origin', 过: 'intermediate', 终: 'terminal' }[glyph]);
+    assert.equal(f.texts(header).includes('未识别'), false);
+    badgeText(f, badges[0], glyph);
+  }
 }
 
 test('OCR review shows intermediate departure and terminal arrival before save', async () => {
@@ -97,16 +149,16 @@ test('OCR review shows intermediate departure and terminal arrival before save',
   assert.equal(f.storage.has('rail.trips'), false, 'review must precede saving');
   assert.equal(f.one('TextField', '出发车站').props.value, '深圳北');
   assert.equal(f.one('TextField', '到达车站').props.value, '香港西九龙');
-  label(f, '出发车站 · 过');
-  label(f, '到达车站 · 终');
+  fieldState(f, '出发车站', '过');
+  fieldState(f, '到达车站', '终');
   label(f, LEGEND);
 });
 
 test('origin and intermediate badges stay attached to the correct endpoint', async () => {
   const f = fixture(screenshot('起深圳北 → 过香港西九龙'));
   await f.ocr();
-  label(f, '出发车站 · 起');
-  label(f, '到达车站 · 过');
+  fieldState(f, '出发车站', '起');
+  fieldState(f, '到达车站', '过');
   label(f, LEGEND);
   assert.equal(f.one('TextField', '出发车站').props.value, '深圳北');
   assert.equal(f.one('TextField', '到达车站').props.value, '香港西九龙');
@@ -116,8 +168,8 @@ test('rail endpoints without explicit facts remain unrecognized', async () => {
   const f = fixture(screenshot('深圳北 → 香港西九龙'));
   assert.equal(f.parse().railStationStates, undefined);
   await f.ocr();
-  label(f, '出发车站 · 未识别');
-  label(f, '到达车站 · 未识别');
+  fieldState(f, '出发车站', '未识别');
+  fieldState(f, '到达车站', '未识别');
   label(f, LEGEND);
   assert.equal(f.one('TextField', '出发车站').props.value, '深圳北');
   assert.equal(f.one('TextField', '到达车站').props.value, '香港西九龙');
@@ -133,8 +185,9 @@ test('code or station edits stop displaying facts that no longer match', async (
     await f.ocr();
     f.one('TextField', title).props.onChanged(value);
     f.render();
-    label(f, `出发车站 · ${from}`);
-    label(f, `到达车站 · ${to}`);
+    fieldState(f, '出发车站', from);
+    fieldState(f, '到达车站', to);
+    label(f, LEGEND);
     assert.equal(f.one('TextField', title).props.value, title === '车次' ? 'G9999' : value);
     assert.equal(f.storage.has('rail.trips'), false);
   }
@@ -159,6 +212,7 @@ test('flight review keeps plain airport labels and has no rail status legend', a
     assert.equal(f.one('TextField', '出发机场').props.value, f.parse().fromPlace);
     assert.equal(f.one('TextField', '到达机场').props.value, f.parse().toPlace);
     assert.equal(f.texts().some(text => /^(?:出发|到达)车站|起＝始发站/.test(text)), false);
+    assert.equal(f.nodes().some(node => node.type === f.StationStateBadge), false, 'flight fields must not render rail badges');
   }
 });
 
@@ -169,8 +223,8 @@ test('save preserves parsed metadata, clean values, and the unmodified OCR text'
   const parsed = JSON.parse(JSON.stringify(f.parse()));
   assert.equal(parsed.railStops.length, 3, 'fixture must exercise timetable metadata too');
   await f.ocr();
-  label(f, '出发车站 · 过');
-  label(f, '到达车站 · 终');
+  fieldState(f, '出发车站', '过');
+  fieldState(f, '到达车站', '终');
   f.one('Toggle', '查看识别原文（用于排查识别不准）').props.onChanged(true);
   f.one('TextField', '备注').props.onChanged('Regression fixture');
   f.render();
@@ -189,6 +243,112 @@ test('save preserves parsed metadata, clean values, and the unmodified OCR text'
   assert.equal(f.reloads, 1, 'saving refreshes widgets exactly once');
   assert.equal(f.nodes().some(node => node.type === 'Button' && node.props.title === '保存行程'), false);
   assert.equal(f.nodes().some(node => node.type === 'Toggle' && node.props.title === '查看识别原文（用于排查识别不准）'), false);
+});
+
+test('shared StationStateBadge renders all three glyphs with or without a theme and hides absent state', () => {
+  const f = fixture(), theme = { ink: '#123456', accentSoft: '#abcdef' };
+  assert.equal(typeof f.StationStateBadge, 'function');
+  assert.equal(f.StationStateBadge({}), null);
+  assert.equal(f.StationStateBadge({ theme }), null);
+  for (const [state, glyph] of [['origin', '起'], ['intermediate', '过'], ['terminal', '终']]) {
+    for (const colors of [undefined, theme]) {
+      const text = badgeText(f, f.StationStateBadge({ state, theme: colors }), glyph);
+      if (colors) {
+        assert.equal(text.props.foregroundStyle, theme.ink);
+        assert.equal(text.props.background, theme.accentSoft);
+      }
+    }
+  }
+});
+
+test('archive row swipe deletion preserves other trips and refreshes archive and home through empty state', () => {
+  const trips = ['archive-one', 'archive-two', 'active'].map((id, index) => ({
+    id, mode: 'rail', code: `G100${index + 1}`, fromPlace: '深圳北', toPlace: '香港西九龙',
+    departDate: '2099-06-18', departTime: `0${index + 7}:00`, arriveTime: `0${index + 7}:18`, durationMin: 18,
+    seatCar: '05', seatNo: '12A', seatClass: '二等座', passenger: '回归乘客', note: id,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    ...(index < 2 ? { archivedAt: '2026-10-02T00:00:00.000Z' } : {}),
+  }));
+  const f = fixture('', { trips }), archive = f.mountArchive();
+  const rows = count => {
+    const sections = archive.nodes().filter(node => node.type === 'Section' && node.props.title === `归档记录 (${count})`);
+    assert.equal(sections.length, 1, 'archive count must refresh in the mounted page');
+    const records = sections[0].props.children.flat(Infinity).filter(node => node?.type === 'VStack');
+    assert.equal(records.length, count, 'each archive record must be a direct list row');
+    return records;
+  };
+  const swipe = row => {
+    assert.ok(row, 'must find the selected archive row');
+    const actions = row.props.trailingSwipeActions;
+    assert.equal(actions?.allowsFullSwipe, false, 'archive deletion must require the revealed action');
+    assert.equal(actions.actions.length, 1);
+    const button = actions.actions[0];
+    assert.equal(button.type, 'Button');
+    assert.equal(button.props.title, '删除');
+    assert.equal(button.props.role, 'destructive');
+    assert.equal(typeof button.props.action, 'function');
+    return button.props.action;
+  };
+  label(f, '查看归档记录（2）');
+  label(f, '3 条');
+  f.one('Section', '行程列表 (1)');
+  const initial = rows(2);
+  initial.forEach(swipe);
+  assert.equal(archive.texts().includes('暂无归档记录。'), false);
+  const removeFirst = swipe(initial.find(row => row.props.key === 'archive-one'));
+  f.render(); // Both mounted pages must retain their own hook state across callbacks.
+  removeFirst();
+  archive.render();
+  assert.equal(rows(1)[0].props.key, 'archive-two');
+  assert.equal(archive.texts().includes('暂无归档记录。'), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), trips.slice(1), 'only the selected archive id may be deleted');
+  assert.equal(f.reloads, 1);
+  f.render();
+  label(f, '查看归档记录（1）');
+  label(f, '2 条');
+  f.one('Section', '行程列表 (1)');
+  const removeLast = swipe(rows(1)[0]);
+  removeLast();
+  archive.render();
+  rows(0);
+  assert.equal(archive.texts().filter(text => text === '暂无归档记录。').length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), [trips[2]], 'the active trip must survive deleting every archived record');
+  assert.equal(f.reloads, 2);
+  f.render();
+  label(f, '查看归档记录（0）');
+  label(f, '1 条');
+  f.one('Section', '行程列表 (1)');
+});
+
+test('real Vision single-station candidates require reliable direction and preserve explicit endpoints', async () => {
+  for (const [route, timeCount, x, from, to] of [
+    ['', 2, 0.10, '深圳北', ''],
+    ['', 2, 0.70, '', '深圳北'],
+    ['', 1, 0.10, '', ''],
+    ['过深圳北', 2, 0.10, '深圳北', ''],
+    ['过深圳北', 2, 0.70, '深圳北', ''],
+  ]) {
+    const times = [
+      { content: '09:00', confidence: 1, boundingBox: { x: 0.05, y: 0.68, width: 0.16, height: 0.06 } },
+      { content: '09:18', confidence: 1, boundingBox: { x: 0.75, y: 0.68, width: 0.16, height: 0.06 } },
+    ];
+    const candidates = [
+      ...times.slice(0, timeCount),
+      { content: '过深圳北站', confidence: 1, boundingBox: { x, y: 0.58, width: 0.25, height: 0.06 } },
+    ];
+    const raw = timeCount === 1 ? `G1234\n2099-06-18\n09:00\n${route}` : screenshot(route);
+    const before = JSON.stringify(candidates), f = fixture(raw, { candidates });
+    await f.ocr();
+    assert.deepEqual([
+      f.one('TextField', '出发车站').props.value,
+      f.one('TextField', '到达车站').props.value,
+    ], [from, to], `station x=${x}, time columns=${timeCount}, explicit route=${route || '(none)'}`);
+    fieldState(f, '出发车站', from ? '过' : '未识别');
+    fieldState(f, '到达车站', to ? '过' : '未识别');
+    label(f, LEGEND);
+    assert.equal(JSON.stringify(candidates), before, 'OCR candidates must remain unmodified');
+    assert.equal(f.storage.has('rail.trips'), false);
+  }
 });
 
 (async () => {

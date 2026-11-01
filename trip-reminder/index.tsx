@@ -73,7 +73,7 @@ import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/o
 import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey, setThemeKey, type ThemeKey, type AccentKey } from "./services/theme"
 import { ThemeBackground } from "./components/theme-background"
 import { TripCard } from "./components/trip-card"
-import { TripWidgetPreview } from "./components/trip-widget"
+import { TripWidgetPreview, StationStateBadge } from "./components/trip-widget"
 import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
 
@@ -100,13 +100,22 @@ const EMPTY_DRAFT: ParsedTrip = {
   passenger: "",
 }
 
-function ArchivePage({ trips, passengerMode, hideSeatNumber }: {
-  trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean
+function ArchivePage({ trips, passengerMode, hideSeatNumber, onTripsChanged }: {
+  trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean; onTripsChanged: (trips: TripRecord[]) => void
 }) {
+  const [records, setRecords] = useState(trips)
+  const removeArchived = (trip: TripRecord) => {
+    const remaining = deleteTrip(trip.id)
+    setRecords(remaining.filter(record => !!record.archivedAt))
+    onTripsChanged(remaining)
+  }
   return <List navigationTitle="归档记录" navigationBarTitleDisplayMode="inline">
-    <Section title={`归档记录 (${trips.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">已归档行程仅供回看，不参与小组件展示。</Text>}>
-      {trips.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...trips].reverse().map(t =>
-        <VStack key={t.id} alignment="leading" spacing={4}>
+    <Section title={`归档记录 (${records.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">归档行程不参与小组件展示，左滑可删除。</Text>}>
+      {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...records].reverse().map(t =>
+        <VStack key={t.id} alignment="leading" spacing={4}
+          trailingSwipeActions={{ allowsFullSwipe: false, actions: [
+            <Button title="删除" role="destructive" action={() => removeArchived(t)} />,
+          ] }}>
           <Text font="headline">{t.code || "—"} · {routeText(t)}</Text>
           <Text font="caption" foregroundStyle="secondaryLabel">{[
             `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
@@ -292,10 +301,6 @@ function View() {
     if (!draft) return []
     const isFlight = draftIsFlight
     const rows: any[] = []
-    const stationStateText = (name: string) => {
-      const state = railStationState(draft, name)
-      return state ? { origin: "起", intermediate: "过", terminal: "终" }[state] : "未识别"
-    }
 
     // 头部卡：提示条 + 火车/航班切换（卡内只有文本与小按钮，无 TextField，嵌套安全）
     rows.push(
@@ -394,15 +399,18 @@ function View() {
       const pair = fields.slice(i, i + 2)
       rows.push(
         <HStack key={`row${i}`} spacing={10}>
-          {pair.map(([label, value, prompt, onChanged], j) => (
-            <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
-              <Text font="caption" foregroundStyle="secondaryLabel">
-                {label === "出发车站" ? `${label} · ${stationStateText(draft.fromPlace)}`
-                  : label === "到达车站" ? `${label} · ${stationStateText(draft.toPlace)}` : label}
-              </Text>
+          {pair.map(([label, value, prompt, onChanged], j) => {
+            const isStation = label === "出发车站" || label === "到达车站"
+            const state = isStation ? railStationState(draft, value) : undefined
+            return <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
+              <HStack alignment="top" spacing={4}>
+                <Text font="caption" foregroundStyle="secondaryLabel">{label}</Text>
+                {state ? <StationStateBadge state={state} />
+                  : isStation ? <Text font="caption2" foregroundStyle="secondaryLabel">未识别</Text> : null}
+              </HStack>
               <TextField title={label} value={value} prompt={prompt} onChanged={onChanged} />
             </VStack>
-          ))}
+          })}
         </HStack>,
       )
     }
@@ -504,7 +512,7 @@ function View() {
         ) : null}
 
         <Section title="行程管理">
-          <NavigationLink destination={<ArchivePage trips={archived} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} />}>
+          <NavigationLink destination={<ArchivePage trips={archived} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} onTripsChanged={setTrips} />}>
             <Text>{`查看归档记录（${archived.length}）`}</Text>
           </NavigationLink>
         </Section>
