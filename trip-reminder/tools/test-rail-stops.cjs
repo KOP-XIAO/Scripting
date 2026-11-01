@@ -121,6 +121,120 @@ test("screenshot headers accept 发车 and 开车; bare dwell stays unknown", ()
   }
 })
 
+test("attached badges are cleaned in arrow, labeled and mixed rail routes", () => {
+  const routes = [
+    "过深圳北 → 终香港西九龙",
+    "起 深圳北 -> 终 香港西九龙",
+    "乘车站：过深圳北\n到达站：终香港西九龙",
+    "乘车站：过 深圳北\n到达站：终 香港西九龙",
+    "乘车站\n起\n深圳北\n到达站\n终\n香港西九龙",
+    "乘车站：起深圳北\n终香港西九龙",
+    "起深圳北\n到达站：终香港西九龙",
+    "乘车站：深圳北\n过深圳北\n过香港西九龙",
+    "乘车站：过深圳北 过香港西九龙",
+    "出发站：起深圳北 终香港西九龙",
+  ]
+  for (const route of routes) {
+    const trip = parse(`G1234\n${route}\n09:00\n09:18`)
+    assert.equal(trip.fromPlace, "深圳北", route)
+    assert.equal(trip.toPlace, "香港西九龙", route)
+    assert.equal(trip.departTime, "09:00")
+    assert.equal(trip.arriveTime, "09:18")
+  }
+})
+test("badge rows accept joined, separated, punctuated, split and same-line stations", () => {
+  for (const route of [
+    "过深圳北\n终香港西九龙", "起深圳北\n终香港西九龙",
+    "起 深圳北\n终 香港西九龙", "起·深圳北\n终：香港西九龙",
+    "起\n深圳北\n终\n香港西九龙", "起深圳北 终香港西九龙",
+    "过深圳北\n过香港西九龙", "过深圳北 过香港西九龙",
+  ]) {
+    const trip = parse(`G1234\n${route}\n09:00\n09:18`)
+    assert.equal(trip.fromPlace, "深圳北", route)
+    assert.equal(trip.toPlace, "香港西九龙", route)
+  }
+  for (const route of [
+    "乘车站：深圳北\n过深圳北",
+    "乘车站：深圳北 过深圳北",
+    "乘车站：深圳北\n过深圳北\n过深圳北",
+    "乘车站：福田\n过深圳北\n过香港西九龙",
+  ]) {
+    const trip = parse(`G1234\n${route}\n09:00\n09:18`)
+    assert.equal(trip.toPlace, "", "duplicate or conflicting origin evidence must not invent arrival")
+    assert.ok(P.missingFields(trip).includes("到达车站"))
+  }
+})
+test("positional OCR candidates clean badges without mutating source blocks or text", () => {
+  const raw = "G1234\n09:00\n09:18"
+  const candidates = [
+    {content: "09:00", x: 0.05, y: 0.68, w: 0.16, h: 0.06},
+    {content: "09:18", x: 0.75, y: 0.68, w: 0.16, h: 0.06},
+    {content: "起售规则", x: 0, y: 0.58, w: 0.04, h: 0.06},
+    {content: "过深圳北，", x: 0.05, y: 0.58, w: 0.25, h: 0.06},
+    {content: "终香港西九龙〉", x: 0.65, y: 0.58, w: 0.3, h: 0.06},
+  ]
+  const before = JSON.stringify(candidates)
+  const trip = parse(raw, candidates)
+  assert.equal(trip.fromPlace, "深圳北")
+  assert.equal(trip.toPlace, "香港西九龙")
+  assert.equal(JSON.stringify(candidates), before)
+  assert.equal(P.normalizeOCR("过深圳北\n终香港西九龙"), "过深圳北\n终香港西九龙")
+})
+test("timetable badges are removed with suffixes, clocks and passenger interval retained", () => {
+  for (const table of [
+    "1 起深圳北站 -- 09:00\n2 过福田站 09:08 09:10 2分\n3 终香港西九龙站 09:18 --",
+    "起\n深圳北站\n--\n09:00\n过\n福田站\n09:08\n09:10\n2分\n终\n香港西九龙站\n09:18\n--",
+    "起 深圳北站 -- 09:00\n过 福田站 09:08 09:10 2分\n终 香港西九龙站 09:18 --",
+    "起售规则 08:00 08:01\n起·深圳北站 -- 09:00\n过：福田站 09:08 09:10 2分\n终：香港西九龙站 09:18 --",
+  ]) {
+    const trip = parse(`G1234\n过深圳北 → 终香港西九龙\n09:00\n09:18\n时刻表\n${table}`)
+    assert.deepEqual(stations(trip.railStops), ["深圳北站", "福田站", "香港西九龙站"])
+    assert.deepEqual(stations(P.railJourneyStops(trip)), ["深圳北站", "福田站", "香港西九龙站"])
+    assert.equal(trip.railStops[1].stopMinutes, 2)
+    assert.equal(trip.departTime, "09:00")
+    assert.equal(trip.arriveTime, "09:18")
+  }
+})
+test("real station names 始兴 发耳 到保 and prefixed versions remain intact", () => {
+  for (const name of ["始兴", "发耳", "到保"]) {
+    for (const station of [name, `${name}站`]) {
+      const plain = parse(`G1234\n${station} → 香港西九龙\n09:00\n09:18\n时刻表\n${station} -- 09:00\n香港西九龙 09:18 --`)
+      assert.equal(plain.fromPlace, name)
+      assert.equal(plain.railStops[0].station, station)
+      for (const badge of ["起", "过"]) {
+        const tagged = parse(`G1234\n${badge}${station} → 终香港西九龙\n09:00\n09:18`)
+        assert.equal(tagged.fromPlace, name)
+      }
+    }
+  }
+})
+test("legacy badge matching does not rewrite saved endpoints or the full table", () => {
+  const legacy = {mode: "rail", fromPlace: "起深圳北", toPlace: "终香港西九龙", railStops: [
+    {station: "深圳北站", arrival: "", departure: "09:00"},
+    {station: "过福田站", arrival: "09:08", departure: "09:10"},
+    {station: "香港西九龙站", arrival: "09:18", departure: ""},
+  ]}
+  const before = JSON.stringify(legacy)
+  assert.equal(P.railJourneyStops(legacy).length, 3)
+  assert.equal(JSON.stringify(legacy), before)
+})
+test("non-station rail labels and flight names do not get mistaken for marker stations", () => {
+  for (const labels of [
+    "起售时间\n终止检票\n起售日期\n起售规则\n终止售票",
+    "乘车站：\n起售时间：09:00",
+    "起售日期→终止日期",
+    "起\n售规则\n起：售票规则\n过售票信息",
+  ]) {
+    const trip = parse(`G1234\n${labels}\n过深圳北\n终香港西九龙\n09:00\n09:18`)
+    assert.equal(trip.fromPlace, "深圳北", labels)
+    assert.equal(trip.toPlace, "香港西九龙", labels)
+  }
+  const flight = P.parseTripText("CA1234\n起航机场 → 终航机场\n09:00\n10:20", new Date("2026-11-01T08:00:00"))
+  assert.equal(flight.mode, "flight")
+  assert.equal(flight.fromPlace, "起航机场")
+  assert.equal(flight.toPlace, "终航机场")
+})
+
 // Run existing expectations using an in-memory esbuild substitute, without temp files.
 if (process.argv.includes("--legacy")) {
   const load = Module._load, exists = fs.existsSync, bundles = new Map()

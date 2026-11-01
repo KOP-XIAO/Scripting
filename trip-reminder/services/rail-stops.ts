@@ -9,7 +9,16 @@ export type RailStop = {
 }
 
 type RailJourney = { mode?: string; fromPlace: string; toPlace: string; railStops?: RailStop[] }
-const stationKey = (name: string) => name.trim().replace(/站$/, "")
+// 只用于铁路站名；无分隔的始/发/到可能属于真名（始兴、发耳、到保）。
+export function stripRailStationMarker(raw: string): string {
+  const name = raw.trim()
+  const separated = name.match(/^[起过终始发到](?:\s*[·.、:：]\s*|\s+)(.+)$/s)
+  if (separated) return separated[1].trim()
+  const stem = name.replace(/[^\u4e00-\u9fa5]+$/, "").replace(/站$/, "")
+  return /^[起过终][\u4e00-\u9fa5]{2,}$/.test(stem) ? name.slice(1).trim() : name
+}
+
+const stationKey = (name: string) => stripRailStationMarker(name).replace(/站$/, "")
 
 export function railJourneyStops(trip: RailJourney): RailStop[] {
   if (trip.mode && trip.mode !== "rail") return []
@@ -23,9 +32,9 @@ export function railJourneyStops(trip: RailJourney): RailStop[] {
 
 const SECTION = /经停站|经停信息|列车时刻表|时刻表/g
 const SLOT = "(?:[0-2]?\\d:[0-5]\\d|--|—|始发|终到)"
-const ROW = new RegExp(`^\\s*(?:\\d{1,3}[.、]?\\s+)?(?:[始过终]\\s+)?([\\u4e00-\\u9fa5]{2,12})\\s+(${SLOT})\\s+(${SLOT})(?:[ \\t]*(?:\\n[ \\t]*)?(?:停留\\s*[:：]?\\s*)?(\\d{1,3})\\s*(?:分钟|分))?(?=\\s|$)`)
+const ROW = new RegExp(`^\\s*(?:\\d{1,3}[.、]?\\s+)?(?:[起始过终发到](?:\\s*[·.、:：]\\s*|\\s+))?([\\u4e00-\\u9fa5]{2,12})\\s+(${SLOT})\\s+(${SLOT})(?:[ \\t]*(?:\\n[ \\t]*)?(?:停留\\s*[:：]?\\s*)?(\\d{1,3})\\s*(?:分钟|分))?(?=\\s|$)`)
 const HEADER = /^(?:站序|序号|站名|车站|到达时间|到站时间|到时|到达|出发时间|发车时间|开车时间|发车|开车|发时|出发|停留时间|停站时间|停留|停站|站点|时间|\s|[|:：])+$/
-const NOT_STATION = /站序|序号|站名|到达|出发|发车|开车|停留|停站|时间|检票|乘车|订单|车票|行程/
+const NOT_STATION = /站序|序号|站名|到达|出发|发车|开车|停留|停站|时间|检票|乘车|订单|车票|行程|日期|起售|终止|售票|规则|说明|提示|须知|状态/
 
 function timeValue(raw: string): string {
   const m = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
@@ -62,7 +71,7 @@ export function extractRailTimetable(text: string): { text: string; hasTable: bo
         cursor += row[0].length
         continue
       }
-      const stop: RailStop = { station: row[1], arrival, departure }
+      const stop: RailStop = { station: stripRailStationMarker(row[1]), arrival, departure }
       if (row[4] != null) stop.stopMinutes = Number(row[4])
       stops.push(stop)
       cursor += row[0].length

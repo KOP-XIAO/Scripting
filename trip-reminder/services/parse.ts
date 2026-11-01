@@ -2,7 +2,7 @@
 // 纯函数模块：不引用任何 Scripting 全局对象，可在 Node 里直接跑断言（tools/test-parse.cjs）。
 // 隐私：本模块只做字符串处理，不含任何网络请求；识别结果仅交给调用方写入本机 Storage。
 
-import { extractRailTimetable, type RailStop } from "./rail-stops"
+import { extractRailTimetable, stripRailStationMarker, type RailStop } from "./rail-stops"
 export { railJourneyStops, type RailStop } from "./rail-stops"
 
 export type TripMode = "rail" | "flight"
@@ -122,59 +122,63 @@ export function parseDuration(text: string): number {
   return 0
 }
 
-const cleanPlace = (s: string) =>
-  s
-    .replace(/[（(].*?[)）]/g, "")
-    .replace(/^[过终始发到](?:\s*[·.、:：]\s*|\s+)/, "")
+const cleanPlace = (s: string) => {
+  const name = stripRailStationMarker(s.replace(/[（(].*?[)）]/g, ""))
     .replace(/[^\u4e00-\u9fa5A-Z0-9]+$/g, "") // 尾部垃圾字符（，、〉等，OCR 常把小图标认成标点）
     .replace(/[站\s]+$/g, "")
     .trim()
+  const badgeLabel = /^(?:起\s*[·.、:：]?\s*售|终\s*[·.、:：]?\s*止)/.test(s.trim())
+  return badgeLabel || PLACE_STOPWORDS.test(name) || PLACE_BAD_PART.test(name) ? "" : name
+}
 
-// 火车车站：支持三种写法——
-//   ① 「过 北京南」同一行；② 「过」「北京南」被 OCR 拆成两行；③ 「出发站：北京南」标签式
-// 都找不到时再用 A → B 兜底
+// 明确乘车区间优先；标记可能粘连、分隔、拆行，也可能两端都标「过」。
+const RAIL_PLACE = "((?:[起过终始发到]\\s*[·.、:：]?\\s*)?[\\u4e00-\\u9fa5]{2,12})"
 function parseRailPlaces(text: string): { from: string; to: string } {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
-  const explicitFrom = text.match(/(?:乘车站|出发站)\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
-  const explicitTo = text.match(/到达站\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
-  const arrow = text.match(/([\u4e00-\u9fa5]{2,12})\s*(?:→|->|—|~|至|-)\s*([\u4e00-\u9fa5]{2,12})/)
-  if (explicitFrom || explicitTo || arrow) return {
-    from: cleanPlace(explicitFrom?.[1] ?? arrow?.[1] ?? ""),
-    to: cleanPlace(explicitTo?.[1] ?? arrow?.[2] ?? ""),
-  }
+  const explicitFrom = text.match(new RegExp(`(?:乘车站|出发站)\\s*[:：]?\\s*${RAIL_PLACE}`))
+  const explicitTo = text.match(new RegExp(`到达站\\s*[:：]?\\s*${RAIL_PLACE}`))
+  const arrow = text.match(new RegExp(`${RAIL_PLACE}\\s*(?:→|->|—|~|至|-)\\s*${RAIL_PLACE}`))
+  const from = cleanPlace(explicitFrom?.[1] ?? arrow?.[1] ?? "")
+  const to = cleanPlace(explicitTo?.[1] ?? arrow?.[2] ?? "")
+  if (from && to) return { from, to }
   const fromList: string[] = []
   const toList: string[] = []
+  let labeledFrom = "", labeledTo = ""
   const push = (marker: string, raw: string) => {
     const name = cleanPlace(raw)
     if (!name) return
-    if (marker === "终" || marker === "到") toList.push(name)
-    else fromList.push(name)
+    const list = marker === "终" || marker === "到" ? toList : fromList
+    if (!list.includes(name)) list.push(name)
   }
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const labeled = line.match(/^(出发站|始发站|乘车站|到达站|终到站)\s*[:：]?\s*([\u4e00-\u9fa5]{2,12})/)
+    let line = lines[i]
+    const labeled = line.match(new RegExp(`^(出发站|始发站|乘车站|到达站|终到站)\\s*[:：]?\\s*${RAIL_PLACE}`))
     if (labeled) {
-      push(/到达|终到/.test(labeled[1]) ? "终" : "过", labeled[2])
-      continue
+      const name = cleanPlace(labeled[2])
+      if (/到达|终到/.test(labeled[1])) labeledTo ||= name
+      else labeledFrom ||= name
+      // 保留字段内的实际徽章，标签本身不能算作第二个站点。
+      line = line.slice(labeled[0].length - labeled[2].length).trim()
     }
-    const sameLine = line.match(/^([过终始发到])(?:\s*[·.、:：]\s*|\s+)([\u4e00-\u9fa5]{2,12})/)
-    if (sameLine) {
-      push(sameLine[1], sameLine[2])
-      continue
+    let marked = false
+    for (const sameLine of line.matchAll(/(?:^|[ \t]+)([起过终始发到])[ \t]*[·.、:：]?[ \t]*([\u4e00-\u9fa5]{2,12})/g)) {
+      const raw = sameLine[0].trim()
+      if (stripRailStationMarker(raw) === raw) continue
+      push(sameLine[1], raw)
+      marked = true
     }
-    // 标记单独一行：取下一行的开头中文片段作为站名
-    if (/^[过终始发到]$/.test(line) && i + 1 < lines.length) {
+    if (marked) continue
+    if (/^[起过终始发到]$/.test(line) && i + 1 < lines.length) {
       const next = lines[i + 1].match(/^([\u4e00-\u9fa5]{2,12})/)
       if (next) {
-        push(line, next[1])
+        push(line, `${line}\n${next[1]}`)
         i += 1
       }
     }
   }
-  if (fromList.length && toList.length) return { from: fromList[0], to: toList[0] }
-  const sep = text.match(/([\u4e00-\u9fa5]{2,12})\s*[→\-—~至]\s*([\u4e00-\u9fa5]{2,12})/)
-  if (sep) return { from: cleanPlace(sep[1]), to: cleanPlace(sep[2]) }
-  return { from: fromList[0] ?? "", to: toList[0] ?? "" }
+  const origin = from || labeledFrom || fromList[0] || ""
+  const badgeTo = fromList.length === 2 && fromList[0] === origin ? fromList[1] : ""
+  return { from: origin, to: to || labeledTo || toList[0] || badgeTo }
 }
 
 // 机场：优先逐行找「出发 - 到达」区间（覆盖 北京首都T3 → 上海虹桥T2、成都天府T2 - 北京大兴），
@@ -206,8 +210,8 @@ function parseFlightPlaces(text: string): { from: string; to: string; terminal: 
 }
 
 // 车站块停用词：长得像站名但不是站名
-const PLACE_STOPWORDS = /^(过|终|始|发|到|改签|退票|灵活行|乘车码|复兴号|和谐号|智能动车组|绿巨人)$/
-const PLACE_BAD_PART = /[0-9:：]|乘车|检票|座位|历时|出发|到达/
+const PLACE_STOPWORDS = /^(起|过|终|始|发|到|改签|退票|灵活行|乘车码|复兴号|和谐号|智能动车组|绿巨人)$/
+const PLACE_BAD_PART = /[0-9:：]|乘车|检票|座位|历时|出发|到达|时间|日期|车次|票价|信息|订单|起\s*售|终\s*止|售票|规则|说明|提示|须知|状态/
 
 // 用候选块位置兜底车站：站名在时间行下方（±0.14 内）左右各一个中文块
 function placesFromCandidates(candidates: OCRCandidateBlock[]): { from: string; to: string } {
@@ -219,7 +223,7 @@ function placesFromCandidates(candidates: OCRCandidateBlock[]): { from: string; 
   const stationish = candidates.filter((c) => {
     const t = c.content.trim()
     if (!/^[\u4e00-\u9fa5][\u4e00-\u9fa5]{1,9}[^\u4e00-\u9fa5]{0,2}$/.test(t)) return false
-    if (PLACE_STOPWORDS.test(cleanPlace(t)) || PLACE_BAD_PART.test(t)) return false
+    if (!cleanPlace(t)) return false
     const dy = Math.abs(c.y + c.h / 2 - timeY)
     return dy > 0.04 && dy < 0.14
   })
