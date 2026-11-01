@@ -45,6 +45,7 @@ import {
   monthDayText,
   modeLabel,
   parseTripText,
+  railStationState,
   routeText,
   weekdayText,
   type ParsedTrip,
@@ -291,6 +292,10 @@ function View() {
     if (!draft) return []
     const isFlight = draftIsFlight
     const rows: any[] = []
+    const stationStateText = (name: string) => {
+      const state = railStationState(draft, name)
+      return state ? { origin: "起", intermediate: "过", terminal: "终" }[state] : "未识别"
+    }
 
     // 头部卡：提示条 + 火车/航班切换（卡内只有文本与小按钮，无 TextField，嵌套安全）
     rows.push(
@@ -343,6 +348,9 @@ function View() {
             {rawText ? "来自截图识别" : draftId ? "编辑中" : "手动填写"}
           </Text>
         </HStack>
+        {!isFlight ? <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={2}>
+          起＝始发站，过＝经停站，终＝终点站
+        </Text> : null}
       </VStack>,
     )
 
@@ -389,7 +397,8 @@ function View() {
           {pair.map(([label, value, prompt, onChanged], j) => (
             <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
               <Text font="caption" foregroundStyle="secondaryLabel">
-                {label}
+                {label === "出发车站" ? `${label} · ${stationStateText(draft.fromPlace)}`
+                  : label === "到达车站" ? `${label} · ${stationStateText(draft.toPlace)}` : label}
               </Text>
               <TextField title={label} value={value} prompt={prompt} onChanged={onChanged} />
             </VStack>
