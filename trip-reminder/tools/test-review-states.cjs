@@ -20,7 +20,7 @@ async function compile() {
   bundled = result.outputFiles[0].text;
 }
 
-function fixture(text = '', { candidates = [], trips = [] } = {}) {
+function fixture(text = '', { candidates = [], trips = [], image = {}, recognize } = {}) {
   const storage = new Map(), rootStates = [];
   if (trips.length) storage.set('rail.trips', JSON.parse(JSON.stringify(trips)));
   let states = rootStates, cursor = 0, root, tree, reloads = 0, picks = 0, recognitions = 0;
@@ -43,9 +43,12 @@ function fixture(text = '', { candidates = [], trips = [] } = {}) {
     require(name) { assert.equal(name, 'scripting'); return native; },
     Storage: { get: key => storage.get(key), set: (key, value) => { storage.set(key, value); return true; }, remove: key => storage.delete(key) },
     Widget: { reloadAll() { reloads++; } },
-    Photos: { pick: async () => { picks++; return [{ uiImage: async () => ({}) }]; } },
+    Photos: { pick: async () => { picks++; return [{ uiImage: async () => image }]; } },
     PHPickerFilter: { images: () => 'mock-images' },
-    Vision: { recognizeText: async () => { recognitions++; return { text, candidates }; } },
+    Vision: { recognizeText: async (input, options) => {
+      recognitions++;
+      return recognize ? recognize(input, options) : { text, candidates };
+    } },
     Dialog: { alert: async options => { throw new Error(`Unexpected alert: ${JSON.stringify(options)}`); } },
   };
   sandbox.exports = sandbox.module.exports;
@@ -88,12 +91,12 @@ function fixture(text = '', { candidates = [], trips = [] } = {}) {
       return { render: renderArchive, nodes: () => nodes(archiveTree), texts: () => texts(archiveTree) };
     },
     get reloads() { return reloads; },
-    async ocr() {
+    async ocr(expectedRecognitions = 1) {
       one('Button', '从相册选行程截图识别').props.action();
       await new Promise(resolve => setImmediate(resolve)); // The button uses void runOCR().
       render();
       assert.equal(picks, 1, 'must use Photos.pick');
-      assert.equal(recognitions, 1, 'must run Vision.recognizeText');
+      assert.equal(recognitions, expectedRecognitions, 'must run the expected bounded Vision recognition passes');
       one('Button', '保存行程');
     },
   };
@@ -348,6 +351,81 @@ test('real Vision single-station candidates require reliable direction and prese
     label(f, LEGEND);
     assert.equal(JSON.stringify(candidates), before, 'OCR candidates must remain unmodified');
     assert.equal(f.storage.has('rail.trips'), false);
+  }
+});
+
+test('actual phone OCR recovers local ROI station badges without replacing the original text', async () => {
+  const raw = '品\nG1234\n复兴号\n09:00\n过\n】 深圳北>\n乘车人：[已隐去]\n检票口Q：6A检票口\n座位号：05车12A二等座\n6月18日（周一）、\n历时18分\n出发 请以实际为准\n09:18\n香港西九龙〉\n改签\n灵活行\n乘车码\n退票';
+  assert.equal(raw.includes('终'), false, 'the original phone OCR must have no terminal marker');
+  for (const origin of ['unavailable', 'top', 'bottom', 'failed']) {
+    const bottomOrigin = origin === 'bottom', crops = [], calls = [];
+    const candidate = (content, x, y, width, height) => ({
+      content, confidence: 1,
+      boundingBox: { x, y: bottomOrigin ? 1 - y - height : y, width, height },
+    });
+    const candidates = [
+      candidate('09:00', 0.06, 0.25, 0.18, 0.07),
+      candidate('09:18', 0.74, 0.25, 0.20, 0.07),
+      candidate('】 深圳北>', 0.08, 0.36, 0.24, 0.05),
+      candidate('香港西九龙〉', 0.68, 0.36, 0.30, 0.05),
+    ];
+    const before = JSON.stringify(candidates);
+    const image = origin === 'unavailable' ? {} : {
+      width: 1206, height: 806,
+      renderedIn(size, source) {
+        const cropImage = { size, source };
+        crops.push(cropImage);
+        return cropImage;
+      },
+    };
+    const f = fixture(raw, { candidates, image, recognize: async (input, options) => {
+      calls.push({ input, options });
+      if (input === image) return { text: raw, candidates };
+      assert.ok(crops.includes(input), 'retry must recognize the image returned by renderedIn');
+      const { position, size } = input.source;
+      const top = position.y / image.height, span = size.height / image.height;
+      const clockTop = 0.25, clockBottom = 0.32;
+      if (origin === 'failed' || top > clockTop || top + span < clockBottom) {
+        return { text: '09:00\n终 深圳东〉', candidates: [candidate('终 深圳东〉', 0.08, 0.36, 0.24, 0.05)] };
+      }
+      const offset = bottomOrigin ? 1 - top - span : top;
+      const recovered = candidates.map((c, i) => ({
+        ...c, content: ['09:00', '09:18', '过 深圳北〉', '终 香港西九龙〉'][i],
+        boundingBox: { ...c.boundingBox, y: (c.boundingBox.y - offset) / span, height: c.boundingBox.height / span },
+      }));
+      return { text: '09:00\n09:18\n过 深圳北〉\n终 香港西九龙〉', candidates: recovered };
+    } });
+    const enhanced = origin === 'top' || origin === 'bottom';
+    await f.ocr(origin === 'unavailable' ? 1 : origin === 'top' ? 2 : 3);
+    assert.equal(f.one('TextField', '出发车站').props.value, '深圳北', origin);
+    assert.equal(f.one('TextField', '到达车站').props.value, '香港西九龙', origin);
+    fieldState(f, '出发车站', '过');
+    fieldState(f, '到达车站', enhanced ? '终' : '未识别');
+    label(f, LEGEND);
+    assert.equal(crops.length, calls.length - 1, 'each retry must use one local crop');
+    for (const { options } of calls) assert.equal(options.minimumTextHeight, 0.005);
+    for (const { size, source } of crops) {
+      assert.equal(source.position.x, 0);
+      assert.equal(source.size.width, image.width);
+      assert.ok(source.position.y >= 0 && source.position.y + source.size.height <= image.height);
+      assert.ok(source.size.height < image.height, 'retry must crop the clock/station band');
+      assert.ok(size.width > image.width && size.height > source.size.height, 'retry must upscale the band');
+    }
+    f.one('Toggle', '查看识别原文（用于排查识别不准）').props.onChanged(true);
+    f.render();
+    label(f, raw);
+    assert.equal(f.texts().includes('09:00\n09:18\n过 深圳北〉\n终 香港西九龙〉'), false, 'ROI text must not replace original OCR');
+    assert.equal(JSON.stringify(candidates), before, 'retry must preserve original candidates');
+    assert.equal(f.storage.has('rail.trips'), false, 'review must precede saving');
+    if (enhanced) {
+      f.one('Button', '保存行程').props.action();
+      const saved = f.storage.get('rail.trips');
+      assert.equal(saved.length, 1);
+      assert.deepEqual(JSON.parse(JSON.stringify(saved[0].railStationStates)), { code: 'G1234', stations: [
+        { station: '深圳北', state: 'intermediate' }, { station: '香港西九龙', state: 'terminal' },
+      ] });
+      assert.equal(f.reloads, 1);
+    }
   }
 });
 

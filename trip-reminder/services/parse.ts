@@ -123,12 +123,15 @@ export function parseDuration(text: string): number {
   return 0
 }
 
+// 只在车站上下文清理开头图标误识别；原始 OCR、航班名称和徽章判定保持独立。
+const stationContext = (s: string) => s.trim().replace(/^[\s\[\]【】<>〈〉《》]+/, "")
 const cleanPlace = (s: string) => {
-  const name = stripRailStationMarker(s.replace(/[（(].*?[)）]/g, ""))
+  const source = stationContext(s.replace(/[（(].*?[)）]/g, ""))
+  const name = stationContext(stripRailStationMarker(source))
     .replace(/[^\u4e00-\u9fa5A-Z0-9]+$/g, "") // 尾部垃圾字符（，、〉等，OCR 常把小图标认成标点）
     .replace(/[站\s]+$/g, "")
     .trim()
-  const badgeLabel = /^(?:起\s*[·.、:：]?\s*售|终\s*[·.、:：]?\s*止)/.test(s.trim())
+  const badgeLabel = /^(?:起\s*[·.、:：]?\s*售|终\s*[·.、:：]?\s*止)/.test(source)
   return badgeLabel || PLACE_STOPWORDS.test(name) || PLACE_BAD_PART.test(name) ? "" : name
 }
 
@@ -139,7 +142,7 @@ type RailPlaces = { from: string; to: string; stationStates: RailStationStates["
 function recordStationState(stations: RailStationStates["stations"], raw: string, label?: "始发站" | "终到站") {
   const station = cleanPlace(raw)
   if (!station) return
-  const badge = railStationMarkerState(raw)
+  const badge = railStationMarkerState(stationContext(raw))
   if (badge) stations.push({ station, state: badge })
   if (label) stations.push({ station, state: label === "始发站" ? "origin" : "terminal" })
 }
@@ -189,7 +192,7 @@ function parseRailPlaces(text: string): RailPlaces {
     }
     if (marked) continue
     if (/^[起过终始发到]$/.test(line) && i + 1 < lines.length) {
-      const next = lines[i + 1].match(/^([\u4e00-\u9fa5]{2,12})/)
+      const next = stationContext(lines[i + 1]).match(/^([\u4e00-\u9fa5]{2,12})[^\u4e00-\u9fa5]{0,2}$/)
       if (next) {
         push(line, `${line}\n${next[1]}`)
         i += 1
@@ -233,7 +236,7 @@ function parseFlightPlaces(text: string): { from: string; to: string; terminal: 
 const PLACE_STOPWORDS = /^(起|过|终|始|发|到|改签|退票|灵活行|乘车码|复兴号|和谐号|智能动车组|绿巨人)$/
 const PLACE_BAD_PART = /[0-9:：]|乘车|检票|座位|历时|出发|到达|时间|日期|车次|票价|信息|订单|起\s*售|终\s*止|售票|规则|说明|提示|须知|状态/
 
-// 用候选块位置兜底车站：站名在时间行下方（±0.14 内）左右各一个中文块
+// 用时间字高衡量车站行间距，避免长截图的归一化高度缩小后丢掉车站块。
 function placesFromCandidates(candidates: OCRCandidateBlock[]): RailPlaces {
   const stationStates: RailStationStates["stations"] = []
   const empty = { from: "", to: "", stationStates }
@@ -242,11 +245,11 @@ function placesFromCandidates(candidates: OCRCandidateBlock[]): RailPlaces {
   const timeY = timed[0].y + timed[0].h / 2
 
   const stationish = candidates.filter((c) => {
-    const t = c.content.trim()
+    const t = stationContext(c.content)
     if (!/^(?:[起过终始发到]\s*[·.、:：]?\s*)?[\u4e00-\u9fa5]{2,10}[^\u4e00-\u9fa5]{0,2}$/.test(t)) return false
     if (!cleanPlace(t)) return false
-    const dy = Math.abs(c.y + c.h / 2 - timeY)
-    return dy > 0.04 && dy < 0.14
+    const rowDistance = Math.abs(c.y + c.h / 2 - timeY) / timed[0].h
+    return rowDistance > 0.5 && rowDistance < 2.5
   })
   if (!stationish.length) return empty
   stationish.sort((a, b) => a.x + a.w / 2 - (b.x + b.w / 2))

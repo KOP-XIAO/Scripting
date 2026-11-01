@@ -244,6 +244,37 @@ test("bare 始兴 发耳 到保 remain names across main, candidate and table so
     assert.equal(state(marked, station), "origin")
   }
 })
+test("leading station ornaments preserve real names, metadata rejection and conflicting facts", () => {
+  for (const ornament of ["】 ", "【", "] ", "> ", "〉 ", "《 "]) {
+    for (const name of ["始兴", "发耳", "到保", "深圳北"]) {
+      const blocks = [...timeBlocks, candidate(`${ornament}${name}〉`, 0.10), candidate("香港西九龙〉", 0.70)]
+      const bare = parse("G1234\n09:00\n09:18", blocks)
+      assert.equal(bare.fromPlace, name)
+      assert.equal(bare.railStationStates, undefined, `${ornament}${name} has no badge`)
+      const marked = parse(`G1234\n过\n${ornament}${name}〉\n09:00\n09:18`)
+      assert.equal(marked.fromPlace, name)
+      assert.equal(state(marked, name), "intermediate")
+    }
+    for (const metadata of ["起售深圳北", "终止香港西九龙", "起售规则", "售票信息", "检票口", "乘车码", "改签", "退票", "灵活行", "出发 请以实际为准", "深圳北 售票信息", "深圳北>说明"]) {
+      const raw = `G1234\n过\n${ornament}${metadata}〉\n09:00\n09:18`
+      for (const blocks of [[], [...timeBlocks, candidate(`${ornament}${metadata}〉`, 0.10)]]) {
+        const trip = parse(raw, blocks)
+        assert.deepEqual([trip.fromPlace, trip.toPlace], ["", ""], raw)
+        assert.equal(trip.railStationStates, undefined, raw)
+      }
+    }
+  }
+  const conflict = parse(`${ticket}\n过\n】 深圳北>`, [...timeBlocks, candidate("】 起深圳北〉", 0.10)])
+  assert.equal(state(conflict, "深圳北"), undefined)
+  const overlaps = parse("G1234\n09:00\n09:18", [...timeBlocks,
+    candidate("】 深圳北>", 0.10), candidate("】 深圳东>", 0.12), candidate("香港西九龙〉", 0.70)])
+  assert.deepEqual([overlaps.fromPlace, overlaps.toPlace], ["", "香港西九龙"])
+  assert.equal(overlaps.railStationStates, undefined)
+  const flight = parse("CA1234\n】起航机场 → 终航机场〉\n09:00\n10:20")
+  assert.equal(flight.fromPlace, "】起航机场")
+  assert.equal(flight.toPlace, "终航机场〉")
+  assert.equal(flight.railStationStates, undefined)
+})
 test("non-station labels and damaged table rows never become state facts", () => {
   const trip = parse(`${ticket}\n起售规则\n终止检票\n起\n售规则\n过售票信息\n时刻表\n起售规则 08:00 08:01\n终止售票 08:02 08:03\n起北京南 29:00 09:00\n终上海虹桥 10:00 ???`)
   assert.equal(trip.railStationStates, undefined)
@@ -261,7 +292,7 @@ test("spread saves, upserts and archive retain metadata and original raw OCR not
       set: (key, value) => { stored.set(key, plain(value)); return true }},
     Widget: {reloadAll() {}},
   })
-  const raw = `${ticket}\n过深圳北\n过香港西九龙`
+  const raw = `${ticket}\n过\n】 深圳北>\n过香港西九龙〉`
   const record = {...parse(raw), id: "synthetic", note: raw, createdAt: "2026-10-01T00:00:00Z"}
   const facts = plain(record.railStationStates)
   T.upsertTrip(record)

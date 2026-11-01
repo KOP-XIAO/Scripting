@@ -182,6 +182,65 @@ test("positional OCR candidates clean badges without mutating source blocks or t
   assert.equal(JSON.stringify(candidates), before)
   assert.equal(P.normalizeOCR("过深圳北\n终香港西九龙"), "过深圳北\n终香港西九龙")
 })
+test("phone-shaped OCR recovers a split badge and bracketed station without inventing terminal", () => {
+  // Synthetic ticket fields; preserve the phone OCR line shape and native normalized positions.
+  const raw = "品\nG1234\n复兴号\n09:00\n过\n】 深圳北>\n乘车人：[已隐去]\n检票口Q：6A检票口\n座位号：08车12A二等座\n10月12日（周一）、\n历时18分\n出发 请以实际为准\n09:18\n香港西九龙〉\n改签\n灵活行\n乘车码\n退票 ."
+  const candidates = [
+    {content: "09:00", x: 0.061, y: 0.67, w: 0.171, h: 0.073},
+    {content: "09:18", x: 0.756, y: 0.67, w: 0.174, h: 0.072},
+    {content: "过", x: 0.061, y: 0.575, w: 0.035, h: 0.05},
+    {content: "】 深圳北>", x: 0.105, y: 0.575, w: 0.13, h: 0.05},
+    {content: "香港西九龙〉", x: 0.746, y: 0.576, w: 0.193, h: 0.05},
+  ]
+  const before = JSON.stringify(candidates)
+  for (const blocks of [[], candidates]) {
+    const trip = parse(raw, blocks)
+    assert.deepEqual([trip.fromPlace, trip.toPlace], ["深圳北", blocks.length ? "香港西九龙" : ""])
+    assert.equal(P.railStationState(trip, "深圳北"), "intermediate")
+    assert.equal(P.railStationState(trip, "香港西九龙"), undefined)
+    assert.deepEqual([trip.departTime, trip.arriveTime, trip.durationMin, trip.gate], ["09:00", "09:18", 18, "6A"])
+  }
+  // Also exercise positional recovery independently of the main text's badge.
+  const positional = parse("G1234\n09:00\n09:18", candidates)
+  assert.deepEqual([positional.fromPlace, positional.toPlace], ["深圳北", "香港西九龙"])
+  assert.equal(P.railStationState(positional, "深圳北"), "intermediate")
+  assert.equal(P.railStationState(positional, "香港西九龙"), undefined)
+  assert.equal(JSON.stringify(candidates), before)
+  assert.equal(P.normalizeOCR(raw), raw.replace(/：/g, ":").replace(/（/g, "(").replace(/）/g, ")"))
+})
+test("native station rows survive long-image scaling and collect only visible terminal evidence", () => {
+  const raw = "G1234\n09:00\n过\n】 深圳北>\n09:18\n香港西九龙〉"
+  const native = [
+    {content: "09:00", x: 0.061, y: 0.67, w: 0.171, h: 0.073},
+    {content: "09:18", x: 0.756, y: 0.67, w: 0.174, h: 0.072},
+    {content: "过", x: 0.061, y: 0.575, w: 0.035, h: 0.05},
+    {content: "】 深圳北>", x: 0.105, y: 0.575, w: 0.13, h: 0.05},
+    {content: "香港西九龙〉", x: 0.746, y: 0.576, w: 0.193, h: 0.05},
+    block("】 起售规则", 0.40, 0.575),
+  ]
+  for (const scale of [1, 806 / 2622]) {
+    for (const terminal of [false, true]) {
+      const blocks = native.map((c) => ({...c, y: c.y * scale, h: c.h * scale,
+        content: terminal && c.content === "香港西九龙〉" ? "终 香港西九龙〉" : c.content}))
+      const before = JSON.stringify(blocks)
+      const trip = parse(raw, blocks)
+      assert.deepEqual([trip.fromPlace, trip.toPlace], ["深圳北", "香港西九龙"], `scale=${scale}, terminal=${terminal}`)
+      assert.equal(P.railStationState(trip, "深圳北"), "intermediate")
+      assert.equal(P.railStationState(trip, "香港西九龙"), terminal ? "terminal" : undefined)
+      assert.equal(JSON.stringify(blocks), before)
+    }
+  }
+})
+test("native whole station strings retain actual badges and clean trailing chevrons", () => {
+  const route = "过深圳北〉\n终 香港西九龙〉"
+  const candidates = [...timeBlocks, block("过深圳北〉", 0.10), block("终 香港西九龙〉", 0.70)]
+  for (const [text, blocks] of [[route, []], ["", candidates]]) {
+    const trip = parse(`G1234\n${text}\n09:00\n09:18`, blocks)
+    assert.deepEqual([trip.fromPlace, trip.toPlace], ["深圳北", "香港西九龙"])
+    assert.equal(P.railStationState(trip, "深圳北"), "intermediate")
+    assert.equal(P.railStationState(trip, "香港西九龙"), "terminal")
+  }
+})
 test("one positional station cannot supply both endpoints or replace a known arrival", () => {
   for (const x of [0.10, 0.70]) {
     const candidates = [...timeBlocks, block("过深圳北站", x)]
