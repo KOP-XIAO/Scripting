@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Execute real OCR -> review -> save and archive deletion with native APIs kept in memory.
+// Execute real OCR review/save and archive edit/delete/statistics with native APIs kept in memory.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -88,7 +88,16 @@ function fixture(text = '', { candidates = [], trips = [], image = {}, recognize
         return archiveTree;
       };
       renderArchive();
-      return { render: renderArchive, nodes: () => nodes(archiveTree), texts: () => texts(archiveTree) };
+      return {
+        render: renderArchive, StationStateBadge,
+        nodes: (value = archiveTree) => nodes(value),
+        texts: (value = archiveTree) => texts(value),
+        one(type, title) {
+          const found = nodes(archiveTree).filter(node => node.type === type && node.props.title === title);
+          assert.equal(found.length, 1, `expected one archive ${type} titled ${title}`);
+          return found[0];
+        },
+      };
     },
     get reloads() { return reloads; },
     async ocr(expectedRecognitions = 1) {
@@ -264,6 +273,155 @@ test('shared StationStateBadge renders all three glyphs with or without a theme 
   }
 });
 
+function archiveFixtureTrips() {
+  const rail = {
+    id: 'archived-rail', mode: 'rail', code: 'G1234', carrier: '复兴号',
+    fromPlace: '深圳北', toPlace: '香港西九龙', departDate: '2099-06-18',
+    departTime: '09:00', arriveTime: '09:18', durationMin: 18,
+    gate: '6A', seatCar: '05', seatNo: '12A', seatClass: '二等座', passenger: '测试乘客', note: '旧备注',
+    createdAt: '2026-10-01T00:00:00.000Z', archivedAt: '2026-10-02T00:00:00.000Z',
+    railStationStates: { code: 'G1234', stations: [
+      { station: '深圳北', state: 'intermediate' }, { station: '香港西九龙', state: 'terminal' },
+    ] },
+    railStops: [
+      { station: '深圳北', state: 'intermediate', arriveTime: '08:58', departTime: '09:00' },
+      { station: '香港西九龙', state: 'terminal', arriveTime: '09:18' },
+    ],
+  };
+  const flight = {
+    id: 'archived-flight', mode: 'flight', code: 'CA1234', carrier: '测试航空',
+    fromPlace: '测试机场甲', toPlace: '测试机场乙', departDate: '2099-06-19',
+    departTime: '', arriveTime: '', durationMin: 0, terminal: 'T3', gate: 'C12',
+    boardingTime: '08:00', checkIn: 'H01', baggage: '3', seatNo: '32A', seatClass: '经济舱',
+    passenger: '测试乘客', note: '航班备注', createdAt: rail.createdAt, archivedAt: rail.archivedAt,
+  };
+  const active = { ...rail, id: 'active-rail', archivedAt: undefined, note: '保留未归档记录' };
+  return [rail, flight, active];
+}
+function archiveRow(archive, id) {
+  const rows = archive.nodes().filter(node => node.type === 'VStack' && node.props.key === id);
+  assert.equal(rows.length, 1, `expected archive row ${id}`);
+  return rows[0];
+}
+
+test('tapping an archive row saves shared fields in place without losing archive or rail metadata', () => {
+  const trips = archiveFixtureTrips(), f = fixture('', { trips }), archive = f.mountArchive();
+  archiveRow(archive, trips[0].id).props.onTapGesture();
+  archive.render();
+  f.render(); // Exercise archive callbacks after home has rendered with its own hook bag.
+  for (const title of ['车次', '车型', '出发车站', '到达车站', '日期', '发车时间', '到达时间',
+    '历时（分钟）', '检票口', '车厢', '座位号', '座别', '乘车人', '备注']) archive.one('TextField', title);
+  fieldState(archive, '出发车站', '过');
+  fieldState(archive, '到达车站', '终');
+  const changes = [['出发车站', '测试新车站'], ['发车时间', '10:00'], ['到达时间', '10:45'],
+    ['历时（分钟）', '45'], ['备注', '修改后的备注']];
+  for (const [title, value] of changes) archive.one('TextField', title).props.onChanged(value);
+  archive.render();
+  fieldState(archive, '出发车站', '未识别');
+  fieldState(archive, '到达车站', '终');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips)), 'draft changes must not save early');
+  archive.one('Button', '保存行程').props.action();
+  archive.render();
+  const expected = { ...trips[0], fromPlace: '测试新车站', departTime: '10:00', arriveTime: '10:45', durationMin: 45, note: '修改后的备注' };
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify([expected, ...trips.slice(1)])),
+    'save must preserve ids, timestamps, archivedAt, station facts, stops and every other record');
+  archive.one('Section', '归档记录 (2)');
+  assert.ok(archive.texts(archiveRow(archive, trips[0].id)).some(text => text.includes('测试新车站')));
+  assert.ok(archive.texts().some(text => text.includes('修改后的备注')));
+  assert.equal(archive.nodes().some(node => node.type === 'TextField'), false, 'saving must close the in-place form');
+  assert.equal(f.reloads, 1);
+  f.render();
+  label(f, '查看归档记录（2）');
+  label(f, '3 条');
+  f.one('Section', '行程列表 (1)');
+});
+
+test('swipe edit reuses flight fields and cancellation keeps storage, archive and home unchanged', () => {
+  const trips = archiveFixtureTrips(), f = fixture('', { trips }), archive = f.mountArchive();
+  const actions = archiveRow(archive, trips[1].id).props.trailingSwipeActions;
+  assert.equal(actions.allowsFullSwipe, false);
+  assert.deepEqual(Array.from(actions.actions, button => button.props.title), ['删除', '编辑']);
+  actions.actions[1].props.action();
+  archive.render();
+  for (const title of ['航班号', '航空公司', '出发机场', '到达机场', '日期', '起飞时间', '到达时间',
+    '历时（分钟）', '登机口', '航站楼', '登机时间', '值机柜台', '座位号', '舱位', '行李转盘', '乘机人', '备注']) archive.one('TextField', title);
+  assert.equal(archive.nodes().some(node => node.type === archive.StationStateBadge), false);
+  archive.one('TextField', '出发机场').props.onChanged('放弃的机场');
+  archive.one('TextField', '起飞时间').props.onChanged('12:00');
+  archive.one('TextField', '备注').props.onChanged('放弃的备注');
+  archive.render();
+  archive.one('Button', '放弃').props.action();
+  archive.render();
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips)));
+  assert.equal(f.reloads, 0, 'cancelling must not write or refresh widgets');
+  assert.equal(archive.nodes().some(node => node.type === 'TextField'), false);
+  assert.ok(archive.texts(archiveRow(archive, trips[1].id)).some(text => text.includes('测试机场甲')));
+  assert.equal(archive.texts().some(text => /放弃的/.test(text)), false);
+  f.render();
+  label(f, '查看归档记录（2）');
+  f.one('Section', '行程列表 (1)');
+});
+
+test('visible archive statistics refresh after edit and deletion, including unknown duration and empty archive', () => {
+  const trips = archiveFixtureTrips(), f = fixture('', { trips }), archive = f.mountArchive();
+  const stat = (title, value) => {
+    const section = archive.one('Section', '出行统计');
+    assert.ok(archive.nodes(section).some(node => node.type === 'HStack' &&
+      archive.texts(node).includes(title) && archive.texts(node).includes(value)), `expected statistic ${title}: ${value}`);
+  };
+  const place = (name, mode, frequency) => {
+    const section = archive.one('Section', '常用车站与机场');
+    const rows = section.props.children.flat(Infinity).filter(node => node?.type === 'VStack');
+    const matches = rows.filter(row => archive.texts(row).includes(name) && archive.texts(row).includes(mode));
+    assert.equal(matches.length, 1, `expected ranked place ${name} / ${mode}`);
+    assert.ok(archive.texts(matches[0]).includes(frequency));
+    return rows;
+  };
+  stat('累计行程', '2 次');
+  stat('累计时长', '0 小时 18 分钟');
+  stat('火车', '1 次 · 50%');
+  stat('航班', '1 次 · 50%');
+  stat('到访车站 / 机场', '4 处');
+  label(archive, '已计入 1 次行程的时长；1 次缺少时长，未计入。');
+  assert.equal(place('深圳北', '火车', '出发 1 次 · 到达 0 次').length, 4, 'active record must not inflate endpoint counts');
+  place('香港西九龙', '火车', '出发 0 次 · 到达 1 次');
+  place('测试机场甲', '航班', '出发 1 次 · 到达 0 次');
+  archiveRow(archive, trips[0].id).props.onTapGesture();
+  archive.render();
+  archive.one('TextField', '出发车站').props.onChanged('统计新城');
+  archive.one('TextField', '历时（分钟）').props.onChanged('78');
+  archive.render();
+  stat('累计时长', '0 小时 18 分钟'); // Only a saved draft can change the totals.
+  archive.one('Button', '保存行程').props.action();
+  archive.render();
+  stat('累计时长', '1 小时 18 分钟');
+  stat('累计行程', '2 次');
+  place('统计新城', '火车', '出发 1 次 · 到达 0 次');
+  assert.equal(archive.texts(archive.one('Section', '常用车站与机场')).includes('深圳北'), false);
+  archiveRow(archive, trips[0].id).props.trailingSwipeActions.actions[0].props.action();
+  archive.render();
+  stat('累计行程', '1 次');
+  stat('累计时长', '暂无可用时长');
+  stat('火车', '0 次 · 0%');
+  stat('航班', '1 次 · 100%');
+  stat('到访车站 / 机场', '2 处');
+  label(archive, '已计入 0 次行程的时长；1 次缺少时长，未计入。');
+  assert.equal(place('测试机场乙', '航班', '出发 0 次 · 到达 1 次').length, 2);
+  archiveRow(archive, trips[1].id).props.trailingSwipeActions.actions[0].props.action();
+  archive.render();
+  stat('累计行程', '0 次');
+  label(archive, '归档第一段行程后，在这里查看出行次数、时长和常用车站 / 机场。');
+  label(archive, '暂无归档记录。');
+  assert.equal(archive.nodes().some(node => node.type === 'Section' && node.props.title === '常用车站与机场'), false);
+  assert.equal(archive.texts().some(text => /NaN|Infinity|缺少时长/.test(text)), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify([trips[2]])));
+  assert.equal(f.reloads, 3);
+  f.render();
+  label(f, '查看归档记录（0）');
+  label(f, '1 条');
+  f.one('Section', '行程列表 (1)');
+});
+
 test('archive row swipe deletion preserves other trips and refreshes archive and home through empty state', () => {
   const trips = ['archive-one', 'archive-two', 'active'].map((id, index) => ({
     id, mode: 'rail', code: `G100${index + 1}`, fromPlace: '深圳北', toPlace: '香港西九龙',
@@ -284,7 +442,9 @@ test('archive row swipe deletion preserves other trips and refreshes archive and
     assert.ok(row, 'must find the selected archive row');
     const actions = row.props.trailingSwipeActions;
     assert.equal(actions?.allowsFullSwipe, false, 'archive deletion must require the revealed action');
-    assert.equal(actions.actions.length, 1);
+    assert.equal(actions.actions.length, 2);
+    assert.equal(actions.actions[1].type, 'Button');
+    assert.equal(actions.actions[1].props.title, '编辑', 'editing must follow the existing delete action');
     const button = actions.actions[0];
     assert.equal(button.type, 'Button');
     assert.equal(button.props.title, '删除');

@@ -76,6 +76,7 @@ import { TripCard } from "./components/trip-card"
 import { TripWidgetPreview, StationStateBadge } from "./components/trip-widget"
 import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
+import { archiveStatistics } from "./services/statistics"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
 
@@ -100,21 +101,248 @@ const EMPTY_DRAFT: ParsedTrip = {
   passenger: "",
 }
 
+// 首页与归档共用同一套字段与校验入口。
+function draftFormRows({ draft, draftId, draftNote, rawText, showRaw, notice, patch, setDraftNote, setShowRaw, saveDraft, cancelDraft }: {
+  draft: ParsedTrip | null
+  draftId: string | null
+  draftNote: string
+  rawText: string
+  showRaw: boolean
+  notice: string
+  patch: (values: Partial<ParsedTrip>) => void
+  setDraftNote: (value: string) => void
+  setShowRaw: (value: boolean) => void
+  saveDraft: () => void
+  cancelDraft: () => void
+}): any[] {
+  if (!draft) return []
+  const isFlight = draft.mode === "flight"
+  const rows: any[] = []
+
+  // 头部卡：提示条 + 火车/航班切换（卡内只有文本与小按钮，无 TextField，嵌套安全）
+  rows.push(
+    <VStack
+      key="head"
+      alignment="leading"
+      spacing={8}
+      padding={10}
+      frame={{ maxWidth: "infinity" } as never}
+      background="rgba(127,127,127,0.10)"
+      clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
+    >
+      {notice ? (
+        <HStack spacing={6}>
+          <Image systemName="info.circle" font={11} foregroundStyle="systemBlue" />
+          <Text font="caption2" foregroundStyle="label" lineLimit={3}>
+            {notice}
+          </Text>
+        </HStack>
+      ) : null}
+      <HStack spacing={8}>
+        {TRIP_MODES.map((m) => {
+          const selected = draft.mode === m
+          return (
+            <Button
+              key={m}
+              buttonStyle="plain"
+              action={() =>
+                patch({
+                  mode: m,
+                  ...(m === "rail" ? { terminal: "", checkIn: "", boardingTime: "", baggage: "" } : { seatCar: "" }),
+                })
+              }
+            >
+              <Text
+                font="caption"
+                fontWeight={selected ? "semibold" : "regular"}
+                foregroundStyle={selected ? "systemBlue" : "secondaryLabel"}
+                padding={{ top: 3, bottom: 3, leading: 10, trailing: 10 }}
+                background={selected ? "rgba(0,122,255,0.12)" : "rgba(127,127,127,0.10)"}
+                clipShape={{ type: "rect", cornerRadius: 7, style: "continuous" }}
+              >
+                {modeLabel(m)}
+              </Text>
+            </Button>
+          )
+        })}
+        <Spacer />
+        <Text font="caption2" foregroundStyle="secondaryLabel">
+          {rawText ? "来自截图识别" : draftId ? "编辑中" : "手动填写"}
+        </Text>
+      </HStack>
+      {!isFlight ? <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={2}>
+        起＝始发站，过＝经停站，终＝终点站
+      </Text> : null}
+    </VStack>,
+  )
+
+  // 字段：每个独立一行（label + TextField 的 VStack，直接作为 List 行）
+  const fields: Array<[string, string, string | undefined, (v: string) => void]> = [
+    [isFlight ? "航班号" : "车次", draft.code, isFlight ? "CA1234" : "G1234",
+      (v) => patch({ code: v.replace(/\s+/g, "").toUpperCase() })],
+    [isFlight ? "航空公司" : "车型", draft.carrier, isFlight ? "中国国际航空" : "复兴号",
+      (v) => patch({ carrier: v })],
+    [`出发${isFlight ? "机场" : "车站"}`, draft.fromPlace, isFlight ? "北京首都T3" : "北京南",
+      (v) => patch({ fromPlace: v })],
+    [`到达${isFlight ? "机场" : "车站"}`, draft.toPlace, isFlight ? "上海虹桥T2" : "上海虹桥",
+      (v) => patch({ toPlace: v })],
+    ["日期", draft.departDate, "2026-10-12", (v) => patch({ departDate: v.trim() })],
+    [isFlight ? "起飞时间" : "发车时间", draft.departTime, "08:32", (v) => patch({ departTime: v.trim() })],
+    ["到达时间", draft.arriveTime, "08:50", (v) => patch({ arriveTime: v.trim() })],
+    ["历时（分钟）", draft.durationMin ? String(draft.durationMin) : "", "18",
+      (v) => patch({ durationMin: Math.max(0, Number(v) || 0) })],
+  ]
+  if (isFlight) {
+    fields.push(["登机口", draft.gate, "C12", (v) => patch({ gate: v.trim().toUpperCase() })])
+    fields.push(["航站楼", draft.terminal, "T3", (v) => patch({ terminal: v.trim().toUpperCase() })])
+    fields.push(["登机时间", draft.boardingTime, "07:20", (v) => patch({ boardingTime: v.trim() })])
+    fields.push(["值机柜台", draft.checkIn, "H01-H10", (v) => patch({ checkIn: v.trim().toUpperCase() })])
+  } else {
+    fields.push(["检票口", draft.gate, "6A", (v) => patch({ gate: v.trim().toUpperCase() })])
+    fields.push(["车厢", draft.seatCar, "5", (v) => patch({ seatCar: v.replace(/\D/g, "") })])
+  }
+  fields.push(["座位号", draft.seatNo, isFlight ? "32A" : "12A", (v) => patch({ seatNo: v.trim().toUpperCase() })])
+  fields.push([isFlight ? "舱位" : "座别", draft.seatClass, isFlight ? "经济舱" : "二等座",
+    (v) => patch({ seatClass: v })])
+  if (isFlight) {
+    fields.push(["行李转盘", draft.baggage, "可留空", (v) => patch({ baggage: v.replace(/\D/g, "") })])
+  }
+  fields.push([isFlight ? "乘机人" : "乘车人", draft.passenger, "可留空", (v) => patch({ passenger: v })])
+  fields.push(["备注", draftNote, "如：接人 / 报销", setDraftNote])
+
+  // 每两个字段一行。注意：本运行时 title 是 TextField 渲染的必要条件（否则不渲染），
+  // 但 title 本身不显示——可见标签由上方 Text 提供（真机截图实证）
+  for (let i = 0; i < fields.length; i += 2) {
+    const pair = fields.slice(i, i + 2)
+    rows.push(
+      <HStack key={`row${i}`} spacing={10}>
+        {pair.map(([label, value, prompt, onChanged], j) => {
+          const isStation = label === "出发车站" || label === "到达车站"
+          const state = isStation ? railStationState(draft, value) : undefined
+          return <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
+            <HStack alignment="top" spacing={4}>
+              <Text font="caption" foregroundStyle="secondaryLabel">{label}</Text>
+              {state ? <StationStateBadge state={state} />
+                : isStation ? <Text font="caption2" foregroundStyle="secondaryLabel">未识别</Text> : null}
+            </HStack>
+            <TextField title={label} value={value} prompt={prompt} onChanged={onChanged} />
+          </VStack>
+        })}
+      </HStack>,
+    )
+  }
+
+  if (draft.mode === "rail") {
+    rows.push(<RailTimetable key="rail-timetable" trip={draft} />)
+  }
+
+  if (rawText) {
+    rows.push(
+      <Toggle key="raw" title="查看识别原文（用于排查识别不准）" value={showRaw} onChanged={setShowRaw} />,
+    )
+    if (showRaw) {
+      rows.push(
+        <Text
+          key="rawtext"
+          font="caption2"
+          monospaced
+          foregroundStyle="label"
+          padding={8}
+          background="rgba(127,127,127,0.10)"
+          clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+        >
+          {rawText}
+        </Text>,
+      )
+    }
+  }
+  // 保存 / 放弃各自独立成行
+  rows.push(<Button key="save" title="保存行程" action={saveDraft} />)
+  rows.push(<Button key="cancel" title="放弃" role="destructive" action={cancelDraft} />)
+  return rows
+}
+
 function ArchivePage({ trips, passengerMode, hideSeatNumber, onTripsChanged }: {
   trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean; onTripsChanged: (trips: TripRecord[]) => void
 }) {
   const [records, setRecords] = useState(trips)
+  const [draft, setDraft] = useState<TripRecord | null>(null)
+  const [draftNote, setDraftNote] = useState("")
+  const stats = archiveStatistics(records)
+  const updateRecords = (all: TripRecord[]) => {
+    setRecords(all.filter(record => !!record.archivedAt))
+    onTripsChanged(all)
+  }
+  const cancelDraft = () => {
+    setDraft(null)
+    setDraftNote("")
+  }
+  const beginEdit = (trip: TripRecord) => {
+    setDraft({ ...trip })
+    setDraftNote(trip.note ?? "")
+  }
+  const patch = (values: Partial<ParsedTrip>) => setDraft(current => current ? { ...current, ...values } : current)
+  const saveDraft = () => {
+    if (!draft) return
+    if (!draft.code && !draft.departTime) {
+      void Dialog.alert({ message: "至少要有车次/航班号或出发时间，否则无法保存行程" })
+      return
+    }
+    const all = listTrips()
+    const existing = all.find(record => record.id === draft.id)
+    if (!existing) {
+      updateRecords(all)
+      cancelDraft()
+      void Dialog.alert({ message: "这条归档记录已不存在，请返回列表查看。" })
+      return
+    }
+    updateRecords(upsertTrip({
+      ...existing,
+      ...draft,
+      id: existing.id,
+      note: draftNote,
+      createdAt: existing.createdAt,
+      archivedAt: existing.archivedAt ?? draft.archivedAt,
+    }))
+    cancelDraft()
+  }
   const removeArchived = (trip: TripRecord) => {
-    const remaining = deleteTrip(trip.id)
-    setRecords(remaining.filter(record => !!record.archivedAt))
-    onTripsChanged(remaining)
+    updateRecords(deleteTrip(trip.id))
+    if (draft?.id === trip.id) cancelDraft()
   }
   return <List navigationTitle="归档记录" navigationBarTitleDisplayMode="inline">
-    <Section title={`归档记录 (${records.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">归档行程不参与小组件展示，左滑可删除。</Text>}>
-      {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...records].reverse().map(t =>
-        <VStack key={t.id} alignment="leading" spacing={4}
+    <Section title="出行统计" footer={<Text font="caption" foregroundStyle="secondaryLabel">
+      每条归档记录计 1 次行程，不按乘客人数计数；包含手动归档的未来行程，仅代表已记录，未核实是否实际完成。
+    </Text>}>
+      <HStack><Text>累计行程</Text><Spacer /><Text fontWeight="semibold">{`${stats.total} 次`}</Text></HStack>
+      {stats.total > 0 ? [
+        <HStack key="duration"><Text>累计时长</Text><Spacer /><Text fontWeight="semibold">{stats.knownDurationCount > 0 ? `${Math.floor(stats.totalMinutes / 60)} 小时 ${stats.totalMinutes % 60} 分钟` : "暂无可用时长"}</Text></HStack>,
+        <Text key="duration-coverage" font="caption" foregroundStyle="secondaryLabel">{`已计入 ${stats.knownDurationCount} 次行程的时长${stats.unknownDurationCount > 0 ? `；${stats.unknownDurationCount} 次缺少时长，未计入` : ""}。`}</Text>,
+        <HStack key="rail"><Text>火车</Text><Spacer /><Text>{`${stats.rail} 次 · ${Math.round(stats.rail / stats.total * 100)}%`}</Text></HStack>,
+        <HStack key="flight"><Text>航班</Text><Spacer /><Text>{`${stats.flight} 次 · ${Math.round(stats.flight / stats.total * 100)}%`}</Text></HStack>,
+        <HStack key="places"><Text>到访车站 / 机场</Text><Spacer /><Text>{`${stats.uniquePlaceCount} 处`}</Text></HStack>,
+      ] : <Text foregroundStyle="secondaryLabel">归档第一段行程后，在这里查看出行次数、时长和常用车站 / 机场。</Text>}
+    </Section>
+    {stats.total > 0 ? <Section title="常用车站与机场" footer={<Text font="caption" foregroundStyle="secondaryLabel">
+      按出发与到达总次数排序，最多显示前 10 处；只统计乘车 / 乘机区间两端，不包含经停站。同名火车站与机场分别统计。
+    </Text>}>
+      {stats.places.length > 0 ? stats.places.slice(0, 10).map(place => <VStack key={`${place.mode}-${place.name}`} alignment="leading" spacing={3}>
+        <HStack><Text>{place.name}</Text><Spacer /><Text font="caption" foregroundStyle="secondaryLabel">{modeLabel(place.mode)}</Text></HStack>
+        <Text font="caption" foregroundStyle="secondaryLabel">{`出发 ${place.departures} 次 · 到达 ${place.arrivals} 次`}</Text>
+      </VStack>) : <Text foregroundStyle="secondaryLabel">补全归档行程的出发与到达地点后，即可查看地点频次。</Text>}
+    </Section> : null}
+    <Section title={`归档记录 (${records.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">归档行程不参与小组件展示；点按编辑，左滑可编辑或删除。保存后仍保留在归档中。</Text>}>
+      {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...records].reverse().flatMap(t => {
+        if (draft?.id === t.id) return draftFormRows({
+          draft, draftId: draft.id, draftNote, rawText: "", showRaw: false,
+          notice: "编辑归档行程，保存后仍保留在归档中。",
+          patch, setDraftNote, setShowRaw: () => {}, saveDraft, cancelDraft,
+        })
+        return [<VStack key={t.id} alignment="leading" spacing={4}
+          onTapGesture={() => beginEdit(t)}
           trailingSwipeActions={{ allowsFullSwipe: false, actions: [
             <Button title="删除" role="destructive" action={() => removeArchived(t)} />,
+            <Button title="编辑" tint="accentColor" action={() => beginEdit(t)} />,
           ] }}>
           <Text font="headline">{t.code || "—"} · {routeText(t)}</Text>
           <Text font="caption" foregroundStyle="secondaryLabel">{[
@@ -130,8 +358,8 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, onTripsChanged }: {
           {t.mode === "rail" && t.railStops?.length ? <NavigationLink destination={<RailTimetablePage trip={t} />}>
             <Text font="caption" foregroundStyle="systemBlue">查看乘车区间时刻表</Text>
           </NavigationLink> : null}
-        </VStack>
-      )}
+        </VStack>]
+      })}
     </Section>
   </List>
 }
@@ -294,156 +522,10 @@ function View() {
   }
 
   const modeIcon = (m: TripMode) => (m === "flight" ? "airplane.departure" : "tram.fill")
-  const draftIsFlight = draft?.mode === "flight"
 
-  // 草稿表单：提示、模式切换、带 title 的双列字段及保存/放弃。
-  const draftRows = (): any[] => {
-    if (!draft) return []
-    const isFlight = draftIsFlight
-    const rows: any[] = []
-
-    // 头部卡：提示条 + 火车/航班切换（卡内只有文本与小按钮，无 TextField，嵌套安全）
-    rows.push(
-      <VStack
-        key="head"
-        alignment="leading"
-        spacing={8}
-        padding={10}
-        frame={{ maxWidth: "infinity" } as never}
-        background="rgba(127,127,127,0.10)"
-        clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
-      >
-        {notice ? (
-          <HStack spacing={6}>
-            <Image systemName="info.circle" font={11} foregroundStyle="systemBlue" />
-            <Text font="caption2" foregroundStyle="label" lineLimit={3}>
-              {notice}
-            </Text>
-          </HStack>
-        ) : null}
-        <HStack spacing={8}>
-          {TRIP_MODES.map((m) => {
-            const selected = draft.mode === m
-            return (
-              <Button
-                key={m}
-                buttonStyle="plain"
-                action={() =>
-                  patch({
-                    mode: m,
-                    ...(m === "rail" ? { terminal: "", checkIn: "", boardingTime: "", baggage: "" } : { seatCar: "" }),
-                  })
-                }
-              >
-                <Text
-                  font="caption"
-                  fontWeight={selected ? "semibold" : "regular"}
-                  foregroundStyle={selected ? "systemBlue" : "secondaryLabel"}
-                  padding={{ top: 3, bottom: 3, leading: 10, trailing: 10 }}
-                  background={selected ? "rgba(0,122,255,0.12)" : "rgba(127,127,127,0.10)"}
-                  clipShape={{ type: "rect", cornerRadius: 7, style: "continuous" }}
-                >
-                  {modeLabel(m)}
-                </Text>
-              </Button>
-            )
-          })}
-          <Spacer />
-          <Text font="caption2" foregroundStyle="secondaryLabel">
-            {rawText ? "来自截图识别" : draftId ? "编辑中" : "手动填写"}
-          </Text>
-        </HStack>
-        {!isFlight ? <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={2}>
-          起＝始发站，过＝经停站，终＝终点站
-        </Text> : null}
-      </VStack>,
-    )
-
-    // 字段：每个独立一行（label + TextField 的 VStack，直接作为 List 行）
-    const fields: Array<[string, string, string | undefined, (v: string) => void]> = [
-      [isFlight ? "航班号" : "车次", draft.code, isFlight ? "CA1234" : "G1234",
-        (v) => patch({ code: v.replace(/\s+/g, "").toUpperCase() })],
-      [isFlight ? "航空公司" : "车型", draft.carrier, isFlight ? "中国国际航空" : "复兴号",
-        (v) => patch({ carrier: v })],
-      [`出发${isFlight ? "机场" : "车站"}`, draft.fromPlace, isFlight ? "北京首都T3" : "北京南",
-        (v) => patch({ fromPlace: v })],
-      [`到达${isFlight ? "机场" : "车站"}`, draft.toPlace, isFlight ? "上海虹桥T2" : "上海虹桥",
-        (v) => patch({ toPlace: v })],
-      ["日期", draft.departDate, "2026-10-12", (v) => patch({ departDate: v.trim() })],
-      [isFlight ? "起飞时间" : "发车时间", draft.departTime, "08:32", (v) => patch({ departTime: v.trim() })],
-      ["到达时间", draft.arriveTime, "08:50", (v) => patch({ arriveTime: v.trim() })],
-      ["历时（分钟）", draft.durationMin ? String(draft.durationMin) : "", "18",
-        (v) => patch({ durationMin: Math.max(0, Number(v) || 0) })],
-    ]
-    if (isFlight) {
-      fields.push(["登机口", draft.gate, "C12", (v) => patch({ gate: v.trim().toUpperCase() })])
-      fields.push(["航站楼", draft.terminal, "T3", (v) => patch({ terminal: v.trim().toUpperCase() })])
-      fields.push(["登机时间", draft.boardingTime, "07:20", (v) => patch({ boardingTime: v.trim() })])
-      fields.push(["值机柜台", draft.checkIn, "H01-H10", (v) => patch({ checkIn: v.trim().toUpperCase() })])
-    } else {
-      fields.push(["检票口", draft.gate, "6A", (v) => patch({ gate: v.trim().toUpperCase() })])
-      fields.push(["车厢", draft.seatCar, "5", (v) => patch({ seatCar: v.replace(/\D/g, "") })])
-    }
-    fields.push(["座位号", draft.seatNo, isFlight ? "32A" : "12A", (v) => patch({ seatNo: v.trim().toUpperCase() })])
-    fields.push([isFlight ? "舱位" : "座别", draft.seatClass, isFlight ? "经济舱" : "二等座",
-      (v) => patch({ seatClass: v })])
-    if (isFlight) {
-      fields.push(["行李转盘", draft.baggage, "可留空", (v) => patch({ baggage: v.replace(/\D/g, "") })])
-    }
-    fields.push([isFlight ? "乘机人" : "乘车人", draft.passenger, "可留空", (v) => patch({ passenger: v })])
-    fields.push(["备注", draftNote, "如：接人 / 报销", setDraftNote])
-
-    // 每两个字段一行。注意：本运行时 title 是 TextField 渲染的必要条件（否则不渲染），
-    // 但 title 本身不显示——可见标签由上方 Text 提供（真机截图实证）
-    for (let i = 0; i < fields.length; i += 2) {
-      const pair = fields.slice(i, i + 2)
-      rows.push(
-        <HStack key={`row${i}`} spacing={10}>
-          {pair.map(([label, value, prompt, onChanged], j) => {
-            const isStation = label === "出发车站" || label === "到达车站"
-            const state = isStation ? railStationState(draft, value) : undefined
-            return <VStack key={`f${i + j}`} alignment="leading" spacing={2} frame={{ maxWidth: "infinity" } as never}>
-              <HStack alignment="top" spacing={4}>
-                <Text font="caption" foregroundStyle="secondaryLabel">{label}</Text>
-                {state ? <StationStateBadge state={state} />
-                  : isStation ? <Text font="caption2" foregroundStyle="secondaryLabel">未识别</Text> : null}
-              </HStack>
-              <TextField title={label} value={value} prompt={prompt} onChanged={onChanged} />
-            </VStack>
-          })}
-        </HStack>,
-      )
-    }
-
-    if (draft.mode === "rail") {
-      rows.push(<RailTimetable key="rail-timetable" trip={draft} />)
-    }
-
-    if (rawText) {
-      rows.push(
-        <Toggle key="raw" title="查看识别原文（用于排查识别不准）" value={showRaw} onChanged={setShowRaw} />,
-      )
-      if (showRaw) {
-        rows.push(
-          <Text
-            key="rawtext"
-            font="caption2"
-            monospaced
-            foregroundStyle="label"
-            padding={8}
-            background="rgba(127,127,127,0.10)"
-            clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-          >
-            {rawText}
-          </Text>,
-        )
-      }
-    }
-    // 保存 / 放弃各自独立成行
-    rows.push(<Button key="save" title="保存行程" action={saveDraft} />)
-    rows.push(<Button key="cancel" title="放弃" role="destructive" action={cancelDraft} />)
-    return rows
-  }
+  const draftRows = () => draftFormRows({
+    draft, draftId, draftNote, rawText, showRaw, notice, patch, setDraftNote, setShowRaw, saveDraft, cancelDraft,
+  })
 
   return (
     <TabView selection={selection}>
