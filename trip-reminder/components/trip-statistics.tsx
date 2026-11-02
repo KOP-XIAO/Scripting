@@ -1,4 +1,4 @@
-import { Button, GeometryReader, HStack, Rectangle, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, useState, type VirtualNode } from "scripting"
+import { Button, GeometryReader, HStack, Image, Rectangle, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, useState, type VirtualNode } from "scripting"
 import { modeLabel, type TripMode } from "../services/parse"
 import { archiveInsights, type ArchiveInsights } from "../services/statistics"
 import type { Theme } from "../services/theme"
@@ -29,19 +29,24 @@ function OverviewValue({ label, value, theme }: { label: string; value: string; 
   </VStack>
 }
 
-function StatsBlock({ title, theme, children, footer }: { title: string; theme: Theme; children?: VirtualNode | (VirtualNode | null | undefined)[]; footer?: VirtualNode }) {
+function StatsBlock({ title, icon, theme, children, footer }: { title: string; icon: string; theme: Theme; children?: VirtualNode | (VirtualNode | null | undefined)[]; footer?: VirtualNode }) {
   return <VStack alignment="leading" spacing={12} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-    <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.ink}>{title}</Text>
+    <HStack spacing={7}>
+      <Image systemName={icon} font={13} foregroundStyle={theme.sub} accessibilityHidden={true} />
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle={theme.ink}>{title}</Text>
+    </HStack>
     {children}
     {footer}
   </VStack>
 }
 
 /** Pure native view, also used by the desktop layout preview. */
-export function TripStatisticsContent({ insights, theme, placeMetric = "total", onChooseYear, onChooseMode, onChoosePlaceMetric }: {
+export function TripStatisticsContent({ insights, theme, placeMetric = "total", trendMonths = insights.months.length > 3 ? 12 : 3, onChooseYear, onChooseMode, onChoosePlaceMetric, onChooseTrend }: {
   insights: ArchiveInsights
   theme: Theme
   placeMetric?: PlaceMetric
+  trendMonths?: 3 | 12
+  onChooseTrend?: () => void
   onChooseYear?: () => void
   onChooseMode?: () => void
   onChoosePlaceMetric?: () => void
@@ -49,6 +54,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
   const { summary, months, longest } = insights
   const yearLabel = `年份：${insights.selectedYear === null ? "全部年份" : `${insights.selectedYear} 年`}`
   const modeFilterLabel = `出行方式：${insights.selectedMode === "all" ? "全部方式" : modeLabel(insights.selectedMode)}`
+  const trendLabel = `趋势范围：${trendMonths === 3 ? "最近 3 个月" : "12 个月"}`
   const metricLabel = `站点排行：${PLACE_LABELS[placeMetric]}`
   const places = [...summary.places].filter(place => place[placeMetric] > 0).sort((a, b) =>
     b[placeMetric] - a[placeMetric] || a.name.localeCompare(b.name, "zh-CN") || a.mode.localeCompare(b.mode, "en"))
@@ -59,12 +65,12 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
   const durationCoverage = `已知时长 ${summary.knownDurationCount} 次 · 缺少时长 ${summary.unknownDurationCount} 次`
   return <ScrollView navigationTitle="详细统计" navigationBarTitleDisplayMode="inline" background={theme.cardTop}>
     <VStack alignment="leading" spacing={24} frame={{ maxWidth: "infinity", alignment: "leading" }} padding={{ horizontal: 18, top: 16, bottom: 32 }}>
-    <StatsBlock theme={theme} title="统计范围" footer={<Text font="caption" foregroundStyle={theme.sub}>按出发日期筛选；下方所有统计随筛选更新。</Text>}>
-      {onChooseYear ? <Button action={onChooseYear}><Text foregroundStyle={theme.accent}>{yearLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{yearLabel}</Text>}
-      {onChooseMode ? <Button action={onChooseMode}><Text foregroundStyle={theme.accent}>{modeFilterLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{modeFilterLabel}</Text>}
+    <StatsBlock theme={theme} title="统计范围" icon="calendar" footer={<Text font="caption" foregroundStyle={theme.sub}>按出发日期筛选；下方所有统计随筛选更新。</Text>}>
+      {onChooseYear ? <Button action={onChooseYear}><HStack spacing={7}><Image systemName="calendar" font={13} foregroundStyle={theme.accent} accessibilityHidden={true} /><Text foregroundStyle={theme.accent}>{yearLabel}</Text></HStack></Button> : <Text foregroundStyle={theme.ink}>{yearLabel}</Text>}
+      {onChooseMode ? <Button action={onChooseMode}><HStack spacing={7}><Image systemName="tram.fill" font={13} foregroundStyle={theme.accent} accessibilityHidden={true} /><Text foregroundStyle={theme.accent}>{modeFilterLabel}</Text></HStack></Button> : <Text foregroundStyle={theme.ink}>{modeFilterLabel}</Text>}
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="出行概览" footer={<Text font="caption" foregroundStyle={theme.sub}>{summary.total ? `${durationCoverage}。地点按车站 / 机场分别去重；活跃天数按有效出发日期去重。` : "当前范围没有归档行程。可切换年份或出行方式，或先在首页归档一段行程。"}</Text>}>
+    <StatsBlock theme={theme} title="出行概览" icon="chart.bar" footer={<Text font="caption" foregroundStyle={theme.sub}>{summary.total ? `${durationCoverage}。地点按车站 / 机场分别去重；活跃天数按有效出发日期去重。` : "当前范围没有归档行程。可切换年份或出行方式，或先在首页归档一段行程。"}</Text>}>
       <VStack alignment="leading" spacing={20}>
         <HStack alignment="top" spacing={16}>
           <OverviewValue label="累计行程" value={`${summary.total} 次`} theme={theme} />
@@ -77,7 +83,8 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </VStack>
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="月度趋势" footer={<Text font="caption" foregroundStyle={theme.sub}>{`${period}。按出发月份计数${insights.selectedYear === null ? "；全部年份的概览包含所有归档，图表仅展示截至最近有效出发月份的连续 12 个月" : ""}。${insights.invalidDateCount ? `${insights.invalidDateCount} 次缺少有效日期，未计入趋势和出行天数。` : ""}`}</Text>}>
+    <StatsBlock theme={theme} title="月度趋势" icon="chart.bar.xaxis" footer={<Text font="caption" foregroundStyle={theme.sub}>{`${period}。按出发月份计数；概览仍含全部筛选归档。${trendMonths === 3 ? "截至当前筛选最近有效出发月份，展示连续至多 3 个月。" : insights.selectedYear === null ? "图表展示截至最近有效出发月份的连续 12 个月。" : "图表展示所选年份的 1 至 12 月。"}${insights.selectedYear === null ? "" : `所有图示仅限所选年份。${trendMonths === 3 ? "最近 3 个月在年初可能不足 3 个月。" : ""}`}${insights.invalidDateCount ? `${insights.invalidDateCount} 次缺少有效日期，未计入趋势和出行天数。` : ""}`}</Text>}>
+      {onChooseTrend ? <Button action={onChooseTrend}><HStack spacing={7}><Image systemName="calendar.badge.clock" font={13} foregroundStyle={theme.accent} accessibilityHidden={true} /><Text foregroundStyle={theme.accent}>{trendLabel}</Text></HStack></Button> : <Text foregroundStyle={theme.ink}>{trendLabel}</Text>}
       <VStack alignment="leading" spacing={12} frame={{ minHeight: maximum > 0 ? 250 : 0, alignment: "leading" }} padding={{ top: 8, bottom: 8 }}>
         <HStack alignment="firstTextBaseline">
           <Text font="subheadline" foregroundStyle={theme.ink}>{`图示 ${chartCount} 次行程`}</Text>
@@ -89,7 +96,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
             accessibilityElement="ignore" accessibilityLabel={`${monthText(month.month)}：${month.total} 次，火车 ${month.rail} 次，航班 ${month.flight} 次，${month.totalMinutes > 0 ? `已知累计时长 ${minutesText(month.totalMinutes)}` : month.total > 0 ? "暂无可用时长" : "无行程"}`}>
             <Text font={11} monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{String(month.total)}</Text>
             <VStack spacing={0} frame={{ height: 122, alignment: "bottom" }}>
-              <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: 12, height: month.total / maximum * 122 }} />
+              <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: trendMonths === 3 ? 24 : 12, height: month.total / maximum * 122 }} />
             </VStack>
             <Text font={11} monospacedDigit foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{month.month.slice(5)}</Text>
           </VStack>)}
@@ -98,7 +105,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </VStack>
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="出行方式" footer={<Text font="caption" foregroundStyle={theme.sub}>占比以当前范围的归档行程为分母。</Text>}>
+    <StatsBlock theme={theme} title="出行方式" icon="tram.fill" footer={<Text font="caption" foregroundStyle={theme.sub}>占比以当前范围的归档行程为分母。</Text>}>
       {(["rail", "flight"] as TripMode[]).map(mode => <VStack key={mode} alignment="leading" spacing={9} padding={{ top: 5, bottom: 5 }}>
         <HStack accessibilityElement="combine">
           <Text foregroundStyle={theme.ink}>{modeLabel(mode)}</Text><Spacer />
@@ -108,7 +115,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </VStack>)}
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="时长统计" footer={<Text font="caption" foregroundStyle={theme.sub}>仅使用已填写或可由出发 / 到达时间计算的时长；缺失时长不按 0 分钟计入平均。</Text>}>
+    <StatsBlock theme={theme} title="时长统计" icon="clock" footer={<Text font="caption" foregroundStyle={theme.sub}>仅使用已填写或可由出发 / 到达时间计算的时长；缺失时长不按 0 分钟计入平均。</Text>}>
       <HStack accessibilityElement="combine"><Text foregroundStyle={theme.ink}>平均每次</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{insights.averageMinutes === null ? "暂无可用时长" : minutesText(insights.averageMinutes)}</Text></HStack>
       <VStack alignment="leading" spacing={5}>
         <HStack><Text foregroundStyle={theme.ink}>最长行程</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{longest ? minutesText(longest.minutes) : "暂无可用时长"}</Text></HStack>
@@ -117,8 +124,8 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       <Text font="caption" foregroundStyle={theme.sub}>{durationCoverage}</Text>
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="常用车站与机场" footer={<Text font="caption" foregroundStyle={theme.sub}>最多显示前 8 处。只统计行程两端，不包含经停站；同名车站与机场分别统计。</Text>}>
-      {onChoosePlaceMetric ? <Button action={onChoosePlaceMetric}><Text foregroundStyle={theme.accent}>{metricLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{metricLabel}</Text>}
+    <StatsBlock theme={theme} title="常用车站与机场" icon="mappin.and.ellipse" footer={<Text font="caption" foregroundStyle={theme.sub}>最多显示前 8 处。只统计行程两端，不包含经停站；同名车站与机场分别统计。</Text>}>
+      {onChoosePlaceMetric ? <Button action={onChoosePlaceMetric}><HStack spacing={7}><Image systemName="line.3.horizontal.decrease.circle" font={13} foregroundStyle={theme.accent} accessibilityHidden={true} /><Text foregroundStyle={theme.accent}>{metricLabel}</Text></HStack></Button> : <Text foregroundStyle={theme.ink}>{metricLabel}</Text>}
       {places.length ? places.slice(0, 8).map((place, index) => <HStack key={`${place.mode}-${place.name}`} alignment="top" spacing={12} padding={{ top: 5, bottom: 5 }}>
         <Text font="caption" monospacedDigit foregroundStyle={theme.sub} frame={{ width: 16 }} padding={{ top: 3 }}>{String(index + 1)}</Text>
         <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity", alignment: "leading" }}>
@@ -132,7 +139,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </HStack>) : <Text font="subheadline" foregroundStyle={theme.sub}>当前范围暂无地点记录。补全归档行程的出发 / 到达地点后，即可查看排行。</Text>}
     </StatsBlock>
     <Rectangle fill={theme.accentSoft} frame={{ height: 1 }} accessibilityHidden={true} />
-    <StatsBlock theme={theme} title="常用路线" footer={<Text font="caption" foregroundStyle={theme.sub}>{`最多显示前 5 条；相同方向、相同出行方式合并，往返分别统计。${insights.missingRouteCount ? `${insights.missingRouteCount} 次缺少起点或终点，未计入路线。` : ""}`}</Text>}>
+    <StatsBlock theme={theme} title="常用路线" icon="arrow.triangle.branch" footer={<Text font="caption" foregroundStyle={theme.sub}>{`最多显示前 5 条；相同方向、相同出行方式合并，往返分别统计。${insights.missingRouteCount ? `${insights.missingRouteCount} 次缺少起点或终点，未计入路线。` : ""}`}</Text>}>
       {insights.routes.length ? insights.routes.slice(0, 5).map((route, index) => <VStack key={`${route.mode}-${route.from}-${route.to}`} alignment="leading" spacing={8} padding={{ top: 5, bottom: 5 }}>
         <HStack alignment="top" spacing={10}>
           <Text font="caption" monospacedDigit foregroundStyle={theme.sub} frame={{ width: 16 }} padding={{ top: 3 }}>{String(index + 1)}</Text>
@@ -153,7 +160,8 @@ export function TripStatisticsPage({ theme }: { theme: Theme }) {
   const [year, setYear] = useState<number | null>(null)
   const [mode, setMode] = useState<"all" | TripMode>("all")
   const [placeMetric, setPlaceMetric] = useState<PlaceMetric>("total")
-  const insights = archiveInsights(listTrips(), { year: year ?? undefined, mode })
+  const [trendMonths, setTrendMonths] = useState<3 | 12>(3)
+  const insights = archiveInsights(listTrips(), { year: year ?? undefined, mode, trendMonths })
   const chooseYear = async () => {
     const values: Array<number | null> = [null, ...insights.years]
     const index = await Dialog.actionSheet({ title: "选择统计年份", actions: values.map(value => ({ label: value === null ? "全部年份" : `${value} 年` })), cancelButton: true })
@@ -168,6 +176,12 @@ export function TripStatisticsPage({ theme }: { theme: Theme }) {
     const index = await Dialog.actionSheet({ title: "站点排行依据", actions: values.map(value => ({ label: PLACE_LABELS[value] })), cancelButton: true })
     if (index != null && index >= 0 && index < values.length) setPlaceMetric(values[index])
   }
-  return <TripStatisticsContent insights={insights} theme={theme} placeMetric={placeMetric}
+  const chooseTrend = async () => {
+    const values: Array<3 | 12> = [3, 12]
+    const index = await Dialog.actionSheet({ title: "趋势范围", actions: [{ label: "最近 3 个月" }, { label: "12 个月" }], cancelButton: true })
+    if (index != null && index >= 0 && index < values.length) setTrendMonths(values[index])
+  }
+  return <TripStatisticsContent insights={insights} theme={theme} placeMetric={placeMetric} trendMonths={trendMonths}
+    onChooseTrend={() => void chooseTrend()}
     onChooseYear={() => void chooseYear()} onChooseMode={() => void chooseMode()} onChoosePlaceMetric={() => void choosePlaceMetric()} />
 }

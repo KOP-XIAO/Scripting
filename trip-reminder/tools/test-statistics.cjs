@@ -260,6 +260,7 @@ test("month windows use matching data and do not read the current clock", () => 
     const insights = archiveInsights([trip({ departDate: "1998-01-05" })])
     assert.equal(insights.months[0].month, "1997-02")
     assert.equal(insights.months.at(-1).month, "1998-01")
+    assert.deepEqual(archiveInsights([trip({ departDate: "1998-01-05" })], { trendMonths: 3 }).months.map(m => m.month), ["1997-11", "1997-12", "1998-01"])
     assert.deepEqual(archiveInsights([trip({ departDate: "bad" })]).months, [])
     assert.deepEqual(archiveInsights([trip()], { mode: "flight" }).months, [])
   } finally {
@@ -386,6 +387,34 @@ test("insights preserve frozen inputs and recompute after edits and deletions wi
     months: [], routes: [], averageMinutes: null, longest: null, activeDays: 0,
     invalidDateCount: 0, missingRouteCount: 0,
   })
+})
+
+test("three-month windows cross years and preserve every non-chart insight", () => {
+  const records = [trip({ departDate: "2024-10-01" }), trip({ departDate: "2024-12-01" }),
+    trip({ mode: "flight", departDate: "2025-01-01" }), trip({ departDate: "bad" })]
+  const original = archiveInsights(records)
+  const recent = archiveInsights(records, { trendMonths: 3 })
+  assert.deepEqual(recent.months.map(m => [m.month, m.total]), [["2024-11", 0], ["2024-12", 1], ["2025-01", 1]])
+  assert.deepEqual({ ...recent, months: original.months }, original)
+  assert.deepEqual(archiveInsights(records, { trendMonths: 12 }), original)
+})
+
+test("three-month windows anchor within the chosen mode and clip at the selected year", () => {
+  const records = [trip({ departDate: "2024-12-01" }), trip({ departDate: "2025-01-01" }),
+    trip({ mode: "flight", departDate: "2025-02-01" }), trip({ mode: "flight", departDate: "2025-05-01" })]
+  assert.deepEqual(archiveInsights(records, { trendMonths: 3, mode: "rail" }).months.map(m => m.month), ["2024-11", "2024-12", "2025-01"])
+  const january = archiveInsights(records, { trendMonths: 3, year: 2025, mode: "rail" })
+  assert.deepEqual(january.months.map(m => [m.month, m.total]), [["2025-01", 1]])
+  const february = archiveInsights(records.slice(0, 3), { trendMonths: 3, year: 2025 })
+  assert.deepEqual(february.months.map(m => [m.month, m.total]), [["2025-01", 1], ["2025-02", 1]])
+  assert.deepEqual(archiveInsights(records, { trendMonths: 3, year: 2025, mode: "flight" }).months.map(m => m.month), ["2025-03", "2025-04", "2025-05"])
+})
+
+test("three-month windows are empty without matching valid dates and clamp year zero", () => {
+  for (const [records, filter] of [[[], {}], [[trip({ departDate: "bad" })], {}], [[trip()], { year: 2050 }], [[trip()], { mode: "flight" }]]) {
+    assert.deepEqual(archiveInsights(records, { ...filter, trendMonths: 3 }).months, [])
+  }
+  assert.deepEqual(archiveInsights([trip({ departDate: "0000-01-01" })], { trendMonths: 3 }).months.map(m => m.month), ["0000-01"])
 })
 
 console.log(`Archive statistics: ${count} tests passed`)

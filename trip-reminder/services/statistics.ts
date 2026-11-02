@@ -21,7 +21,7 @@ export type ArchiveStatistics = {
   uniquePlaceCount: number
 }
 
-export type ArchiveInsightsFilter = { year?: number; mode?: "all" | TripMode }
+export type ArchiveInsightsFilter = { year?: number; mode?: "all" | TripMode; trendMonths?: 3 | 12 }
 
 export type ArchiveInsights = {
   summary: ArchiveStatistics
@@ -122,9 +122,13 @@ export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFi
   for (const { date } of filtered) {
     if (date && (latestMonth === null || date.monthIndex > latestMonth)) latestMonth = date.monthIndex
   }
-  const firstMonth = selectedYear !== null ? selectedYear * 12 : latestMonth === null ? null : latestMonth - 11
+  const trendMonths = filter.trendMonths ?? 12
+  const firstMonth = trendMonths === 3
+    ? latestMonth === null ? null : Math.max(selectedYear === null ? 0 : selectedYear * 12, latestMonth - 2)
+    : selectedYear !== null ? selectedYear * 12 : latestMonth === null ? null : latestMonth - 11
+  const monthCount = trendMonths === 3 && firstMonth !== null && latestMonth !== null ? latestMonth - firstMonth + 1 : 12
   if (firstMonth !== null) {
-    for (let offset = 0; offset < 12; offset += 1) {
+    for (let offset = 0; offset < monthCount; offset += 1) {
       const index = firstMonth + offset
       const year = Math.floor(index / 12)
       const month = index - year * 12 + 1
