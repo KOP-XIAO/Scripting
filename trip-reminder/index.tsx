@@ -374,8 +374,15 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
             <Button title="删除" role="destructive" action={() => removeArchived(t)} />,
             <Button title="编辑" tint="accentColor" action={() => beginEdit(t)} />,
           ] }}>
-          <Text font="caption2" foregroundStyle="secondaryLabel">{`序号 ${serial}`}</Text>
-          <Text font="headline">{t.code || "—"} · {routeText(t)}</Text>
+          <HStack alignment="firstTextBaseline" spacing={8}>
+            <Text font={13} fontWeight="semibold" fontDesign="rounded" monospacedDigit
+              foregroundStyle="label" padding={{ leading: 6, trailing: 6 }}
+              frame={{ minWidth: 32, height: 26 }} background="rgba(127,127,127,0.14)"
+              clipShape={{ type: "rect", cornerRadius: 7 }} accessibilityLabel={`归档序号 ${serial}`}>
+              {String(serial).padStart(2, "0")}
+            </Text>
+            <Text font="headline" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>{t.code || "—"} · {routeText(t)}</Text>
+          </HStack>
           <Text font="caption" foregroundStyle="secondaryLabel">{[
             `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),
             `${t.departTime || "--:--"} → ${t.arriveTime || "--:--"}`,

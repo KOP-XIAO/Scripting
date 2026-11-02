@@ -118,8 +118,14 @@ function statistic(f, label, value) {
   assert.ok(f.detail.nodes().some(node => ['VStack', 'HStack'].includes(node.type) &&
     f.texts(node).includes(label) && f.texts(node).includes(value)), `expected ${label}: ${value}`);
 }
+function statsBlock(f, heading) {
+  const block = f.detail.nodes().find(node => node.type === 'VStack' &&
+    node.props.children.flat(Infinity).some(child => child?.type === 'Text' && f.texts(child)[0] === heading));
+  assert.ok(block, `expected actual statistics block ${heading}`);
+  return block;
+}
 function rankedNames(f) {
-  const section = f.detail.nodes().find(node => node.type === 'Section' && node.props.title === '常用车站与机场');
+  const section = statsBlock(f, '常用车站与机场');
   return section.props.children.flat(Infinity).filter(node => node?.type === 'HStack').map(node => f.texts(node));
 }
 test('actual archive navigation propagates light/dark themes and detail reads latest saved edits and deletes', () => {
@@ -127,7 +133,7 @@ test('actual archive navigation propagates light/dark themes and detail reads la
     const f = fixture(records(), themeKey), theme = f.exports.THEMES[themeKey];
     assert.equal(f.archiveElement.props.theme.ink, theme.ink, 'home must pass the chosen theme to archive');
     assert.equal(f.detailElement.props.theme.ink, theme.ink, 'archive must pass the theme to detail');
-    assert.equal(f.detail.tree.props.foregroundStyle, undefined, 'native List chrome must retain adaptive system foreground');
+    assert.equal(f.detail.tree.props.foregroundStyle, undefined, 'native navigation must retain adaptive system foreground');
     assert.ok(f.detail.nodes().some(node => node.props.background === theme.cardTop));
     statistic(f, '累计行程', '3 次'); statistic(f, '累计时长', '3 小时 30 分钟');
     assert.equal(f.archive.nodes().some(node => node.type === 'Section' && node.props.title === '常用车站与机场'), false);
@@ -176,28 +182,52 @@ test('place metric actions render departure and arrival rankings from the select
   await f.choose('站点排行：', '合计');
   assert.equal(rankedNames(f).length, 3);
 });
-// These assertions inspect native view structure and callbacks, not iOS List measurement or pixels.
-test('native chrome remains adaptive while every card body label has an explicit theme color', () => {
+// These assertions inspect native structure and callbacks, not iOS measurement or pixels.
+test('statistics share one continuous themed scroll surface with internal headings and dividers', () => {
+  const headings = ['统计范围', '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线'];
   for (const themeKey of Object.keys(fixture().exports.THEMES)) {
     for (const trips of [records(), []]) {
       const f = fixture(trips, themeKey), theme = f.exports.THEMES[themeKey];
-      assert.equal(f.detail.tree.type, 'List');
-      assert.equal(f.detail.tree.props.foregroundStyle, undefined);
-      for (const section of f.detail.nodes().filter(node => node.type === 'Section')) {
-        assert.equal(section.props.foregroundStyle, undefined, 'section headings must not inherit card ink');
-        const footer = section.props.footer;
-        if (footer) assert.equal(footer.props.foregroundStyle, 'secondaryLabel');
-        const bodyLabels = f.nodes(section.props.children).filter(node => node.type === 'Text');
-        for (const label of bodyLabels) {
-          assert.ok([theme.ink, theme.sub, theme.accent].includes(label.props.foregroundStyle),
-            `unthemed body label: ${f.texts(label).join('')}`);
-        }
+      assert.equal(f.detail.tree.type, 'ScrollView');
+      assert.equal(f.detail.tree.props.navigationTitle, '详细统计');
+      assert.equal(f.detail.tree.props.navigationBarTitleDisplayMode, 'inline');
+      assert.equal(f.detail.tree.props.background, theme.cardTop, 'root background must cover content and empty edges');
+      assert.equal(f.detail.tree.props.frame, undefined, 'scroll view must not claim infinite vertical space');
+      assert.equal(f.detail.nodes().filter(node => node.type === 'ScrollView').length, 1);
+      assert.equal(f.detail.nodes().some(node => ['List', 'Section'].includes(node.type)), false);
+      const content = f.detail.tree.props.children.flat(Infinity)[0];
+      assert.equal(content.type, 'VStack');
+      assert.equal(content.props.frame.maxWidth, 'infinity');
+      assert.equal(content.props.spacing, 24);
+      assert.deepEqual(JSON.parse(JSON.stringify(content.props.padding)), { horizontal: 18, top: 16, bottom: 32 });
+      for (const heading of headings) {
+        const block = statsBlock(f, heading);
+        const title = block.props.children.flat(Infinity)[0];
+        assert.equal(title.props.font, 'subheadline');
+        assert.equal(title.props.fontWeight, 'semibold');
+        assert.equal(title.props.foregroundStyle, theme.ink);
+        assert.equal(block.props.frame.maxWidth, 'infinity');
+      }
+      const dividers = f.detail.nodes().filter(node => node.type === 'Rectangle');
+      assert.equal(dividers.length, headings.length);
+      for (const divider of dividers) {
+        assert.equal(divider.props.fill, theme.accentSoft);
+        assert.equal(divider.props.frame.height, 1);
+      }
+      for (const node of f.detail.nodes()) {
+        assert.equal(node.props.clipShape, undefined, 'no segmented card corners');
+        assert.equal(node.props.listRowBackground, undefined);
+        assert.equal(node.props.listRowInsets, undefined);
+        if (node.props.background !== undefined) assert.equal(node.props.background, theme.cardTop);
+        assert.notEqual(node.props.frame?.maxHeight, 'infinity', 'scroll content must have bounded vertical geometry');
+        if (node.type === 'Text') assert.ok([theme.ink, theme.sub, theme.accent].includes(node.props.foregroundStyle),
+          `unthemed statistics text: ${f.texts(node).join('')}`);
       }
       const filters = f.detail.nodes().filter(node => node.type === 'Button');
       assert.equal(filters.length, 3);
       for (const button of filters) {
         const label = f.nodes(button).find(node => node.type === 'Text');
-        assert.equal(label.props.foregroundStyle, theme.accent, 'filter labels must override system blue on themed rows');
+        assert.equal(label.props.foregroundStyle, theme.accent);
       }
     }
   }
@@ -206,11 +236,11 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
   const f = fixture(records(), 'midnight');
   for (const width of [201, 260, 320]) {
     f.detail.render(width);
-    const section = f.detail.nodes().find(node => node.type === 'Section' && node.props.title === '月度趋势');
+    const section = statsBlock(f, '月度趋势');
     const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
-    assert.ok(row.props.frame.minHeight >= 250, 'the populated native List row must reserve the entire chart and captions');
+    assert.ok(row.props.frame.minHeight >= 250, 'the populated native scroll block must reserve the entire chart and captions');
     assert.equal(f.nodes(section).some(node => node.type === 'GeometryReader'), false,
-      'monthly chart sizing must not depend on GeometryReader in List flow');
+      'monthly chart sizing must not depend on GeometryReader in scroll flow');
     const children = row.props.children.flat(Infinity).filter(node => node?.type);
     const chart = children.find(node => node.type === 'HStack' && node.props.frame?.height === 170);
     assert.ok(chart, 'chart must report a fixed 170-point height to the row');
@@ -249,7 +279,7 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
     }
   }
   const empty = fixture([]);
-  const section = empty.detail.nodes().find(node => node.type === 'Section' && node.props.title === '月度趋势');
+  const section = statsBlock(empty, '月度趋势');
   const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
   assert.equal(row.props.frame.minHeight, 0, 'empty chart copy must not reserve a tall blank chart');
 });

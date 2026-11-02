@@ -487,7 +487,11 @@ test('archive search keeps full-list serials and matches case, route, date, note
   const section = archive.one('Section', '查找归档');
   assert.equal(archive.one('TextField', '搜索归档').props.prompt, '车次、站点、日期或备注');
   assert.ok(archive.texts(section).includes('筛选只影响下方记录列表，统计仍按全部归档。'));
-  const serial = (id, expected) => label({ texts: () => archive.texts(archiveRow(archive, id)) }, `序号 ${expected}`);
+  const serial = (id, expected) => {
+    const number = archive.nodes(archiveRow(archive, id)).find(node => node.type === 'Text' && node.props.accessibilityLabel === `归档序号 ${expected}`);
+    assert.ok(number, 'archive number retains its spoken meaning');
+    assert.equal(textContent(number), String(expected).padStart(2, '0'));
+  };
   serial(trips[1].id, 1);
   serial(trips[0].id, 2);
   for (const query of [' g1234 ', '深圳北 香港西九龙', '2099-06-18', '旧备注', '复兴号', 'G1234 深圳北 2099-06-18 旧备注']) {
@@ -525,7 +529,7 @@ test('archive native year and mode rows combine filters, cancel safely and clear
   assert.deepEqual(Array.from(f.sheets.at(-1).actions, action => action.label), ['全部年份', '2099年', '2098年']);
   assert.equal(f.sheets.at(-1).cancelButton, true);
   label(archive, '显示 1 / 2 条');
-  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '序号 1');
+  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '01');
   await choose('归档方式：全部方式', 2);
   assert.deepEqual(Array.from(f.sheets.at(-1).actions, action => action.label), ['全部方式', '火车', '航班']);
   label(archive, '显示 0 / 2 条');
@@ -565,7 +569,7 @@ test('filtered archive edit and delete target the selected id and filter changes
   archive.render();
   archive.one('Button', '保存行程').props.action();
   archive.render();
-  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '序号 2');
+  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '02');
   const saved = f.storage.get('rail.trips');
   assert.equal(saved.find(trip => trip.id === trips[0].id).note, '筛选后保存');
   assert.deepEqual(JSON.parse(JSON.stringify(saved.filter(trip => trip.id !== trips[0].id))), JSON.parse(JSON.stringify(trips.slice(1))));
@@ -574,7 +578,7 @@ test('filtered archive edit and delete target the selected id and filter changes
   label(archive, '没有匹配的归档记录，可清除筛选。');
   archive.one('Button', '清除筛选').props.action();
   archive.render();
-  label({ texts: () => archive.texts(archiveRow(archive, trips[1].id)) }, '序号 1');
+  label({ texts: () => archive.texts(archiveRow(archive, trips[1].id)) }, '01');
   assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips.slice(1))));
   assert.equal(f.reloads, 2);
   f.render();
