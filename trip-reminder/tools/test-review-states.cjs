@@ -369,23 +369,18 @@ test('visible archive statistics refresh after edit and deletion, including unkn
     assert.ok(archive.nodes(section).some(node => node.type === 'HStack' &&
       archive.texts(node).includes(title) && archive.texts(node).includes(value)), `expected statistic ${title}: ${value}`);
   };
-  const place = (name, mode, frequency) => {
-    const section = archive.one('Section', '常用车站与机场');
-    const rows = section.props.children.flat(Infinity).filter(node => node?.type === 'VStack');
-    const matches = rows.filter(row => archive.texts(row).includes(name) && archive.texts(row).includes(mode));
-    assert.equal(matches.length, 1, `expected ranked place ${name} / ${mode}`);
-    assert.ok(archive.texts(matches[0]).includes(frequency));
-    return rows;
+  const compact = () => {
+    assert.equal(archive.nodes().some(node => node.type === 'Section' && node.props.title === '常用车站与机场'), false,
+      'rankings belong on the detail page, leaving the archive compact');
+    const links = archive.nodes().filter(node => node.type === 'NavigationLink' &&
+      archive.texts(node.props.children).includes('查看详细统计'));
+    assert.equal(links.length, 1, 'archive must retain the detail navigation link');
+    assert.equal(typeof links[0].props.destination?.type, 'function');
   };
   stat('累计行程', '2 次');
   stat('累计时长', '0 小时 18 分钟');
-  stat('火车', '1 次 · 50%');
-  stat('航班', '1 次 · 50%');
-  stat('到访车站 / 机场', '4 处');
+  compact();
   label(archive, '已计入 1 次行程的时长；1 次缺少时长，未计入。');
-  assert.equal(place('深圳北', '火车', '出发 1 次 · 到达 0 次').length, 4, 'active record must not inflate endpoint counts');
-  place('香港西九龙', '火车', '出发 0 次 · 到达 1 次');
-  place('测试机场甲', '航班', '出发 1 次 · 到达 0 次');
   archiveRow(archive, trips[0].id).props.onTapGesture();
   archive.render();
   archive.one('TextField', '出发车站').props.onChanged('统计新城');
@@ -396,21 +391,19 @@ test('visible archive statistics refresh after edit and deletion, including unkn
   archive.render();
   stat('累计时长', '1 小时 18 分钟');
   stat('累计行程', '2 次');
-  place('统计新城', '火车', '出发 1 次 · 到达 0 次');
-  assert.equal(archive.texts(archive.one('Section', '常用车站与机场')).includes('深圳北'), false);
+  compact();
   archiveRow(archive, trips[0].id).props.trailingSwipeActions.actions[0].props.action();
   archive.render();
   stat('累计行程', '1 次');
   stat('累计时长', '暂无可用时长');
-  stat('火车', '0 次 · 0%');
-  stat('航班', '1 次 · 100%');
-  stat('到访车站 / 机场', '2 处');
+  compact();
   label(archive, '已计入 0 次行程的时长；1 次缺少时长，未计入。');
-  assert.equal(place('测试机场乙', '航班', '出发 0 次 · 到达 1 次').length, 2);
   archiveRow(archive, trips[1].id).props.trailingSwipeActions.actions[0].props.action();
   archive.render();
   stat('累计行程', '0 次');
-  label(archive, '归档第一段行程后，在这里查看出行次数、时长和常用车站 / 机场。');
+  stat('累计时长', '暂无可用时长');
+  compact();
+  label(archive, '已计入 0 次行程的时长。');
   label(archive, '暂无归档记录。');
   assert.equal(archive.nodes().some(node => node.type === 'Section' && node.props.title === '常用车站与机场'), false);
   assert.equal(archive.texts().some(text => /NaN|Infinity|缺少时长/.test(text)), false);

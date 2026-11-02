@@ -77,6 +77,8 @@ import { TripWidgetPreview, StationStateBadge } from "./components/trip-widget"
 import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
 import { archiveStatistics } from "./services/statistics"
+import { TripStatisticsPage } from "./components/trip-statistics"
+import type { Theme } from "./services/theme"
 
 const TRIP_MODES: TripMode[] = ["rail", "flight"]
 
@@ -262,8 +264,8 @@ function draftFormRows({ draft, draftId, draftNote, rawText, showRaw, notice, pa
   return rows
 }
 
-function ArchivePage({ trips, passengerMode, hideSeatNumber, onTripsChanged }: {
-  trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean; onTripsChanged: (trips: TripRecord[]) => void
+function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChanged }: {
+  trips: TripRecord[]; passengerMode: PassengerMode; hideSeatNumber: boolean; theme: Theme; onTripsChanged: (trips: TripRecord[]) => void
 }) {
   const [records, setRecords] = useState(trips)
   const [draft, setDraft] = useState<TripRecord | null>(null)
@@ -315,22 +317,15 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, onTripsChanged }: {
       每条归档记录计 1 次行程，不按乘客人数计数；包含手动归档的未来行程，仅代表已记录，未核实是否实际完成。
     </Text>}>
       <HStack><Text>累计行程</Text><Spacer /><Text fontWeight="semibold">{`${stats.total} 次`}</Text></HStack>
-      {stats.total > 0 ? [
-        <HStack key="duration"><Text>累计时长</Text><Spacer /><Text fontWeight="semibold">{stats.knownDurationCount > 0 ? `${Math.floor(stats.totalMinutes / 60)} 小时 ${stats.totalMinutes % 60} 分钟` : "暂无可用时长"}</Text></HStack>,
-        <Text key="duration-coverage" font="caption" foregroundStyle="secondaryLabel">{`已计入 ${stats.knownDurationCount} 次行程的时长${stats.unknownDurationCount > 0 ? `；${stats.unknownDurationCount} 次缺少时长，未计入` : ""}。`}</Text>,
-        <HStack key="rail"><Text>火车</Text><Spacer /><Text>{`${stats.rail} 次 · ${Math.round(stats.rail / stats.total * 100)}%`}</Text></HStack>,
-        <HStack key="flight"><Text>航班</Text><Spacer /><Text>{`${stats.flight} 次 · ${Math.round(stats.flight / stats.total * 100)}%`}</Text></HStack>,
-        <HStack key="places"><Text>到访车站 / 机场</Text><Spacer /><Text>{`${stats.uniquePlaceCount} 处`}</Text></HStack>,
-      ] : <Text foregroundStyle="secondaryLabel">归档第一段行程后，在这里查看出行次数、时长和常用车站 / 机场。</Text>}
+      <VStack alignment="leading" spacing={4}>
+        <HStack><Text>累计时长</Text><Spacer /><Text fontWeight="semibold">{stats.knownDurationCount > 0 ? `${Math.floor(stats.totalMinutes / 60)} 小时 ${stats.totalMinutes % 60} 分钟` : "暂无可用时长"}</Text></HStack>
+        <Text font="caption" foregroundStyle="secondaryLabel">{`火车 ${stats.rail} 次 · 航班 ${stats.flight} 次 · ${stats.uniquePlaceCount} 处车站 / 机场`}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel">{`已计入 ${stats.knownDurationCount} 次行程的时长${stats.unknownDurationCount > 0 ? `；${stats.unknownDurationCount} 次缺少时长，未计入` : ""}。`}</Text>
+      </VStack>
+      <NavigationLink destination={<TripStatisticsPage theme={theme} />}>
+        <Text>查看详细统计</Text>
+      </NavigationLink>
     </Section>
-    {stats.total > 0 ? <Section title="常用车站与机场" footer={<Text font="caption" foregroundStyle="secondaryLabel">
-      按出发与到达总次数排序，最多显示前 10 处；只统计乘车 / 乘机区间两端，不包含经停站。同名火车站与机场分别统计。
-    </Text>}>
-      {stats.places.length > 0 ? stats.places.slice(0, 10).map(place => <VStack key={`${place.mode}-${place.name}`} alignment="leading" spacing={3}>
-        <HStack><Text>{place.name}</Text><Spacer /><Text font="caption" foregroundStyle="secondaryLabel">{modeLabel(place.mode)}</Text></HStack>
-        <Text font="caption" foregroundStyle="secondaryLabel">{`出发 ${place.departures} 次 · 到达 ${place.arrivals} 次`}</Text>
-      </VStack>) : <Text foregroundStyle="secondaryLabel">补全归档行程的出发与到达地点后，即可查看地点频次。</Text>}
-    </Section> : null}
     <Section title={`归档记录 (${records.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">归档行程不参与小组件展示；点按编辑，左滑可编辑或删除。保存后仍保留在归档中。</Text>}>
       {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...records].reverse().flatMap(t => {
         if (draft?.id === t.id) return draftFormRows({
@@ -594,7 +589,7 @@ function View() {
         ) : null}
 
         <Section title="行程管理">
-          <NavigationLink destination={<ArchivePage trips={archived} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} onTripsChanged={setTrips} />}>
+          <NavigationLink destination={<ArchivePage trips={archived} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} theme={theme} onTripsChanged={setTrips} />}>
             <Text>{`查看归档记录（${archived.length}）`}</Text>
           </NavigationLink>
         </Section>
