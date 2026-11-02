@@ -12,12 +12,14 @@ const monthText = (month: string) => `${month.slice(0, 4)} 年 ${Number(month.sl
 
 function FrequencyBar({ value, maximum, theme }: { value: number; maximum: number; theme: Theme }) {
   const fraction = maximum > 0 ? Math.min(1, Math.max(0, value / maximum)) : 0
-  return <GeometryReader frame={{ height: 6 }} accessibilityHidden={true}>
-    {proxy => <ZStack alignment="leading" frame={{ width: proxy.size.width, height: 6 }}>
-      <RoundedRectangle cornerRadius={3} fill={theme.accentSoft} frame={{ width: proxy.size.width, height: 6 }} />
-      <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: Math.max(0, proxy.size.width) * fraction, height: 6 }} />
-    </ZStack>}
-  </GeometryReader>
+  return <VStack spacing={0} frame={{ height: 6 }} accessibilityHidden={true}>
+    <GeometryReader>
+      {proxy => <ZStack alignment="leading" frame={{ width: proxy.size.width, height: 6 }}>
+        <RoundedRectangle cornerRadius={3} fill={theme.accentSoft} frame={{ width: proxy.size.width, height: 6 }} />
+        <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: Math.max(0, proxy.size.width) * fraction, height: 6 }} />
+      </ZStack>}
+    </GeometryReader>
+  </VStack>
 }
 
 function OverviewValue({ label, value, theme }: { label: string; value: string; theme: Theme }) {
@@ -48,10 +50,10 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
   const chartCount = months.reduce((total, month) => total + month.total, 0)
   const durationCoverage = `已知时长 ${summary.knownDurationCount} 次 · 缺少时长 ${summary.unknownDurationCount} 次`
   const rowBackground = <Rectangle fill={theme.cardTop} />
-  return <List navigationTitle="详细统计" navigationBarTitleDisplayMode="inline" foregroundStyle={theme.ink}>
+  return <List navigationTitle="详细统计" navigationBarTitleDisplayMode="inline">
     <Section title="统计范围" footer={<Text font="caption" foregroundStyle="secondaryLabel">按出发日期筛选；下方所有统计随筛选更新。</Text>} listRowBackground={rowBackground}>
-      {onChooseYear ? <Button title={yearLabel} action={onChooseYear} /> : <Text>{yearLabel}</Text>}
-      {onChooseMode ? <Button title={modeFilterLabel} action={onChooseMode} /> : <Text>{modeFilterLabel}</Text>}
+      {onChooseYear ? <Button action={onChooseYear}><Text foregroundStyle={theme.accent}>{yearLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{yearLabel}</Text>}
+      {onChooseMode ? <Button action={onChooseMode}><Text foregroundStyle={theme.accent}>{modeFilterLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{modeFilterLabel}</Text>}
     </Section>
     <Section title="出行概览" footer={<Text font="caption" foregroundStyle="secondaryLabel">{summary.total ? `${durationCoverage}。地点按车站 / 机场分别去重；活跃天数按有效出发日期去重。` : "当前范围没有归档行程。可切换年份或出行方式，或先在首页归档一段行程。"}</Text>}>
       <VStack alignment="leading" spacing={20} padding={16} background={theme.cardTop}
@@ -67,26 +69,23 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </VStack>
     </Section>
     <Section title="月度趋势" footer={<Text font="caption" foregroundStyle="secondaryLabel">{`${period}。按出发月份计数${insights.selectedYear === null ? "；全部年份的概览包含所有归档，图表仅展示截至最近有效出发月份的连续 12 个月" : ""}。${insights.invalidDateCount ? `${insights.invalidDateCount} 次缺少有效日期，未计入趋势和出行天数。` : ""}`}</Text>} listRowBackground={rowBackground}>
-      <VStack alignment="leading" spacing={12} padding={{ top: 8, bottom: 8 }}>
+      <VStack alignment="leading" spacing={12} frame={{ minHeight: maximum > 0 ? 250 : 0, alignment: "leading" }} padding={{ top: 8, bottom: 8 }}>
         <HStack alignment="firstTextBaseline">
           <Text font="subheadline" foregroundStyle={theme.ink}>{`图示 ${chartCount} 次行程`}</Text>
           <Spacer />
           <Text font="caption" foregroundStyle={theme.sub}>单位：次</Text>
         </HStack>
-        {maximum > 0 ? <GeometryReader frame={{ height: 170 }}>
-          {proxy => {
-            const columnWidth = Math.max(0, (proxy.size.width - 33) / 12)
-            return <HStack alignment="bottom" spacing={3} frame={{ width: proxy.size.width, height: 170, alignment: "bottom" }}>
-              {months.map(month => <VStack key={month.month} spacing={5} frame={{ width: columnWidth, height: 170, alignment: "bottom" }}
-                accessibilityElement="ignore" accessibilityLabel={`${monthText(month.month)}：${month.total} 次，火车 ${month.rail} 次，航班 ${month.flight} 次，${month.totalMinutes > 0 ? `已知累计时长 ${minutesText(month.totalMinutes)}` : month.total > 0 ? "暂无可用时长" : "无行程"}`}>
-                <Text font={11} monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6}>{String(month.total)}</Text>
-                <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: Math.min(16, columnWidth), height: month.total / maximum * 122 }} />
-                <Text font={11} monospacedDigit foregroundStyle={theme.sub} lineLimit={1}>{month.month.slice(5)}</Text>
-              </VStack>)}
-            </HStack>
-          }}
-        </GeometryReader> : <Text font="subheadline" foregroundStyle={theme.sub}>当前范围没有可绘制的月份。归档行程并补全出发日期后，即可查看每月出行变化。</Text>}
-        {maximum > 0 && peak ? <Text font="caption" foregroundStyle={theme.sub}>{`最多出行：${monthText(peak.month)} · ${maximum} 次${months.filter(month => month.total === maximum).length > 1 ? "（并列）" : ""}`}</Text> : null}
+        {maximum > 0 ? <HStack alignment="bottom" spacing={3} frame={{ height: 170 }}>
+          {months.map(month => <VStack key={month.month} spacing={4} frame={{ minWidth: 0, maxWidth: "infinity", minHeight: 170, maxHeight: 170 }}
+            accessibilityElement="ignore" accessibilityLabel={`${monthText(month.month)}：${month.total} 次，火车 ${month.rail} 次，航班 ${month.flight} 次，${month.totalMinutes > 0 ? `已知累计时长 ${minutesText(month.totalMinutes)}` : month.total > 0 ? "暂无可用时长" : "无行程"}`}>
+            <Text font={11} monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{String(month.total)}</Text>
+            <VStack spacing={0} frame={{ height: 122, alignment: "bottom" }}>
+              <RoundedRectangle cornerRadius={3} fill={theme.accent} frame={{ width: 12, height: month.total / maximum * 122 }} />
+            </VStack>
+            <Text font={11} monospacedDigit foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{month.month.slice(5)}</Text>
+          </VStack>)}
+        </HStack> : <Text font="subheadline" foregroundStyle={theme.sub}>当前范围没有可绘制的月份。归档行程并补全出发日期后，即可查看每月出行变化。</Text>}
+        {maximum > 0 && peak ? <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>{`最多出行：${monthText(peak.month)} · ${maximum} 次${months.filter(month => month.total === maximum).length > 1 ? "（并列）" : ""}`}</Text> : null}
       </VStack>
     </Section>
     <Section title="出行方式" footer={<Text font="caption" foregroundStyle="secondaryLabel">占比以当前范围的归档行程为分母。</Text>} listRowBackground={rowBackground}>
@@ -99,15 +98,15 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
       </VStack>)}
     </Section>
     <Section title="时长统计" footer={<Text font="caption" foregroundStyle="secondaryLabel">仅使用已填写或可由出发 / 到达时间计算的时长；缺失时长不按 0 分钟计入平均。</Text>} listRowBackground={rowBackground}>
-      <HStack accessibilityElement="combine"><Text>平均每次</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{insights.averageMinutes === null ? "暂无可用时长" : minutesText(insights.averageMinutes)}</Text></HStack>
+      <HStack accessibilityElement="combine"><Text foregroundStyle={theme.ink}>平均每次</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{insights.averageMinutes === null ? "暂无可用时长" : minutesText(insights.averageMinutes)}</Text></HStack>
       <VStack alignment="leading" spacing={5}>
-        <HStack><Text>最长行程</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{longest ? minutesText(longest.minutes) : "暂无可用时长"}</Text></HStack>
+        <HStack><Text foregroundStyle={theme.ink}>最长行程</Text><Spacer /><Text fontWeight="semibold" foregroundStyle={theme.ink}>{longest ? minutesText(longest.minutes) : "暂无可用时长"}</Text></HStack>
         {longest ? <Text font="caption" foregroundStyle={theme.sub} lineLimit={2} minScaleFactor={0.8}>{`${longest.code || "未填写车次 / 航班号"} · ${longest.from || "未填写出发地"} → ${longest.to || "未填写到达地"}`}</Text> : null}
       </VStack>
       <Text font="caption" foregroundStyle={theme.sub}>{durationCoverage}</Text>
     </Section>
     <Section title="常用车站与机场" footer={<Text font="caption" foregroundStyle="secondaryLabel">最多显示前 8 处。只统计行程两端，不包含经停站；同名车站与机场分别统计。</Text>} listRowBackground={rowBackground}>
-      {onChoosePlaceMetric ? <Button title={metricLabel} action={onChoosePlaceMetric} /> : <Text>{metricLabel}</Text>}
+      {onChoosePlaceMetric ? <Button action={onChoosePlaceMetric}><Text foregroundStyle={theme.accent}>{metricLabel}</Text></Button> : <Text foregroundStyle={theme.ink}>{metricLabel}</Text>}
       {places.length ? places.slice(0, 8).map((place, index) => <HStack key={`${place.mode}-${place.name}`} alignment="top" spacing={12} padding={{ top: 5, bottom: 5 }}>
         <Text font="caption" monospacedDigit foregroundStyle={theme.sub} frame={{ width: 16 }} padding={{ top: 3 }}>{String(index + 1)}</Text>
         <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity", alignment: "leading" }}>

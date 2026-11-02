@@ -21,7 +21,7 @@ async function compile() {
 }
 
 function fixture(text = '', { candidates = [], trips = [], image = {}, recognize } = {}) {
-  const storage = new Map(), rootStates = [];
+  const storage = new Map(), rootStates = [], sheetChoices = [], sheets = [];
   if (trips.length) storage.set('rail.trips', JSON.parse(JSON.stringify(trips)));
   let states = rootStates, cursor = 0, root, tree, reloads = 0, picks = 0, recognitions = 0;
   const native = new Proxy({
@@ -49,7 +49,10 @@ function fixture(text = '', { candidates = [], trips = [], image = {}, recognize
       recognitions++;
       return recognize ? recognize(input, options) : { text, candidates };
     } },
-    Dialog: { alert: async options => { throw new Error(`Unexpected alert: ${JSON.stringify(options)}`); } },
+    Dialog: {
+      alert: async options => { throw new Error(`Unexpected alert: ${JSON.stringify(options)}`); },
+      actionSheet: async options => { sheets.push(options); return sheetChoices.shift(); },
+    },
   };
   sandbox.exports = sandbox.module.exports;
   vm.runInNewContext(bundled, sandbox, { filename: 'review-states-memory.cjs' });
@@ -73,7 +76,8 @@ function fixture(text = '', { candidates = [], trips = [], image = {}, recognize
   const texts = (value = tree) => nodes(value).filter(node => node.type === 'Text').map(textContent);
   render();
   return {
-    storage, render, nodes, texts, one, StationStateBadge,
+    storage, render, nodes, texts, one, StationStateBadge, sheets,
+    chooseSheet: index => sheetChoices.push(index),
     parse: () => sandbox.module.exports.parseTripText(text),
     mountArchive() {
       const links = nodes().filter(node => node.type === 'NavigationLink' &&
@@ -328,7 +332,7 @@ test('tapping an archive row saves shared fields in place without losing archive
   archive.one('Section', '归档记录 (2)');
   assert.ok(archive.texts(archiveRow(archive, trips[0].id)).some(text => text.includes('测试新车站')));
   assert.ok(archive.texts().some(text => text.includes('修改后的备注')));
-  assert.equal(archive.nodes().some(node => node.type === 'TextField'), false, 'saving must close the in-place form');
+  assert.equal(archive.nodes().some(node => node.type === 'TextField' && node.props.title !== '搜索归档'), false, 'saving must close the in-place form');
   assert.equal(f.reloads, 1);
   f.render();
   label(f, '查看归档记录（2）');
@@ -354,7 +358,7 @@ test('swipe edit reuses flight fields and cancellation keeps storage, archive an
   archive.render();
   assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips)));
   assert.equal(f.reloads, 0, 'cancelling must not write or refresh widgets');
-  assert.equal(archive.nodes().some(node => node.type === 'TextField'), false);
+  assert.equal(archive.nodes().some(node => node.type === 'TextField' && node.props.title !== '搜索归档'), false);
   assert.ok(archive.texts(archiveRow(archive, trips[1].id)).some(text => text.includes('测试机场甲')));
   assert.equal(archive.texts().some(text => /放弃的/.test(text)), false);
   f.render();
@@ -473,6 +477,108 @@ test('archive row swipe deletion preserves other trips and refreshes archive and
   f.render();
   label(f, '查看归档记录（0）');
   label(f, '1 条');
+  f.one('Section', '行程列表 (1)');
+});
+
+test('archive search keeps full-list serials and matches case, route, date, notes and carrier without writes', () => {
+  const trips = archiveFixtureTrips();
+  trips[1].departTime = '10:00';
+  const f = fixture('', { trips }), archive = f.mountArchive();
+  const section = archive.one('Section', '查找归档');
+  assert.equal(archive.one('TextField', '搜索归档').props.prompt, '车次、站点、日期或备注');
+  assert.ok(archive.texts(section).includes('筛选只影响下方记录列表，统计仍按全部归档。'));
+  const serial = (id, expected) => label({ texts: () => archive.texts(archiveRow(archive, id)) }, `序号 ${expected}`);
+  serial(trips[1].id, 1);
+  serial(trips[0].id, 2);
+  for (const query of [' g1234 ', '深圳北 香港西九龙', '2099-06-18', '旧备注', '复兴号', 'G1234 深圳北 2099-06-18 旧备注']) {
+    archive.one('TextField', '搜索归档').props.onChanged(query);
+    archive.render();
+    serial(trips[0].id, 2);
+    label(archive, '显示 1 / 2 条');
+    assert.equal(archive.nodes().some(node => node.props.key === trips[1].id), false);
+    label(archive, '2 次');
+  }
+  archive.one('TextField', '搜索归档').props.onChanged('no-match');
+  archive.render();
+  label(archive, '显示 0 / 2 条');
+  label(archive, '没有匹配的归档记录，可清除筛选。');
+  archive.one('Button', '清除筛选').props.action();
+  archive.render();
+  label(archive, '显示 2 / 2 条');
+  assert.equal(archive.one('TextField', '搜索归档').props.value, '');
+  assert.equal(archive.nodes().some(node => node.type === 'Button' && node.props.title === '清除筛选'), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips)));
+  assert.equal(f.reloads, 0);
+});
+
+test('archive native year and mode rows combine filters, cancel safely and clear all selections', async () => {
+  const trips = archiveFixtureTrips();
+  trips[1].departDate = '2098-06-19';
+  const f = fixture('', { trips }), archive = f.mountArchive();
+  const choose = async (title, index) => {
+    f.chooseSheet(index);
+    archive.one('Button', title).props.action();
+    await new Promise(resolve => setImmediate(resolve));
+    archive.render();
+  };
+  await choose('归档年份：全部年份', 1);
+  assert.deepEqual(Array.from(f.sheets.at(-1).actions, action => action.label), ['全部年份', '2099年', '2098年']);
+  assert.equal(f.sheets.at(-1).cancelButton, true);
+  label(archive, '显示 1 / 2 条');
+  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '序号 1');
+  await choose('归档方式：全部方式', 2);
+  assert.deepEqual(Array.from(f.sheets.at(-1).actions, action => action.label), ['全部方式', '火车', '航班']);
+  label(archive, '显示 0 / 2 条');
+  await choose('归档年份：2099年', 2);
+  label(archive, '显示 1 / 2 条');
+  archiveRow(archive, trips[1].id);
+  await choose('归档年份：2098年', null);
+  archive.one('Button', '归档年份：2098年');
+  archive.one('TextField', '搜索归档').props.onChanged('CA1234');
+  archive.render();
+  archive.one('Button', '清除筛选').props.action();
+  archive.render();
+  archive.one('Button', '归档年份：全部年份');
+  archive.one('Button', '归档方式：全部方式');
+  assert.equal(archive.one('TextField', '搜索归档').props.value, '');
+  label(archive, '显示 2 / 2 条');
+  label(archive, '2 次');
+  assert.equal(f.reloads, 0);
+});
+
+test('filtered archive edit and delete target the selected id and filter changes close unsaved drafts', () => {
+  const trips = archiveFixtureTrips();
+  trips[1].departTime = '10:00';
+  const f = fixture('', { trips }), archive = f.mountArchive();
+  const search = query => { archive.one('TextField', '搜索归档').props.onChanged(query); archive.render(); };
+  search('g1234');
+  archiveRow(archive, trips[0].id).props.trailingSwipeActions.actions[1].props.action();
+  archive.render();
+  archive.one('TextField', '备注').props.onChanged('放弃的归档修改');
+  search('CA1234');
+  assert.equal(archive.nodes().some(node => node.type === 'Button' && node.props.title === '保存行程'), false);
+  archiveRow(archive, trips[1].id);
+  search('g1234');
+  archiveRow(archive, trips[0].id).props.onTapGesture();
+  archive.render();
+  archive.one('TextField', '备注').props.onChanged('筛选后保存');
+  archive.render();
+  archive.one('Button', '保存行程').props.action();
+  archive.render();
+  label({ texts: () => archive.texts(archiveRow(archive, trips[0].id)) }, '序号 2');
+  const saved = f.storage.get('rail.trips');
+  assert.equal(saved.find(trip => trip.id === trips[0].id).note, '筛选后保存');
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.filter(trip => trip.id !== trips[0].id))), JSON.parse(JSON.stringify(trips.slice(1))));
+  archiveRow(archive, trips[0].id).props.trailingSwipeActions.actions[0].props.action();
+  archive.render();
+  label(archive, '没有匹配的归档记录，可清除筛选。');
+  archive.one('Button', '清除筛选').props.action();
+  archive.render();
+  label({ texts: () => archive.texts(archiveRow(archive, trips[1].id)) }, '序号 1');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.storage.get('rail.trips'))), JSON.parse(JSON.stringify(trips.slice(1))));
+  assert.equal(f.reloads, 2);
+  f.render();
+  label(f, '查看归档记录（1）');
   f.one('Section', '行程列表 (1)');
 });
 

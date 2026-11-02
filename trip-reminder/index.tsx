@@ -76,7 +76,7 @@ import { TripCard } from "./components/trip-card"
 import { TripWidgetPreview, StationStateBadge } from "./components/trip-widget"
 import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
-import { archiveStatistics } from "./services/statistics"
+import { archiveInsights, archiveStatistics } from "./services/statistics"
 import { TripStatisticsPage } from "./components/trip-statistics"
 import type { Theme } from "./services/theme"
 
@@ -270,7 +270,19 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
   const [records, setRecords] = useState(trips)
   const [draft, setDraft] = useState<TripRecord | null>(null)
   const [draftNote, setDraftNote] = useState("")
+  const [query, setQuery] = useState("")
+  const [mode, setMode] = useState<"all" | TripMode>("all")
+  const [year, setYear] = useState<number | null>(null)
   const stats = archiveStatistics(records)
+  const years = archiveInsights(records).years
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const filtered = [...records].reverse().map((trip, index) => ({ trip, serial: index + 1 })).filter(({ trip }) => {
+    const searchable = [trip.code, trip.fromPlace, trip.toPlace, trip.departDate, trip.note, trip.carrier].join(" ").toLowerCase()
+    return (mode === "all" || trip.mode === mode)
+      && (year === null || (/^\d{4}-\d{2}-\d{2}$/.test(trip.departDate) && trip.departDate.startsWith(`${String(year).padStart(4, "0")}-`)))
+      && tokens.every(token => searchable.includes(token))
+  })
+  const hasFilters = tokens.length > 0 || mode !== "all" || year !== null
   const updateRecords = (all: TripRecord[]) => {
     setRecords(all.filter(record => !!record.archivedAt))
     onTripsChanged(all)
@@ -278,6 +290,22 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
   const cancelDraft = () => {
     setDraft(null)
     setDraftNote("")
+  }
+  const chooseYear = async () => {
+    const index = await Dialog.actionSheet({
+      title: "归档年份", actions: [{ label: "全部年份" }, ...years.map(value => ({ label: `${value}年` }))], cancelButton: true,
+    })
+    if (index == null || index < 0 || index > years.length) return
+    cancelDraft()
+    setYear(index === 0 ? null : years[index - 1])
+  }
+  const chooseMode = async () => {
+    const index = await Dialog.actionSheet({
+      title: "归档方式", actions: [{ label: "全部方式" }, { label: "火车" }, { label: "航班" }], cancelButton: true,
+    })
+    if (index == null || index < 0 || index > 2) return
+    cancelDraft()
+    setMode(index === 0 ? "all" : index === 1 ? "rail" : "flight")
   }
   const beginEdit = (trip: TripRecord) => {
     setDraft({ ...trip })
@@ -326,8 +354,15 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
         <Text>查看详细统计</Text>
       </NavigationLink>
     </Section>
+    <Section title="查找归档" footer={<Text font="caption" foregroundStyle="secondaryLabel">筛选只影响下方记录列表，统计仍按全部归档。</Text>}>
+      <TextField title="搜索归档" prompt="车次、站点、日期或备注" value={query} onChanged={value => { cancelDraft(); setQuery(value) }} />
+      <Button title={`归档年份：${year === null ? "全部年份" : `${year}年`}`} action={() => void chooseYear()} />
+      <Button title={`归档方式：${mode === "all" ? "全部方式" : modeLabel(mode)}`} action={() => void chooseMode()} />
+      <Text font="caption" foregroundStyle="secondaryLabel">{`显示 ${filtered.length} / ${records.length} 条`}</Text>
+      {hasFilters ? <Button title="清除筛选" action={() => { cancelDraft(); setQuery(""); setMode("all"); setYear(null) }} /> : null}
+    </Section>
     <Section title={`归档记录 (${records.length})`} footer={<Text font="caption" foregroundStyle="secondaryLabel">归档行程不参与小组件展示；点按编辑，左滑可编辑或删除。保存后仍保留在归档中。</Text>}>
-      {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : [...records].reverse().flatMap(t => {
+      {records.length === 0 ? <Text foregroundStyle="secondaryLabel">暂无归档记录。</Text> : filtered.length === 0 ? <Text foregroundStyle="secondaryLabel">没有匹配的归档记录，可清除筛选。</Text> : filtered.flatMap(({ trip: t, serial }) => {
         if (draft?.id === t.id) return draftFormRows({
           draft, draftId: draft.id, draftNote, rawText: "", showRaw: false,
           notice: "编辑归档行程，保存后仍保留在归档中。",
@@ -339,6 +374,7 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
             <Button title="删除" role="destructive" action={() => removeArchived(t)} />,
             <Button title="编辑" tint="accentColor" action={() => beginEdit(t)} />,
           ] }}>
+          <Text font="caption2" foregroundStyle="secondaryLabel">{`序号 ${serial}`}</Text>
           <Text font="headline">{t.code || "—"} · {routeText(t)}</Text>
           <Text font="caption" foregroundStyle="secondaryLabel">{[
             `${monthDayText(t.departDate)} ${weekdayText(t.departDate)}`.trim(),

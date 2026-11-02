@@ -127,7 +127,7 @@ test('actual archive navigation propagates light/dark themes and detail reads la
     const f = fixture(records(), themeKey), theme = f.exports.THEMES[themeKey];
     assert.equal(f.archiveElement.props.theme.ink, theme.ink, 'home must pass the chosen theme to archive');
     assert.equal(f.detailElement.props.theme.ink, theme.ink, 'archive must pass the theme to detail');
-    assert.equal(f.detail.tree.props.foregroundStyle, theme.ink);
+    assert.equal(f.detail.tree.props.foregroundStyle, undefined, 'native List chrome must retain adaptive system foreground');
     assert.ok(f.detail.nodes().some(node => node.props.background === theme.cardTop));
     statistic(f, '累计行程', '3 次'); statistic(f, '累计时长', '3 小时 30 分钟');
     assert.equal(f.archive.nodes().some(node => node.type === 'Section' && node.props.title === '常用车站与机场'), false);
@@ -176,6 +176,83 @@ test('place metric actions render departure and arrival rankings from the select
   await f.choose('站点排行：', '合计');
   assert.equal(rankedNames(f).length, 3);
 });
+// These assertions inspect native view structure and callbacks, not iOS List measurement or pixels.
+test('native chrome remains adaptive while every card body label has an explicit theme color', () => {
+  for (const themeKey of Object.keys(fixture().exports.THEMES)) {
+    for (const trips of [records(), []]) {
+      const f = fixture(trips, themeKey), theme = f.exports.THEMES[themeKey];
+      assert.equal(f.detail.tree.type, 'List');
+      assert.equal(f.detail.tree.props.foregroundStyle, undefined);
+      for (const section of f.detail.nodes().filter(node => node.type === 'Section')) {
+        assert.equal(section.props.foregroundStyle, undefined, 'section headings must not inherit card ink');
+        const footer = section.props.footer;
+        if (footer) assert.equal(footer.props.foregroundStyle, 'secondaryLabel');
+        const bodyLabels = f.nodes(section.props.children).filter(node => node.type === 'Text');
+        for (const label of bodyLabels) {
+          assert.ok([theme.ink, theme.sub, theme.accent].includes(label.props.foregroundStyle),
+            `unthemed body label: ${f.texts(label).join('')}`);
+        }
+      }
+      const filters = f.detail.nodes().filter(node => node.type === 'Button');
+      assert.equal(filters.length, 3);
+      for (const button of filters) {
+        const label = f.nodes(button).find(node => node.type === 'Text');
+        assert.equal(label.props.foregroundStyle, theme.accent, 'filter labels must override system blue on themed rows');
+      }
+    }
+  }
+});
+test('monthly chart reserves native stack height, equal flexible columns and bottom-anchored bars', () => {
+  const f = fixture(records(), 'midnight');
+  for (const width of [201, 260, 320]) {
+    f.detail.render(width);
+    const section = f.detail.nodes().find(node => node.type === 'Section' && node.props.title === '月度趋势');
+    const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
+    assert.ok(row.props.frame.minHeight >= 250, 'the populated native List row must reserve the entire chart and captions');
+    assert.equal(f.nodes(section).some(node => node.type === 'GeometryReader'), false,
+      'monthly chart sizing must not depend on GeometryReader in List flow');
+    const children = row.props.children.flat(Infinity).filter(node => node?.type);
+    const chart = children.find(node => node.type === 'HStack' && node.props.frame?.height === 170);
+    assert.ok(chart, 'chart must report a fixed 170-point height to the row');
+    const columns = chart.props.children.flat(Infinity).filter(node => node?.type);
+    assert.equal(columns.length, 12);
+    assert.ok(12 * 12 + 11 * chart.props.spacing <= width, 'fixed bars and column gaps fit narrow content widths');
+    for (const column of columns) {
+      assert.equal(column.type, 'VStack');
+      assert.equal(column.props.frame.minWidth, 0);
+      assert.equal(column.props.frame.maxWidth, 'infinity');
+      assert.equal(column.props.frame.width, undefined, 'native HStack must distribute equal flexible columns');
+      assert.equal(column.props.frame.minHeight, 170);
+      assert.equal(column.props.frame.maxHeight, 170);
+      const [count, barArea, month] = column.props.children.flat(Infinity);
+      assert.equal(count.props.frame.height, 20);
+      assert.equal(barArea.type, 'VStack');
+      assert.equal(barArea.props.frame.height, 122);
+      assert.equal(month.props.frame.height, 20);
+      assert.equal(20 + 122 + 20 + 2 * column.props.spacing, 170);
+      assert.equal(barArea.props.frame.alignment, 'bottom');
+      const bars = barArea.props.children.flat(Infinity);
+      assert.equal(bars.length, 1, 'the maximum-height bar must not compete with a Spacer minimum length');
+      const [bar] = bars;
+      assert.equal(bar.type, 'RoundedRectangle');
+      assert.equal(bar.props.frame.width, 12);
+      const total = Number(f.texts(count)[0]);
+      assert.equal(bar.props.frame.height, total / 2 * 122, 'bar heights retain the actual counts and maximum');
+      assert.equal(f.texts(month)[0], column.props.key.slice(5));
+    }
+    const peakIndex = children.findIndex(node => node.type === 'Text' && f.texts(node)[0].startsWith('最多出行：'));
+    assert.ok(peakIndex > children.indexOf(chart), 'peak caption must occupy a sibling slot after the whole chart');
+    assert.equal(children[peakIndex].props.lineLimit, 2);
+    for (const node of f.detail.nodes().filter(node => node.type === 'VStack' && node.props.accessibilityHidden)) {
+      assert.equal(node.props.frame.height, 6, 'frequency readers need a fixed-height outer native stack');
+      assert.equal(node.props.children.flat(Infinity)[0].type, 'GeometryReader');
+    }
+  }
+  const empty = fixture([]);
+  const section = empty.detail.nodes().find(node => node.type === 'Section' && node.props.title === '月度趋势');
+  const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
+  assert.equal(row.props.frame.minHeight, 0, 'empty chart copy must not reserve a tall blank chart');
+});
 test('empty, unknown and year-zero records keep truthful labels and finite bounded zero geometry', async () => {
   for (const trips of [[], [trip('unknown', { departDate: 'unknown', durationMin: 0, fromPlace: '', toPlace: '' })]]) {
     const f = fixture(trips);
@@ -196,7 +273,7 @@ test('empty, unknown and year-zero records keep truthful labels and finite bound
   const f = fixture([trip('year-zero', { departDate: '0000-02-29', durationMin: 0 })]);
   await f.choose('年份：', '0 年');
   statistic(f, '累计行程', '1 次'); visible(f.detail, '图示 1 次行程', '已知时长 0 次 · 缺少时长 1 次');
-  for (const width of [0, 80, 240]) {
+  for (const width of [201, 260, 320]) {
     f.detail.render(width);
     const columns = f.detail.nodes().filter(node => node.type === 'VStack' && /^0000-\d\d$/.test(node.props.key || ''));
     assert.equal(columns.length, 12);
