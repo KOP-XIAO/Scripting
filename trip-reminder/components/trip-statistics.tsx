@@ -1,6 +1,6 @@
 import { Button, GeometryReader, HStack, Image, Rectangle, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, useState, type VirtualNode } from "scripting"
 import { modeLabel, type TripMode } from "../services/parse"
-import { archiveInsights, archiveTrendBreakdown, type ArchiveInsights, type ArchiveTrendBreakdown, type ArchiveTrendDimension } from "../services/statistics"
+import { archiveInsights, archiveTrendTimeline, type ArchiveInsights, type ArchiveTrendBreakdown, type ArchiveTrendDimension } from "../services/statistics"
 import type { Theme } from "../services/theme"
 import { listTrips, type TripRecord } from "../services/trips"
 
@@ -63,18 +63,19 @@ function FilterControl({ label, icon, theme, action }: { label: string; icon: st
 }
 
 /** Pure native view, also used by the desktop layout preview. */
-export function TripStatisticsContent({ insights, theme, placeMetric = "total", trendMonths = insights.months.length > 3 ? 12 : 3, onChooseYear, onChooseMode, onChoosePlaceMetric, onChooseTrend, breakdown, breakdownDimension = "departure", onChooseBreakdownDimension, measure = "count", onChooseMeasure, title = "出行统计", onClose }: {
+export function TripStatisticsContent({ insights, theme, placeMetric = "total", timeline, trendMonths = timeline?.granularity === "week" ? 3 : insights.months.length > 3 ? 12 : insights.months.length === 1 ? 1 : 3, onChooseYear, onChooseMode, onChoosePlaceMetric, onChooseTrend, breakdown, breakdownDimension = "departure", onChooseBreakdownDimension, measure = "count", onChooseMeasure, title = "出行统计", onClose }: {
   insights: ArchiveInsights
   measure?: TrendMeasure
   onChooseMeasure?: () => void
   title?: string
   onClose?: () => void
+  timeline?: ReturnType<typeof archiveTrendTimeline>
   breakdown?: ArchiveTrendBreakdown
   breakdownDimension?: ArchiveTrendDimension
   onChooseBreakdownDimension?: () => void
   theme: Theme
   placeMetric?: PlaceMetric
-  trendMonths?: 3 | 12
+  trendMonths?: 1 | 3 | 12
   onChooseTrend?: () => void
   onChooseYear?: () => void
   onChooseMode?: () => void
@@ -83,24 +84,37 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
   const { summary, months, longest } = insights
   const yearLabel = `年份：${insights.selectedYear === null ? "全部年份" : `${insights.selectedYear} 年`}`
   const modeFilterLabel = `出行方式：${insights.selectedMode === "all" ? "全部方式" : modeLabel(insights.selectedMode)}`
-  const trendLabel = `趋势范围：${trendMonths === 3 ? "最近 3 个月" : "12 个月"}`
+  const trendLabel = `趋势范围：${trendMonths === 12 ? "12 个月" : `最近 ${trendMonths} 个月`}`
   const metricLabel = `站点排行：${PLACE_LABELS[placeMetric]}`
   const places = [...summary.places].filter(place => place[placeMetric] > 0).sort((a, b) =>
     b[placeMetric] - a[placeMetric] || a.name.localeCompare(b.name, "zh-CN") || a.mode.localeCompare(b.mode, "en"))
   const duration = measure === "duration"
   const valueOf = (item: { total: number; totalMinutes: number }) => duration ? item.totalMinutes : item.total
-  const maximum = Math.max(0, ...months.map(valueOf))
-  const peak = months.find(month => valueOf(month) === maximum)
-  const period = months.length ? `${monthText(months[0].month)} — ${monthText(months[months.length - 1].month)}` : "暂无可用日期"
-  const chartCount = months.reduce((total, month) => total + month.total, 0)
+  const weekly = timeline?.granularity === "week"
+  const breakdownMonths = new Map(breakdown?.months.map(month => [month.month, month]) ?? [])
+  const chartPeriods = (timeline?.periods ?? months.map(month => ({
+    ...month, key: month.month, startDate: `${month.month}-01`, endDate: "",
+    segments: breakdownMonths.get(month.month)?.segments ?? [],
+    knownDurationCount: breakdownMonths.get(month.month)?.knownDurationCount,
+  }))).map(item => ({
+    ...item,
+    label: weekly ? `${item.startDate.slice(5).replace("-", "/")}–${item.endDate.slice(5).replace("-", "/")}` : `${Number(item.key.slice(5))} 月`,
+    fullLabel: weekly ? `${item.startDate} 至 ${item.endDate}` : monthText(item.key),
+    axisLabel: weekly ? item.startDate.slice(5).replace("-", "/") : item.key.slice(5),
+  }))
+  const maximum = Math.max(0, ...chartPeriods.map(valueOf))
+  const peak = chartPeriods.find(item => valueOf(item) === maximum)
+  const period = timeline ? timeline.startDate && timeline.endDate ? `${timeline.startDate} — ${timeline.endDate}` : "暂无可用日期"
+    : months.length ? `${monthText(months[0].month)} — ${monthText(months[months.length - 1].month)}` : "暂无可用日期"
+  const chartCount = chartPeriods.reduce((total, item) => total + item.total, 0)
   const palette = statisticsPalette(theme)
-  const series = breakdown?.series ?? []
+  const series = timeline?.series ?? breakdown?.series ?? []
   const colors = new Map(series.map((item, index) => [item.key, palette[index % palette.length]]))
   const labels = new Map(series.map(item => [item.key, item.label]))
-  const breakdownMonths = new Map(breakdown?.months.map(month => [month.month, month]) ?? [])
-  const chartMinutes = months.reduce((total, month) => total + month.totalMinutes, 0)
-  const chartKnown = breakdown?.months.reduce((total, month) => total + month.knownDurationCount, 0)
-  const trendNotes = `按出发月份计数；概览仍含全部筛选归档。${trendMonths === 3 ? "截至当前筛选最近有效出发月份，展示连续至多 3 个月。" : insights.selectedYear === null ? "图表展示截至最近有效出发月份的连续 12 个月。" : "图表展示所选年份的 1 至 12 月。"}${insights.selectedYear === null ? "" : `所有图示仅限所选年份。${trendMonths === 3 ? "最近 3 个月在年初可能不足 3 个月。" : ""}`}`
+  const chartMinutes = chartPeriods.reduce((total, item) => total + item.totalMinutes, 0)
+  const chartKnown = timeline || breakdown ? chartPeriods.reduce((total, item) => total + (item.knownDurationCount ?? 0), 0) : undefined
+  const barWidth = weekly ? trendMonths === 1 ? 20 : 10 : trendMonths === 12 ? 12 : 24
+  const trendNotes = `按出发日期${weekly ? "分周统计，周一至周日；首尾周仅显示所选范围内日期" : "分月统计"}；概览仍含全部筛选归档。${trendMonths !== 12 ? `截至当前筛选最近有效出发月份，展示最近 ${trendMonths} 个月。` : insights.selectedYear === null ? "图表展示截至最近有效出发月份的连续 12 个月。" : "图表展示所选年份的 1 至 12 月。"}${insights.selectedYear === null ? "" : "所有图示仅限所选年份，年初范围可能不足所选月数。"}`
   const durationCoverage = `已知时长 ${summary.knownDurationCount} 次 · 缺少时长 ${summary.unknownDurationCount} 次`
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={theme.cardTop}
     navigationTitle={title} navigationBarTitleDisplayMode="inline"
@@ -124,7 +138,7 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
         </HStack>
       </VStack>
     </StatsBlock>
-    <StatsBlock theme={theme} title="月度趋势" icon="chart.bar.xaxis" footer={<Text font="caption" foregroundStyle={theme.sub}>{`${period}。${insights.invalidDateCount ? `${insights.invalidDateCount} 次缺少有效日期，未计入趋势和出行天数。` : ""}`}</Text>}>
+    <StatsBlock theme={theme} title={weekly ? "周度趋势" : "月度趋势"} icon="chart.bar.xaxis" footer={<Text font="caption" foregroundStyle={theme.sub}>{`${period}。${insights.invalidDateCount ? `${insights.invalidDateCount} 次缺少有效日期，未计入趋势和出行天数。` : ""}`}</Text>}>
       <HStack spacing={8}>
         <FilterControl label={trendLabel} icon="calendar.badge.clock" theme={theme} action={onChooseTrend} />
         <FilterControl label={`分区：${DIMENSION_LABELS[breakdownDimension]}`} icon="square.stack.3d.up" theme={theme} action={onChooseBreakdownDimension} />
@@ -137,19 +151,19 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
           <Text font="caption" foregroundStyle={theme.sub}>{duration ? "累计时长 · 单位：分钟" : "总次数 · 单位：次"}</Text>
         </HStack>
         {maximum > 0 ? <HStack alignment="bottom" spacing={3} frame={{ height: 170 }}>
-          {months.map(month => <VStack key={month.month} spacing={4} frame={{ minWidth: 0, maxWidth: "infinity", minHeight: 170, maxHeight: 170 }}
-            accessibilityElement="ignore" accessibilityLabel={`${monthText(month.month)}：${month.total} 次${breakdownMonths.get(month.month)?.segments.filter(segment => segment.count > 0).map(segment => `，${labels.get(segment.key) ?? segment.key} ${segment.count} 次`).join("") ?? ""}，火车 ${month.rail} 次，航班 ${month.flight} 次，${month.totalMinutes > 0 ? `已知累计时长 ${minutesText(month.totalMinutes)}` : month.total > 0 ? "暂无可用时长" : "无行程"}`}>
-            <Text font={11} monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{duration ? month.totalMinutes > 0 ? shortMinutes(month.totalMinutes) : "—" : String(month.total)}</Text>
+          {chartPeriods.map((item, index) => <VStack key={item.key} spacing={4} frame={{ minWidth: 0, maxWidth: "infinity", minHeight: 170, maxHeight: 170 }}
+            accessibilityElement="ignore" accessibilityLabel={`${item.fullLabel}：${item.total} 次${item.segments.filter(segment => segment.count > 0).map(segment => `，${labels.get(segment.key) ?? segment.key} ${segment.count} 次`).join("")}，火车 ${item.rail} 次，航班 ${item.flight} 次，${item.totalMinutes > 0 ? `已知累计时长 ${minutesText(item.totalMinutes)}` : item.total > 0 ? "暂无可用时长" : "无行程"}`}>
+            <Text font={weekly && trendMonths === 3 ? 10 : 11} monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{duration ? item.totalMinutes > 0 ? shortMinutes(item.totalMinutes) : "—" : String(item.total)}</Text>
             <VStack spacing={0} frame={{ height: 122, alignment: "bottom" }}>
-              <VStack spacing={0} frame={{ width: trendMonths === 3 ? 24 : 12, height: valueOf(month) / maximum * 122 }} accessibilityHidden={true}>
-                {breakdown ? (breakdownMonths.get(month.month)?.segments ?? []).filter(segment => (duration ? segment.minutes : segment.count) > 0).map(segment =>
-                  <Rectangle key={segment.key} fill={colors.get(segment.key) ?? theme.accent} frame={{ width: trendMonths === 3 ? 24 : 12, height: (duration ? segment.minutes : segment.count) / maximum * 122 }} />)
-                  : valueOf(month) > 0 ? <Rectangle fill={theme.accent} frame={{ width: trendMonths === 3 ? 24 : 12, height: valueOf(month) / maximum * 122 }} /> : null}
+              <VStack spacing={0} frame={{ width: barWidth, height: valueOf(item) / maximum * 122 }} accessibilityHidden={true}>
+                {timeline || breakdown ? item.segments.filter(segment => (duration ? segment.minutes : segment.count) > 0).map(segment =>
+                  <Rectangle key={segment.key} fill={colors.get(segment.key) ?? theme.accent} frame={{ width: barWidth, height: (duration ? segment.minutes : segment.count) / maximum * 122 }} />)
+                  : valueOf(item) > 0 ? <Rectangle fill={theme.accent} frame={{ width: barWidth, height: valueOf(item) / maximum * 122 }} /> : null}
               </VStack>
             </VStack>
-            <Text font={11} monospacedDigit foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.6} frame={{ height: 20 }}>{month.month.slice(5)}</Text>
+            <Text font={weekly && trendMonths === 3 ? 9 : 11} monospacedDigit foregroundStyle={theme.sub} lineLimit={1} minScaleFactor={0.6} frame={weekly && trendMonths === 3 ? { width: 30, height: 20 } : { minWidth: 0, maxWidth: "infinity", height: 20 }}>{!weekly || trendMonths === 1 || index % 2 === 0 ? item.axisLabel : ""}</Text>
           </VStack>)}
-        </HStack> : <Text font="subheadline" foregroundStyle={theme.sub}>{duration && chartCount > 0 ? "暂无可用时长" : "当前范围没有可绘制的月份。归档行程并补全出发日期后，即可查看每月出行变化。"}</Text>}
+        </HStack> : <Text font="subheadline" foregroundStyle={theme.sub}>{duration && chartCount > 0 ? "暂无可用时长" : `当前范围没有可绘制的${weekly ? "周次" : "月份"}。归档行程并补全出发日期后，即可查看出行变化。`}</Text>}
         {series.length ? <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           {series.map(item => <HStack key={item.key} spacing={8} accessibilityElement="combine">
             <RoundedRectangle cornerRadius={4} fill={colors.get(item.key)} frame={{ width: 8, height: 8 }} accessibilityHidden={true} />
@@ -160,16 +174,16 @@ export function TripStatisticsContent({ insights, theme, placeMetric = "total", 
             <Text font="caption" monospacedDigit foregroundStyle={theme.ink} lineLimit={1}>{duration ? item.knownDurationCount ? shortMinutes(item.totalMinutes) : "—" : `${item.total} 次`}</Text>
           </HStack>)}
         </VStack> : null}
-        {maximum > 0 && peak ? <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>{`${duration ? "时长最多" : "最多出行"}：${monthText(peak.month)} · ${duration ? shortMinutes(maximum) : `${maximum} 次`}${months.filter(month => valueOf(month) === maximum).length > 1 ? "（并列）" : ""}`}</Text> : null}
+        {maximum > 0 && peak ? <Text font="caption" foregroundStyle={theme.sub} lineLimit={2}>{`${duration ? "时长最多" : "最多出行"}：${peak.fullLabel} · ${duration ? shortMinutes(maximum) : `${maximum} 次`}${chartPeriods.filter(item => valueOf(item) === maximum).length > 1 ? "（并列）" : ""}`}</Text> : null}
         {duration ? <Text font="caption" foregroundStyle={theme.sub}>{`图示已知累计 ${minutesText(chartMinutes)} · ${chartKnown === undefined ? "缺失时长不绘制" : `已知 ${chartKnown} 次 / ${chartCount} 次，缺少 ${chartCount - chartKnown} 次`}`}</Text> : null}
       </VStack>
-      {months.length ? <VStack alignment="leading" spacing={5}>
-        <HStack><Text font="caption" fontWeight="semibold" foregroundStyle={theme.ink}>月度明细</Text><Spacer /><Text font="caption" foregroundStyle={theme.sub}>次数 · 累计 · 平均</Text></HStack>
-        {months.map(month => {
-          const known = breakdownMonths.get(month.month)?.knownDurationCount
-          return <HStack key={`detail-${month.month}`} spacing={6} accessibilityElement="combine">
-            <Text font="caption" foregroundStyle={theme.sub}>{`${Number(month.month.slice(5))} 月`}</Text><Spacer />
-            <Text font="caption" monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6}>{`${month.total} 次 · ${month.totalMinutes > 0 ? shortMinutes(month.totalMinutes) : "—"} · ${known ? shortMinutes(Math.round(month.totalMinutes / known)) : "—"}`}</Text>
+      {chartPeriods.length ? <VStack alignment="leading" spacing={5}>
+        <HStack><Text font="caption" fontWeight="semibold" foregroundStyle={theme.ink}>{weekly ? "周度明细" : "月度明细"}</Text><Spacer /><Text font="caption" foregroundStyle={theme.sub}>次数 · 累计 · 平均</Text></HStack>
+        {chartPeriods.map(item => {
+          const known = item.knownDurationCount
+          return <HStack key={`detail-${item.key}`} spacing={6} accessibilityElement="combine" accessibilityLabel={`${item.fullLabel}：${item.total} 次，${item.totalMinutes > 0 ? `已知累计 ${minutesText(item.totalMinutes)}` : item.total > 0 ? "暂无可用时长" : "无行程"}${known ? `，平均 ${minutesText(Math.round(item.totalMinutes / known))}` : ""}`}>
+            <Text font="caption" foregroundStyle={theme.sub}>{item.label}</Text><Spacer />
+            <Text font="caption" monospacedDigit foregroundStyle={theme.ink} lineLimit={1} minScaleFactor={0.6}>{`${item.total} 次 · ${item.totalMinutes > 0 ? shortMinutes(item.totalMinutes) : "—"} · ${known ? shortMinutes(Math.round(item.totalMinutes / known)) : "—"}`}</Text>
           </HStack>
         })}
       </VStack> : null}
@@ -236,13 +250,13 @@ export function TripStatisticsPage({ theme, records: liveRecords, onClose, title
   const [year, setYear] = useState<number | null>(null)
   const [mode, setMode] = useState<"all" | TripMode>("all")
   const [placeMetric, setPlaceMetric] = useState<PlaceMetric>("total")
-  const [trendMonths, setTrendMonths] = useState<3 | 12>(3)
+  const [trendMonths, setTrendMonths] = useState<1 | 3 | 12>(3)
   const [breakdownDimension, setBreakdownDimension] = useState<ArchiveTrendDimension>("departure")
   const [measure, setMeasure] = useState<TrendMeasure>("count")
   const records = liveRecords ?? listTrips()
   const filter = { year: year ?? undefined, mode, trendMonths }
   const insights = archiveInsights(records, filter)
-  const breakdown = archiveTrendBreakdown(records, filter, breakdownDimension)
+  const timeline = archiveTrendTimeline(records, filter, breakdownDimension)
   const chooseYear = async () => {
     const values: Array<number | null> = [null, ...insights.years]
     const index = await Dialog.actionSheet({ title: "选择统计年份", actions: values.map(value => ({ label: value === null ? "全部年份" : `${value} 年` })), cancelButton: true })
@@ -258,8 +272,8 @@ export function TripStatisticsPage({ theme, records: liveRecords, onClose, title
     if (index != null && index >= 0 && index < values.length) setPlaceMetric(values[index])
   }
   const chooseTrend = async () => {
-    const values: Array<3 | 12> = [3, 12]
-    const index = await Dialog.actionSheet({ title: "趋势范围", actions: [{ label: "最近 3 个月" }, { label: "12 个月" }], cancelButton: true })
+    const values: Array<1 | 3 | 12> = [1, 3, 12]
+    const index = await Dialog.actionSheet({ title: "趋势范围", actions: [{ label: "最近 1 个月" }, { label: "最近 3 个月" }, { label: "12 个月" }], cancelButton: true })
     if (index != null && index >= 0 && index < values.length) setTrendMonths(values[index])
   }
   const chooseBreakdownDimension = async () => {
@@ -272,7 +286,7 @@ export function TripStatisticsPage({ theme, records: liveRecords, onClose, title
     if (index != null && index >= 0 && index < values.length) setMeasure(values[index])
   }
   return <TripStatisticsContent insights={insights} theme={theme} title={title} onClose={onClose} measure={measure} onChooseMeasure={() => void chooseMeasure()} placeMetric={placeMetric} trendMonths={trendMonths}
-    breakdown={breakdown} breakdownDimension={breakdownDimension} onChooseBreakdownDimension={() => void chooseBreakdownDimension()}
+    timeline={timeline} breakdownDimension={breakdownDimension} onChooseBreakdownDimension={() => void chooseBreakdownDimension()}
     onChooseTrend={() => void chooseTrend()}
     onChooseYear={() => void chooseYear()} onChooseMode={() => void chooseMode()} onChoosePlaceMetric={() => void choosePlaceMetric()} />
 }

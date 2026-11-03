@@ -21,7 +21,7 @@ export type ArchiveStatistics = {
   uniquePlaceCount: number
 }
 
-export type ArchiveInsightsFilter = { year?: number; mode?: "all" | TripMode; trendMonths?: 3 | 12 }
+export type ArchiveInsightsFilter = { year?: number; mode?: "all" | TripMode; trendMonths?: 1 | 3 | 12 }
 
 export type ArchiveTrendDimension = "departure" | "arrival" | "code"
 
@@ -32,6 +32,19 @@ export type ArchiveTrendBreakdown = {
     segments: Array<{ key: string; count: number; minutes: number; knownDurationCount: number }>
   }>
   series: Array<{ key: string; label: string; total: number; totalMinutes: number; knownDurationCount: number }>
+}
+
+export type ArchiveTrendTimeline = {
+  granularity: "week" | "month"
+  startDate: string | null
+  endDate: string | null
+  periods: Array<{
+    key: string; startDate: string; endDate: string
+    total: number; rail: number; flight: number; totalMinutes: number
+    knownDurationCount: number; unknownDurationCount: number
+    segments: ArchiveTrendBreakdown["months"][number]["segments"]
+  }>
+  series: ArchiveTrendBreakdown["series"]
 }
 
 export type ArchiveInsights = {
@@ -68,11 +81,11 @@ function placeName(mode: TripMode, value: unknown): string {
 function departureDate(value: unknown): { day: string; year: number; monthIndex: number } | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const [year, month, day] = value.split("-").map(Number)
-  // setFullYear also round-trips years below 100 without Date's 1900 offset.
+  // UTC round-trips calendar dates, including years below 100, independently of the device zone.
   const date = new Date(0)
-  date.setHours(12, 0, 0, 0)
-  date.setFullYear(year, month - 1, day)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  date.setUTCHours(0, 0, 0, 0)
+  date.setUTCFullYear(year, month - 1, day)
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
   return { day: value, year, monthIndex: year * 12 + month - 1 }
 }
 
@@ -127,10 +140,10 @@ function archiveSelection(records: TripRecord[], filter: ArchiveInsightsFilter) 
     if (date && (latestMonth === null || date.monthIndex > latestMonth)) latestMonth = date.monthIndex
   }
   const trendMonths = filter.trendMonths ?? 12
-  const firstMonth = trendMonths === 3
-    ? latestMonth === null ? null : Math.max(selectedYear === null ? 0 : selectedYear * 12, latestMonth - 2)
-    : selectedYear !== null ? selectedYear * 12 : latestMonth === null ? null : latestMonth - 11
-  const monthCount = trendMonths === 3 && firstMonth !== null && latestMonth !== null ? latestMonth - firstMonth + 1 : 12
+  const firstMonth = trendMonths !== 12
+    ? latestMonth === null ? null : Math.max(selectedYear === null ? 0 : selectedYear * 12, latestMonth - trendMonths + 1)
+    : selectedYear !== null ? selectedYear * 12 : latestMonth === null ? null : Math.max(0, latestMonth - 11)
+  const monthCount = firstMonth === null ? 0 : trendMonths === 12 && selectedYear !== null ? 12 : latestMonth === null ? 0 : latestMonth - firstMonth + 1
   if (firstMonth !== null) {
     for (let offset = 0; offset < monthCount; offset += 1) {
       const index = firstMonth + offset
@@ -207,12 +220,25 @@ export function archiveTrendBreakdown(
   const months: ArchiveTrendBreakdown["months"] = selection.months.map(({ month }) => ({
     month, total: 0, totalMinutes: 0, knownDurationCount: 0, unknownDurationCount: 0, segments: [],
   }))
-  const counts = months.map(() => new Map<string, ArchiveTrendBreakdown["months"][number]["segments"][number]>())
+  const series = aggregateTrend(selection, months, dimension, (date) =>
+    selection.firstMonth === null ? -1 : date.monthIndex - selection.firstMonth)
+  return { dimension, months, series }
+}
+
+type TrendBucket = ArchiveTrendBreakdown["months"][number]
+
+function aggregateTrend<T extends Omit<TrendBucket, "month">>(
+  selection: ReturnType<typeof archiveSelection>,
+  buckets: T[],
+  dimension: ArchiveTrendDimension,
+  bucketIndex: (date: NonNullable<ReturnType<typeof departureDate>>) => number,
+): ArchiveTrendBreakdown["series"] {
+  const counts = buckets.map(() => new Map<string, ArchiveTrendBreakdown["months"][number]["segments"][number]>())
   const categories = new Map<string, ArchiveTrendBreakdown["series"][number]>()
   for (const { trip, date } of selection.filtered) {
-    if (!date || selection.firstMonth === null) continue
-    const index = date.monthIndex - selection.firstMonth
-    const month = months[index]
+    if (!date) continue
+    const index = bucketIndex(date)
+    const month = buckets[index]
     if (!month) continue
     const validMode = trip.mode === "rail" || trip.mode === "flight"
     const value = dimension === "code"
@@ -222,6 +248,10 @@ export function archiveTrendBreakdown(
     const minutes = durationMinutes(trip)
     const knownDurationCount = minutes > 0 ? 1 : 0
     month.total += 1
+    if (validMode && "rail" in month && "flight" in month) {
+      const period = month as T & { rail: number; flight: number }
+      period[trip.mode] += 1
+    }
     month.totalMinutes += minutes
     month.knownDurationCount += knownDurationCount
     month.unknownDurationCount += 1 - knownDurationCount
@@ -255,7 +285,7 @@ export function archiveTrendBreakdown(
   if (other.total) series.push(other)
   const unknown = categories.get("unknown")
   if (unknown) series.push(unknown)
-  for (let index = 0; index < months.length; index += 1) {
+  for (let index = 0; index < buckets.length; index += 1) {
     const grouped = new Map<string, ArchiveTrendBreakdown["months"][number]["segments"][number]>()
     for (const [key, segment] of counts[index]) {
       const group = key === "unknown" || topKeys.has(key) ? key : "other"
@@ -265,10 +295,58 @@ export function archiveTrendBreakdown(
       combined.knownDurationCount += segment.knownDurationCount
       grouped.set(group, combined)
     }
-    months[index].segments = series.flatMap(({ key }) => {
+    buckets[index].segments = series.flatMap(({ key }) => {
       const segment = grouped.get(key)
       return segment ? [segment] : []
     })
   }
-  return { dimension, months, series }
+  return series
+}
+
+function calendarDay(year: number, month: number, day: number): number {
+  const date = new Date(0)
+  date.setUTCFullYear(year, month, day)
+  return date.getTime() / 86400000
+}
+
+function isoDay(ordinal: number): string {
+  return new Date(ordinal * 86400000).toISOString().slice(0, 10)
+}
+
+export function archiveTrendTimeline(
+  records: TripRecord[],
+  filter: ArchiveInsightsFilter = {},
+  dimension: ArchiveTrendDimension = "departure",
+): ArchiveTrendTimeline {
+  const selection = archiveSelection(records, filter)
+  const granularity = filter.trendMonths === 1 || filter.trendMonths === 3 ? "week" : "month"
+  const periods: ArchiveTrendTimeline["periods"] = []
+  const first = selection.months[0]?.month
+  const last = selection.months.at(-1)?.month
+  if (!first || !last) return { granularity, startDate: null, endDate: null, periods, series: [] }
+  const [firstYear, firstMonth] = first.split("-").map(Number)
+  const [lastYear, lastMonth] = last.split("-").map(Number)
+  const start = calendarDay(firstYear, firstMonth - 1, 1)
+  const end = calendarDay(lastYear, lastMonth, 0)
+  const addPeriod = (key: string, from: number, to: number) => periods.push({
+    key, startDate: isoDay(from), endDate: isoDay(to), total: 0, rail: 0, flight: 0,
+    totalMinutes: 0, knownDurationCount: 0, unknownDurationCount: 0, segments: [],
+  })
+  if (granularity === "week") {
+    for (let from = start; from <= end;) {
+      // Sunday is 0; each bucket ends on Sunday, with boundary weeks clipped to the window.
+      const weekday = new Date(from * 86400000).getUTCDay()
+      const to = Math.min(end, from + (7 - weekday) % 7)
+      addPeriod(isoDay(from), from, to)
+      from = to + 1
+    }
+  } else {
+    for (const { month } of selection.months) {
+      const [year, number] = month.split("-").map(Number)
+      addPeriod(month, calendarDay(year, number - 1, 1), calendarDay(year, number, 0))
+    }
+  }
+  const series = aggregateTrend(selection, periods, dimension, (date) =>
+    periods.findIndex((period) => date.day >= period.startDate && date.day <= period.endDate))
+  return { granularity, startDate: isoDay(start), endDate: isoDay(end), periods, series }
 }

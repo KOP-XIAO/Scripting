@@ -148,7 +148,7 @@ test('actual archive navigation propagates light/dark themes and detail reads la
     assert.equal(rankedNames(f).length, 0);
   }
 });
-test('year and mode action sheets change actual totals, duration, monthly trend and rankings independently', async () => {
+test('year and mode action sheets change actual totals, duration, trend and rankings independently', async () => {
   const f = fixture();
   await f.choose('年份：', '2099 年');
   statistic(f, '累计行程', '2 次'); statistic(f, '累计时长', '3 小时');
@@ -184,7 +184,7 @@ test('place metric actions render departure and arrival rankings from the select
 });
 // These assertions inspect native structure and callbacks, not iOS measurement or pixels.
 test('statistics share one continuous themed scroll surface with internal headings and dividers', () => {
-  const headings = [ '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线', '数据完整度', '统计说明'];
+  const headings = [ '出行概览', '周度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线', '数据完整度', '统计说明'];
   for (const themeKey of Object.keys(fixture().exports.THEMES)) {
     for (const trips of [records(), []]) {
       const f = fixture(trips, themeKey), theme = f.exports.THEMES[themeKey];
@@ -260,13 +260,13 @@ test('statistics share one continuous themed scroll surface with internal headin
     }
   }
 });
-test('monthly chart reserves native stack height, equal flexible columns and bottom-anchored bars', async () => {
+test('weekly and monthly charts reserve native stack height, equal flexible columns and bottom-anchored bars', async () => {
   const f = fixture(records(), 'midnight');
-  for (const trendMonths of [3, 12]) {
-    if (trendMonths === 12) await f.choose('趋势范围：', '12 个月');
+  for (const trendMonths of [3, 1, 12]) {
+    if (trendMonths !== 3) await f.choose('趋势范围：', trendMonths === 1 ? '最近 1 个月' : '12 个月');
     for (const width of [201, 260, 320]) {
       f.detail.render(width);
-      const section = statsBlock(f, '月度趋势');
+      const section = trendBlock(f);
       const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
       assert.ok(row.props.frame.minHeight >= 210, 'the populated native scroll block must reserve the entire chart and captions');
       assert.equal(f.nodes(section).some(node => node.type === 'GeometryReader'), false,
@@ -275,9 +275,9 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
       const chart = children.find(node => node.type === 'HStack' && node.props.frame?.height === 170);
       assert.ok(chart, 'chart must report a fixed 170-point height to the row');
       const columns = chart.props.children.flat(Infinity).filter(node => node?.type);
-      assert.equal(columns.length, trendMonths);
-      assert.ok(trendMonths * (trendMonths === 3 ? 24 : 12) + (trendMonths - 1) * chart.props.spacing <= width, 'fixed bars and column gaps fit narrow content widths');
-      for (const column of columns) {
+      assert.equal(columns.length, trendMonths === 12 ? 12 : trendMonths === 1 ? 5 : 14);
+      assert.ok(columns.length * (trendMonths === 1 ? 20 : trendMonths === 3 ? 10 : 12) + (columns.length - 1) * chart.props.spacing <= width, 'fixed bars and column gaps fit narrow content widths');
+      for (const [columnIndex, column] of columns.entries()) {
         assert.equal(column.type, 'VStack');
         assert.equal(column.props.frame.minWidth, 0);
         assert.equal(column.props.frame.maxWidth, 'infinity');
@@ -298,10 +298,10 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
          assert.equal(bar.props.spacing, 0);
          const segments = f.nodes(bar).filter(node => node.type === 'Rectangle');
          assert.ok(Math.abs(segments.reduce((sum, node) => sum + node.props.frame.height, 0) - bar.props.frame.height) < 1e-8);
-        assert.equal(bar.props.frame.width, trendMonths === 3 ? 24 : 12);
+        assert.equal(bar.props.frame.width, trendMonths === 1 ? 20 : trendMonths === 3 ? 10 : 12);
         const total = Number(f.texts(count)[0]);
         assert.equal(bar.props.frame.height, total / 2 * 122, 'bar heights retain the actual counts and maximum');
-        assert.equal(f.texts(month)[0], column.props.key.slice(5));
+        assert.equal(f.texts(month)[0], trendMonths === 12 ? column.props.key.slice(5) : trendMonths === 1 || columnIndex % 2 === 0 ? column.props.key.slice(5).replace('-', '/') : '');
       }
       const peakIndex = children.findIndex(node => node.type === 'Text' && f.texts(node)[0].startsWith('最多出行：'));
       assert.ok(peakIndex > children.indexOf(chart), 'peak caption must occupy a sibling slot after the whole chart');
@@ -313,7 +313,7 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
     }
   }
   const empty = fixture([]);
-  const section = statsBlock(empty, '月度趋势');
+  const section = trendBlock(empty);
   const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
   assert.equal(row.props.frame.minHeight, 0, 'empty chart copy must not reserve a tall blank chart');
 });
@@ -355,9 +355,11 @@ test('empty, unknown and year-zero records keep truthful labels and finite bound
 
 test('recent three months default, scope switching and year clipping keep overview and rankings intact', async () => {
   const f = fixture();
-  const columns = () => f.detail.nodes().filter(node => node.type === 'VStack' && /^\d{4}-\d\d$/.test(node.props.key || ''));
+  const columns = () => f.detail.nodes().filter(node => node.type === 'VStack' && /^\d{4}-\d\d(?:-\d\d)?$/.test(node.props.key || ''));
   visible(f.detail, '趋势范围：最近 3 个月', '图示 2 次行程');
-  assert.deepEqual(columns().map(node => node.props.key), ['2098-11', '2098-12', '2099-01']);
+  assert.equal(columns().length, 14);
+   assert.equal(columns()[0].props.key, '2098-11-01');
+   assert.equal(columns().at(-1).props.key, '2099-01-26');
   const beforeRanking = rankedNames(f);
   await f.choose('趋势范围：', '12 个月');
   assert.equal(f.sheets.at(-1).title, '趋势范围');
@@ -367,7 +369,9 @@ test('recent three months default, scope switching and year clipping keep overvi
   assert.deepEqual(rankedNames(f), beforeRanking);
   await f.choose('趋势范围：', '最近 3 个月');
   await f.choose('年份：', '2099 年');
-  assert.deepEqual(columns().map(node => node.props.key), ['2099-01']);
+  assert.equal(columns().length, 5);
+   assert.equal(columns()[0].props.key, '2099-01-01');
+   assert.equal(columns().at(-1).props.key, '2099-01-26');
   assert.ok(f.detail.texts().some(text => text.includes('所有图示仅限所选年份')));
   await f.choose('年份：', '2098 年');
   await f.choose('出行方式：', '航班');
@@ -376,13 +380,14 @@ test('recent three months default, scope switching and year clipping keep overvi
   assert.ok(f.detail.texts().some(text => text.includes('暂无可用日期')));
 });
 
+function trendBlock(f) { return statsBlock(f, f.detail.texts().includes('周度趋势') ? '周度趋势' : '月度趋势'); }
 function chartColumns(f) {
-  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'VStack' && /^\d{4}-\d\d$/.test(node.props.key || ''));
+  return f.nodes(trendBlock(f)).filter(node => node.type === 'VStack' && /^\d{4}-\d\d(?:-\d\d)?$/.test(node.props.key || ''));
 }
 function legendRows(f) {
-  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'HStack' && node.props.key && node.props.accessibilityElement === 'combine' && f.nodes(node).some(child => child.type === 'RoundedRectangle'));
+  return f.nodes(trendBlock(f)).filter(node => node.type === 'HStack' && node.props.key && node.props.accessibilityElement === 'combine' && f.nodes(node).some(child => child.type === 'RoundedRectangle'));
 }
-test('dimension selector changes actual month segments and legends without changing totals or rankings', async () => {
+test('dimension selector changes actual period segments and legends without changing totals or rankings', async () => {
   const trips = [trip('a', { departDate: '2099-01-03', code: 'G1' }), trip('b', { departDate: '2099-02-03', code: 'G2', toPlace: '测试丙' }),
     trip('c', { departDate: '2099-02-04', fromPlace: '', toPlace: '', code: '' })];
   const f = fixture(trips), ranking = rankedNames(f);
@@ -391,7 +396,7 @@ test('dimension selector changes actual month segments and legends without chang
     visible(f.detail, `分区：${label}`, '图示 3 次行程');
     statistic(f, '累计行程', '3 次');
     assert.deepEqual(rankedNames(f), ranking);
-    const expected = f.exports.archiveTrendBreakdown(trips, { trendMonths: 3 }, dimension);
+    const expected = f.exports.archiveTrendTimeline(trips, { trendMonths: 3 }, dimension);
     const rows = legendRows(f);
     assert.equal(rows.length, expected.series.length);
     assert.equal(rows.reduce((sum, row) => sum + Number(f.texts(row).at(-1).split(' ')[0]), 0), 3);
@@ -400,12 +405,12 @@ test('dimension selector changes actual month segments and legends without chang
       assert.deepEqual(f.texts(row), [item.label, `${item.total} 次`]);
     }
     for (const column of chartColumns(f)) {
-      const month = expected.months.find(month => month.month === column.props.key);
+      const month = expected.periods.find(period => period.key === column.props.key);
       const bars = f.nodes(column).filter(node => node.type === 'Rectangle');
       assert.equal(bars.length, month.segments.filter(segment => segment.count > 0).length);
       for (const bar of bars) {
         const segment = month.segments.find(segment => segment.key === bar.props.key);
-        assert.equal(bar.props.frame.height, segment.count / 2 * 122);
+        assert.equal(bar.props.frame.height, segment.count / Math.max(...expected.periods.map(period => period.total)) * 122);
         const dot = f.nodes(rows.find(row => row.props.key === segment.key)).find(node => node.type === 'RoundedRectangle');
         assert.equal(bar.props.fill, dot.props.fill);
         assert.ok(column.props.accessibilityLabel.includes(`${expected.series.find(item => item.key === segment.key).label} ${segment.count} 次`));
@@ -434,12 +439,12 @@ test('all themes use six readable series colors and preserve complete top-four o
     }
     for (const column of chartColumns(f)) {
       const segments = f.nodes(column).filter(node => node.type === 'Rectangle');
-      assert.ok(Math.abs(segments.reduce((sum, bar) => sum + bar.props.frame.height, 0) - Number(f.texts(column)[0]) / 4 * 122) < 1e-8);
+      assert.ok(Math.abs(segments.reduce((sum, bar) => sum + bar.props.frame.height, 0) - Number(f.texts(column)[0]) / Math.max(...chartColumns(f).map(column => Number(f.texts(column)[0]))) * 122) < 1e-8);
     }
   }
 });
 
-test('duration selector uses actual minutes, stable categories and colors, with known coverage and monthly averages', async () => {
+test('duration selector uses actual minutes, stable categories and colors, with known coverage and weekly averages', async () => {
   const trips = [trip('a', { departDate: '2099-01-03', durationMin: 60 }),
     trip('b', { departDate: '2099-02-03', durationMin: 180, fromPlace: '测试丙' }),
     trip('c', { departDate: '2099-02-04', durationMin: 0, fromPlace: '测试丁' })];
@@ -450,9 +455,9 @@ test('duration selector uses actual minutes, stable categories and colors, with 
   visible(f.detail, '图表：累计时长', '累计时长 · 单位：分钟', '图示 3 次行程', '2 次 · 3时 · 3时');
   assert.ok(f.detail.texts().some(text => text.includes('已知 2 次 / 3 次，缺少 1 次')));
   assert.deepEqual(legendRows(f).map(row => [row.props.key, f.nodes(row).find(n => n.type === 'RoundedRectangle').props.fill]), before);
-  const expected = f.exports.archiveTrendBreakdown(trips, { trendMonths: 3 }, 'departure');
+  const expected = f.exports.archiveTrendTimeline(trips, { trendMonths: 3 }, 'departure');
   for (const column of chartColumns(f)) {
-    const month = expected.months.find(month => month.month === column.props.key);
+    const month = expected.periods.find(period => period.key === column.props.key);
     const bars = f.nodes(column).filter(node => node.type === 'Rectangle');
     assert.equal(bars.length, month.segments.filter(segment => segment.minutes > 0).length);
     assert.ok(Math.abs(bars.reduce((sum, bar) => sum + bar.props.frame.height, 0) - month.totalMinutes / 180 * 122) < 1e-8);
@@ -468,12 +473,75 @@ test('duration-only missing data and pure content fallback remain truthful', asy
   visible(f.detail, '暂无可用时长', '图示 1 次行程', '1 次 · — · —');
   assert.equal(chartColumns(f).length, 0);
   assert.ok(f.detail.texts().some(text => text.includes('已知 0 次 / 1 次，缺少 1 次')));
+  const missingDetail = f.detail.nodes().find(node => node.type === 'HStack' && node.props.key?.startsWith('detail-') && node.props.accessibilityLabel?.includes('：1 次'));
+  assert.ok(missingDetail.props.accessibilityLabel.includes('暂无可用时长'));
+  assert.equal(missingDetail.props.accessibilityLabel.includes('累计 0 分钟'), false, 'unknown duration must stay unknown in spoken weekly details');
   const pure = f.mount({ type: f.exports.TripStatisticsContent, props: {
     insights: f.exports.archiveInsights([trip('pure')], { trendMonths: 3 }),
     theme: f.exports.THEMES.ticket, measure: 'duration',
   } }, true);
   visible(pure, '累计时长 · 单位：分钟', '1时');
   assert.ok(pure.nodes().some(node => node.type === 'Rectangle' && node.props.frame?.height === 122));
+});
+test('one-month weekly UI clips leap-month boundaries, keeps zero weeks, and filters without changing overview scope', async () => {
+  const trips = [
+    trip('dec', { departDate: '2023-12-31' }), trip('jan', { departDate: '2024-01-31' }),
+    trip('feb-first', { departDate: '2024-02-01' }),
+    trip('feb-sunday', { departDate: '2024-02-04', mode: 'flight', durationMin: 120 }),
+    trip('feb-monday', { departDate: '2024-02-05' }),
+    trip('feb-last', { departDate: '2024-02-29', durationMin: 0 }),
+  ];
+  const f = fixture(trips), ranking = rankedNames(f);
+  await f.choose('趋势范围：', '最近 1 个月');
+  assert.deepEqual(Array.from(f.sheets.at(-1).actions, item => item.label), ['最近 1 个月', '最近 3 个月', '12 个月']);
+  visible(f.detail, '周度趋势', '周度明细', '趋势范围：最近 1 个月', '图示 4 次行程',
+    '02/01–02/04', '02/05–02/11', '02/12–02/18', '02/19–02/25', '02/26–02/29');
+  assert.deepEqual(chartColumns(f).map(column => column.props.key), ['2024-02-01', '2024-02-05', '2024-02-12', '2024-02-19', '2024-02-26']);
+  assert.deepEqual(chartColumns(f).map(column => Number(f.texts(column)[0])), [2, 1, 0, 0, 1]);
+  assert.ok(f.detail.texts().some(text => text.startsWith('2024-02-01 — 2024-02-29。')));
+  assert.ok(f.detail.texts().some(text => text.startsWith('最多出行：2024-02-01 至 2024-02-04')));
+  for (const [index, column] of chartColumns(f).entries()) {
+    const ends = ['04', '11', '18', '25', '29'];
+    assert.ok(column.props.accessibilityLabel.startsWith(`${column.props.key} 至 2024-02-${ends[index]}：`));
+    const detail = f.detail.nodes().find(node => node.props.key === `detail-${column.props.key}`);
+    assert.ok(detail.props.accessibilityLabel.startsWith(`${column.props.key} 至 2024-02-${ends[index]}：`));
+    const bars = f.nodes(column).filter(node => node.type === 'Rectangle');
+    assert.equal(bars.reduce((sum, bar) => sum + bar.props.frame.height, 0), [122, 61, 0, 0, 61][index]);
+  }
+  statistic(f, '累计行程', '6 次');
+  assert.deepEqual(rankedNames(f), ranking);
+  await f.choose('图表：', '累计时长');
+  visible(f.detail, '图示 4 次行程', '2 次 · 3时 · 1时30分');
+  assert.ok(f.detail.texts().some(text => text.includes('已知 3 次 / 4 次，缺少 1 次')));
+  assert.deepEqual(chartColumns(f).map(column => f.nodes(column).filter(node => node.type === 'Rectangle').reduce((sum, bar) => sum + bar.props.frame.height, 0)), [122, 60 / 180 * 122, 0, 0, 0]);
+  await f.choose('年份：', '2024 年');
+  statistic(f, '累计行程', '5 次');
+  await f.choose('出行方式：', '航班');
+  visible(f.detail, '图示 1 次行程');
+  statistic(f, '累计行程', '1 次');
+  assert.equal(chartColumns(f).length, 5);
+  await f.choose('趋势范围：', '12 个月');
+  visible(f.detail, '月度趋势', '月度明细');
+  assert.equal(chartColumns(f).length, 12);
+});
+test('cross-year weekly chart exposes clipped dates and legacy monthly breakdown stays compatible', () => {
+  const f = fixture();
+  const columns = chartColumns(f);
+  assert.equal(columns.length, 14);
+  assert.ok(columns[0].props.accessibilityLabel.startsWith('2098-11-01 至 2098-11-02：0 次'));
+  assert.ok(columns[9].props.accessibilityLabel.startsWith('2098-12-29 至 2099-01-04：2 次'));
+  assert.ok(columns.at(-1).props.accessibilityLabel.startsWith('2099-01-26 至 2099-01-31：0 次'));
+  assert.deepEqual(columns.map(column => f.texts(column).at(-1)), ['11/01', '', '11/10', '', '11/24', '', '12/08', '', '12/22', '', '01/05', '', '01/19', '']);
+  visible(f.detail, '11/01–11/02', '12/29–01/04', '01/26–01/31');
+  assert.ok(f.detail.texts().some(text => text.startsWith('2098-11-01 — 2099-01-31。')));
+  const trips = [trip('legacy')];
+  const pure = f.mount({ type: f.exports.TripStatisticsContent, props: {
+    insights: f.exports.archiveInsights(trips, { trendMonths: 3 }),
+    breakdown: f.exports.archiveTrendBreakdown(trips, { trendMonths: 3 }, 'departure'),
+    theme: f.exports.THEMES.ticket, measure: 'duration',
+  } }, true);
+  visible(pure, '月度趋势', '月度明细', '1 次 · 1时 · 1时');
+  assert.equal(pure.nodes().filter(node => node.type === 'VStack' && /^\d{4}-\d\d$/.test(node.props.key || '')).length, 3);
 });
 test('statistics Tab receives live parent records and standalone props honor title and optional close', () => {
   const f = fixture();
@@ -500,7 +568,7 @@ test('statistics Tab receives live parent records and standalone props honor tit
 
 (async () => {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { TripStatisticsPage, TripStatisticsContent } from "./components/trip-statistics"; export { THEMES } from "./services/theme"; export { archiveInsights, archiveTrendBreakdown } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { TripStatisticsPage, TripStatisticsContent } from "./components/trip-statistics"; export { THEMES } from "./services/theme"; export { archiveInsights, archiveTrendBreakdown, archiveTrendTimeline } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false, external: ['scripting'],
     jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });

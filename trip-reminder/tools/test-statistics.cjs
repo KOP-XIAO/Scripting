@@ -7,7 +7,7 @@ const entry = path.join(__dirname, "../services/statistics.ts")
 const bundle = esbuild.buildSync({ entryPoints: [entry], bundle: true, platform: "node", format: "cjs", write: false })
 const compiled = new Module(entry, module)
 compiled._compile(bundle.outputFiles[0].text, entry)
-const { archiveStatistics, archiveInsights, archiveTrendBreakdown } = compiled.exports
+const { archiveStatistics, archiveInsights, archiveTrendBreakdown, archiveTrendTimeline } = compiled.exports
 
 let count = 0
 function test(name, run) {
@@ -497,7 +497,7 @@ test("breakdown windows match insights across year, mode, three and twelve month
   const baseline = archiveInsights(records)
   for (const year of [undefined, 2024, 2025, 2050]) {
     for (const mode of ["all", "rail", "flight"]) {
-      for (const trendMonths of [3, 12]) {
+      for (const trendMonths of [1, 3, 12]) {
         const filter = { year, mode, trendMonths }
         const insights = archiveInsights(records, filter)
         for (const dimension of ["departure", "arrival", "code"]) {
@@ -605,7 +605,7 @@ test("duration totals obey mode date year and both trend windows in every dimens
     trip({ departDate: "2025-05-01", archivedAt: undefined, durationMin: 9999 })]
   for (const year of [undefined, 2024, 2025, 2050]) {
     for (const mode of ["all", "rail", "flight"]) {
-      for (const trendMonths of [3, 12]) {
+      for (const trendMonths of [1, 3, 12]) {
         for (const dimension of ["departure", "arrival", "code"]) {
           assertConserved(records, { year, mode, trendMonths }, dimension)
         }
@@ -644,6 +644,183 @@ test("missing invalid equal and malformed duration clocks never imply a known ze
     assert.equal(result.months.at(-1).unknownDurationCount, 5)
     assert.ok(result.series.every(s => s.totalMinutes === 0 && s.knownDurationCount === 0))
   }
+})
+
+function assertTimelineConserved(records, filter = {}, dimension = "departure") {
+  const result = archiveTrendTimeline(records, filter, dimension)
+  const breakdown = archiveTrendBreakdown(records, filter, dimension)
+  const insights = archiveInsights(records, filter)
+  assert.deepEqual(result.series, breakdown.series)
+  for (const field of ["total", "totalMinutes", "knownDurationCount", "unknownDurationCount"]) {
+    assert.equal(result.periods.reduce((sum, p) => sum + p[field], 0), breakdown.months.reduce((sum, m) => sum + m[field], 0), field)
+  }
+  for (const field of ["rail", "flight"]) {
+    assert.equal(result.periods.reduce((sum, p) => sum + p[field], 0), insights.months.reduce((sum, m) => sum + m[field], 0), field)
+  }
+  for (const period of result.periods) {
+    assert.equal(period.segments.reduce((sum, s) => sum + s.count, 0), period.total)
+    assert.equal(period.segments.reduce((sum, s) => sum + s.minutes, 0), period.totalMinutes)
+    assert.equal(period.segments.reduce((sum, s) => sum + s.knownDurationCount, 0), period.knownDurationCount)
+    assert.equal(period.knownDurationCount + period.unknownDurationCount, period.total)
+    assert.deepEqual(period.segments.map(s => s.key), result.series.filter(s => period.segments.some(p => p.key === s.key)).map(s => s.key))
+  }
+  for (const series of result.series) {
+    const segments = result.periods.flatMap(p => p.segments.filter(s => s.key === series.key))
+    assert.equal(segments.reduce((sum, s) => sum + s.count, 0), series.total)
+    assert.equal(segments.reduce((sum, s) => sum + s.minutes, 0), series.totalMinutes)
+    assert.equal(segments.reduce((sum, s) => sum + s.knownDurationCount, 0), series.knownDurationCount)
+  }
+  return result
+}
+
+test("one-month timeline clips Sunday and Monday boundaries and retains empty weeks", () => {
+  const records = ["2026-03-01", "2026-03-02", "2026-03-08", "2026-03-09", "2026-03-31"].map(departDate => trip({ departDate }))
+  const result = assertTimelineConserved(records, { trendMonths: 1 })
+  assert.equal(result.granularity, "week")
+  assert.deepEqual([result.startDate, result.endDate], ["2026-03-01", "2026-03-31"])
+  assert.deepEqual(result.periods.map(p => [p.key, p.startDate, p.endDate, p.total]), [
+    ["2026-03-01", "2026-03-01", "2026-03-01", 1],
+    ["2026-03-02", "2026-03-02", "2026-03-08", 2],
+    ["2026-03-09", "2026-03-09", "2026-03-15", 1],
+    ["2026-03-16", "2026-03-16", "2026-03-22", 0],
+    ["2026-03-23", "2026-03-23", "2026-03-29", 0],
+    ["2026-03-30", "2026-03-30", "2026-03-31", 1],
+  ])
+  const february = archiveTrendTimeline([trip({ departDate: "2021-02-01" })], { trendMonths: 1 })
+  assert.equal(february.periods.length, 4)
+  assert.deepEqual([february.periods[0].startDate, february.periods.at(-1).endDate], ["2021-02-01", "2021-02-28"])
+  assert.deepEqual(archiveInsights(records, { trendMonths: 1 }).months.map(m => m.month), ["2026-03"])
+})
+
+test("three-month timeline crosses years with contiguous clipped Monday-Sunday weeks", () => {
+  const records = ["2024-10-31", "2024-11-01", "2024-12-29", "2024-12-30", "2025-01-05", "2025-01-06", "2025-01-31"].map(departDate => trip({ departDate }))
+  const result = assertTimelineConserved(records, { trendMonths: 3 })
+  assert.deepEqual([result.startDate, result.endDate, result.periods.length], ["2024-11-01", "2025-01-31", 14])
+  assert.deepEqual([result.periods[0].startDate, result.periods[0].endDate], ["2024-11-01", "2024-11-03"])
+  assert.deepEqual([result.periods.at(-1).startDate, result.periods.at(-1).endDate], ["2025-01-27", "2025-01-31"])
+  assert.equal(result.periods.find(p => p.key === "2024-12-30").total, 2)
+  assert.equal(result.periods.find(p => p.key === "2025-01-06").total, 1)
+  assert.equal(result.periods.reduce((n, p) => n + p.total, 0), 6)
+  for (let i = 1; i < result.periods.length; i++) {
+    assert.equal(Date.parse(result.periods[i].startDate) - Date.parse(result.periods[i - 1].endDate), 86400000)
+    assert.equal(new Date(result.periods[i].startDate).getUTCDay(), 1)
+  }
+})
+
+test("timeline anchors after mode and year selection and clips to chosen year or year zero", () => {
+  const records = [trip({ departDate: "2024-12-31" }), trip({ departDate: "2025-01-05" }),
+    trip({ mode: "flight", departDate: "2025-05-01" }), trip({ departDate: "2026-01-01", archivedAt: undefined })]
+  const rail = assertTimelineConserved(records, { trendMonths: 3, mode: "rail", year: 2025 })
+  assert.deepEqual([rail.startDate, rail.endDate], ["2025-01-01", "2025-01-31"])
+  assert.equal(rail.periods[0].total, 1)
+  assert.deepEqual([archiveTrendTimeline(records, { trendMonths: 1, mode: "flight" }).startDate,
+    archiveTrendTimeline(records, { trendMonths: 3, mode: "flight" }).startDate], ["2025-05-01", "2025-03-01"])
+  for (const trendMonths of [1, 3, 12]) {
+    const zero = assertTimelineConserved([trip({ departDate: "0000-01-01" })], { trendMonths })
+    assert.equal(zero.startDate, "0000-01-01")
+    assert.equal(zero.periods[0].key, trendMonths === 12 ? "0000-01" : "0000-01-01")
+    assert.equal(zero.endDate, "0000-01-31")
+  }
+})
+
+test("timeline leap months and DST boundaries are identical across device time zones", () => {
+  const originalTZ = process.env.TZ
+  const dates = ["2024-02-29", "2024-03-10", "2024-03-11", "2024-03-31", "0096-02-29", "2011-12-30"]
+  const scenarios = [
+    [dates.slice(0, 4).map(departDate => trip({ departDate })), { trendMonths: 3 }],
+    [[trip({ departDate: dates[4] })], { trendMonths: 1 }],
+    [[trip({ departDate: dates[5] })], { trendMonths: 1 }],
+    [[trip({ departDate: "2024-11-03" }), trip({ departDate: "2024-11-04" })], { trendMonths: 1 }],
+  ]
+  try {
+    process.env.TZ = "UTC"
+    const expected = scenarios.map(([records, filter]) => assertTimelineConserved(records, filter))
+    assert.equal(expected[0].periods.length, 13)
+    assert.equal(expected[0].periods.find(p => p.startDate === "2024-02-26").total, 1)
+    assert.equal(expected[0].periods.at(-1).endDate, "2024-03-31")
+    assert.equal(expected[1].endDate, "0096-02-29")
+    for (const zone of ["America/New_York", "Asia/Shanghai", "Pacific/Apia"]) {
+      process.env.TZ = zone
+      scenarios.forEach(([records, filter], i) => assert.deepEqual(assertTimelineConserved(records, filter), expected[i], zone))
+    }
+  } finally {
+    if (originalTZ === undefined) delete process.env.TZ
+    else process.env.TZ = originalTZ
+  }
+})
+
+test("timeline default and twelve-month views stay monthly including selected empty years", () => {
+  const records = [trip({ departDate: "2024-02-29" }), trip({ departDate: "2024-12-31" })]
+  const result = assertTimelineConserved(records)
+  assert.deepEqual(result, archiveTrendTimeline(records, { trendMonths: 12 }))
+  assert.deepEqual([result.granularity, result.startDate, result.endDate, result.periods.length], ["month", "2024-01-01", "2024-12-31", 12])
+  assert.deepEqual([result.periods[1].key, result.periods[1].startDate, result.periods[1].endDate], ["2024-02", "2024-02-01", "2024-02-29"])
+  const empty = assertTimelineConserved([], { year: 2050 })
+  assert.deepEqual([empty.startDate, empty.endDate, empty.periods.length], ["2050-01-01", "2050-12-31", 12])
+  assert.ok(empty.periods.every(p => p.total === 0 && p.segments.length === 0))
+  assert.deepEqual(empty.series, [])
+})
+
+test("timeline conserves counts minutes coverage and top-four grouping for all windows and dimensions", () => {
+  const records = ["A", "A", "B", "B", "C", "C", "D", "D", "E", "F", "未知"].map((fromPlace, i) =>
+    trip({ fromPlace, toPlace: fromPlace, code: fromPlace, departDate: i % 2 ? "2025-03-02" : "2025-03-03", durationMin: i < 8 ? 10 : i === 8 ? 5000 : 0, departTime: "", arriveTime: "" }))
+  records.push(trip({ departDate: "2024-12-31", mode: "flight", durationMin: 20 }),
+    trip({ departDate: "2025-01-01", durationMin: 0, departTime: "23:40", arriveTime: "00:20" }),
+    trip({ departDate: "2025-02-28", durationMin: 2955 }),
+    trip({ mode: "legacy", departDate: "2025-03-31", durationMin: 0, departTime: "", arriveTime: "" }),
+    trip({ departDate: "2024-01-01", durationMin: 9999, fromPlace: "OLD" }),
+    trip({ departDate: "2025-03-32", durationMin: 9999 }),
+    trip({ departDate: "2025-03-31", archivedAt: undefined, durationMin: 9999 }))
+  for (const trendMonths of [1, 3, 12]) {
+    for (const mode of ["all", "rail", "flight"]) {
+      for (const year of [undefined, 2025, 2050]) {
+        for (const dimension of ["departure", "arrival", "code"]) {
+          assertTimelineConserved(records, { trendMonths, mode, year }, dimension)
+        }
+      }
+    }
+  }
+  const result = assertTimelineConserved(records, { trendMonths: 1 })
+  assert.deepEqual(result.series.map(s => s.key), ["rail:A", "rail:B", "rail:C", "rail:D", "other", "unknown"])
+  assert.deepEqual(result.series.slice(-2).map(s => [s.total, s.totalMinutes, s.knownDurationCount]), [[2, 5000, 1], [2, 0, 0]])
+  assert.deepEqual(result, archiveTrendTimeline([...records].reverse(), { trendMonths: 1 }))
+})
+
+test("timeline empty invalid and unmatched windows return null dates without consulting the clock", () => {
+  const RealDate = global.Date
+  global.Date = class extends RealDate {
+    constructor(...args) { assert.ok(args.length > 0); super(...args) }
+    static now() { throw new Error("current time must not be read") }
+  }
+  try {
+    for (const trendMonths of [1, 3, 12]) {
+      for (const records of [[], [trip({ departDate: "2025-02-29" })], [trip({ departDate: "bad" })], [trip({ archivedAt: undefined })]]) {
+        assert.deepEqual(archiveTrendTimeline(records, { trendMonths }), {
+          granularity: trendMonths === 12 ? "month" : "week", startDate: null, endDate: null, periods: [], series: [],
+        })
+      }
+      assert.equal(archiveTrendTimeline([trip()], { trendMonths, mode: "flight" }).startDate, null)
+      assertTimelineConserved([trip()], { trendMonths })
+    }
+    assert.equal(archiveTrendTimeline([], { trendMonths: 3, year: 2050 }).endDate, null)
+  } finally { global.Date = RealDate }
+})
+
+test("timeline keeps frozen duplicate inputs and recomputes after edits deletions and output mutations", () => {
+  const original = Object.freeze(trip())
+  const latest = Object.freeze(trip({ departDate: "2026-05-01", fromPlace: "上海虹桥" }))
+  const records = Object.freeze([original, original, latest])
+  const before = JSON.stringify(records)
+  const first = archiveTrendTimeline(records, { trendMonths: 1 })
+  first.periods[0].total = 999
+  first.periods[0].segments[0].count = 999
+  first.series[0].total = 999
+  assert.equal(archiveTrendTimeline(records, { trendMonths: 1 }).series[0].total, 1)
+  const deleted = assertTimelineConserved(records.slice(0, 2), { trendMonths: 1 })
+  assert.deepEqual([deleted.startDate, deleted.endDate, deleted.series[0].total], ["2026-01-01", "2026-01-31", 2])
+  const edited = assertTimelineConserved([{ ...original, departDate: "2027-02-01", fromPlace: "南京南", durationMin: 120 }], { trendMonths: 1 })
+  assert.deepEqual([edited.startDate, edited.endDate, edited.series[0].key, edited.series[0].totalMinutes], ["2027-02-01", "2027-02-28", "rail:南京南", 120])
+  assert.equal(JSON.stringify(records), before)
 })
 
 console.log(`Archive statistics: ${count} tests passed`)
