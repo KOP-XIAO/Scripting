@@ -184,7 +184,7 @@ test('place metric actions render departure and arrival rankings from the select
 });
 // These assertions inspect native structure and callbacks, not iOS measurement or pixels.
 test('statistics share one continuous themed scroll surface with internal headings and dividers', () => {
-  const headings = ['统计范围', '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线'];
+  const headings = ['统计范围', '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线', '统计说明'];
   for (const themeKey of Object.keys(fixture().exports.THEMES)) {
     for (const trips of [records(), []]) {
       const f = fixture(trips, themeKey), theme = f.exports.THEMES[themeKey];
@@ -198,8 +198,8 @@ test('statistics share one continuous themed scroll surface with internal headin
       const content = f.detail.tree.props.children.flat(Infinity)[0];
       assert.equal(content.type, 'VStack');
       assert.equal(content.props.frame.maxWidth, 'infinity');
-      assert.equal(content.props.spacing, 24);
-      assert.deepEqual(JSON.parse(JSON.stringify(content.props.padding)), { horizontal: 18, top: 16, bottom: 32 });
+      assert.equal(content.props.spacing, 16);
+      assert.deepEqual(JSON.parse(JSON.stringify(content.props.padding)), { horizontal: 16, top: 12, bottom: 24 });
       for (const heading of headings) {
         const block = statsBlock(f, heading);
         const headingRow = block.props.children.flat(Infinity)[0];
@@ -215,8 +215,8 @@ test('statistics share one continuous themed scroll surface with internal headin
         assert.equal(title.props.foregroundStyle, theme.ink);
         assert.equal(block.props.frame.maxWidth, 'infinity');
       }
-      const dividers = f.detail.nodes().filter(node => node.type === 'Rectangle');
-      assert.equal(dividers.length, headings.length);
+      const dividers = f.detail.nodes().filter(node => node.type === 'Rectangle' && node.props.frame.height === 1 && node.props.fill === theme.accentSoft);
+      assert.equal(dividers.length, 2);
       for (const divider of dividers) {
         assert.equal(divider.props.fill, theme.accentSoft);
         assert.equal(divider.props.frame.height, 1);
@@ -231,10 +231,12 @@ test('statistics share one continuous themed scroll surface with internal headin
           `unthemed statistics text: ${f.texts(node).join('')}`);
       }
       const filters = f.detail.nodes().filter(node => node.type === 'Button');
-      assert.equal(filters.length, 4);
+      assert.equal(filters.length, 5);
       for (const button of filters) {
         const label = f.nodes(button).find(node => node.type === 'Text');
         assert.equal(label.props.foregroundStyle, theme.accent);
+         assert.equal(button.props.buttonStyle, 'plain');
+         assert.equal(button.props.frame.minHeight, 32);
       }
     }
   }
@@ -247,7 +249,7 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
       f.detail.render(width);
       const section = statsBlock(f, '月度趋势');
       const row = section.props.children.flat(Infinity).find(node => node?.type === 'VStack');
-      assert.ok(row.props.frame.minHeight >= 250, 'the populated native scroll block must reserve the entire chart and captions');
+      assert.ok(row.props.frame.minHeight >= 210, 'the populated native scroll block must reserve the entire chart and captions');
       assert.equal(f.nodes(section).some(node => node.type === 'GeometryReader'), false,
         'monthly chart sizing must not depend on GeometryReader in scroll flow');
       const children = row.props.children.flat(Infinity).filter(node => node?.type);
@@ -273,7 +275,10 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
         const bars = barArea.props.children.flat(Infinity);
         assert.equal(bars.length, 1, 'the maximum-height bar must not compete with a Spacer minimum length');
         const [bar] = bars;
-        assert.equal(bar.type, 'RoundedRectangle');
+        assert.equal(bar.type, 'VStack');
+         assert.equal(bar.props.spacing, 0);
+         const segments = f.nodes(bar).filter(node => node.type === 'Rectangle');
+         assert.ok(Math.abs(segments.reduce((sum, node) => sum + node.props.frame.height, 0) - bar.props.frame.height) < 1e-8);
         assert.equal(bar.props.frame.width, trendMonths === 3 ? 24 : 12);
         const total = Number(f.texts(count)[0]);
         assert.equal(bar.props.frame.height, total / 2 * 122, 'bar heights retain the actual counts and maximum');
@@ -282,7 +287,7 @@ test('monthly chart reserves native stack height, equal flexible columns and bot
       const peakIndex = children.findIndex(node => node.type === 'Text' && f.texts(node)[0].startsWith('最多出行：'));
       assert.ok(peakIndex > children.indexOf(chart), 'peak caption must occupy a sibling slot after the whole chart');
       assert.equal(children[peakIndex].props.lineLimit, 2);
-      for (const node of f.detail.nodes().filter(node => node.type === 'VStack' && node.props.accessibilityHidden)) {
+      for (const node of f.detail.nodes().filter(node => node.type === 'VStack' && node.props.accessibilityHidden && node.props.frame.height === 6)) {
         assert.equal(node.props.frame.height, 6, 'frequency readers need a fixed-height outer native stack');
         assert.equal(node.props.children.flat(Infinity)[0].type, 'GeometryReader');
       }
@@ -319,7 +324,7 @@ test('empty, unknown and year-zero records keep truthful labels and finite bound
     const columns = f.detail.nodes().filter(node => node.type === 'VStack' && /^0000-\d\d$/.test(node.props.key || ''));
     assert.equal(columns.length, 12);
     for (const column of columns) {
-      const bar = f.nodes(column).find(node => node.type === 'RoundedRectangle');
+      const bar = column.props.children.flat(Infinity)[1].props.children.flat(Infinity)[0];
       const zero = column.props.key !== '0000-02';
       assert.ok(Number.isFinite(bar.props.frame.width) && bar.props.frame.width >= 0 && bar.props.frame.width <= width);
       assert.ok(Number.isFinite(bar.props.frame.height) && bar.props.frame.height >= 0 && bar.props.frame.height <= 122);
@@ -352,9 +357,72 @@ test('recent three months default, scope switching and year clipping keep overvi
   assert.ok(f.detail.texts().some(text => text.includes('暂无可用日期')));
 });
 
+function chartColumns(f) {
+  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'VStack' && /^\d{4}-\d\d$/.test(node.props.key || ''));
+}
+function legendRows(f) {
+  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'HStack' && node.props.key && node.props.accessibilityElement === 'combine');
+}
+test('dimension selector changes actual month segments and legends without changing totals or rankings', async () => {
+  const trips = [trip('a', { departDate: '2099-01-03', code: 'G1' }), trip('b', { departDate: '2099-02-03', code: 'G2', toPlace: '测试丙' }),
+    trip('c', { departDate: '2099-02-04', fromPlace: '', toPlace: '', code: '' })];
+  const f = fixture(trips), ranking = rankedNames(f);
+  for (const [dimension, label] of [['departure', '出发站'], ['arrival', '到达站'], ['code', '车次或航班号']]) {
+    if (dimension !== 'departure') await f.choose('分区：', label);
+    visible(f.detail, `分区：${label}`, '图示 3 次行程');
+    statistic(f, '累计行程', '3 次');
+    assert.deepEqual(rankedNames(f), ranking);
+    const expected = f.exports.archiveTrendBreakdown(trips, { trendMonths: 3 }, dimension);
+    const rows = legendRows(f);
+    assert.equal(rows.length, expected.series.length);
+    assert.equal(rows.reduce((sum, row) => sum + Number(f.texts(row).at(-1).split(' ')[0]), 0), 3);
+    for (const item of expected.series) {
+      const row = rows.find(row => row.props.key === item.key);
+      assert.deepEqual(f.texts(row), [item.label, `${item.total} 次`]);
+    }
+    for (const column of chartColumns(f)) {
+      const month = expected.months.find(month => month.month === column.props.key);
+      const bars = f.nodes(column).filter(node => node.type === 'Rectangle');
+      assert.equal(bars.length, month.segments.filter(segment => segment.count > 0).length);
+      for (const bar of bars) {
+        const segment = month.segments.find(segment => segment.key === bar.props.key);
+        assert.equal(bar.props.frame.height, segment.count / 2 * 122);
+        const dot = f.nodes(rows.find(row => row.props.key === segment.key)).find(node => node.type === 'RoundedRectangle');
+        assert.equal(bar.props.fill, dot.props.fill);
+        assert.ok(column.props.accessibilityLabel.includes(`${expected.series.find(item => item.key === segment.key).label} ${segment.count} 次`));
+      }
+    }
+  }
+  assert.equal(f.sheets.at(-1).title, '选择柱图分区');
+});
+test('all themes use six readable series colors and preserve complete top-four other unknown coverage', () => {
+  const trips = Array.from({ length: 7 }, (_, index) => trip(`category-${index}`, { fromPlace: index === 6 ? '' : `测试地点${index}`, departDate: `2099-0${index % 2 + 1}-03` }));
+  const luminance = hex => {
+    const rgb = [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  };
+  for (const key of Object.keys(fixture().exports.THEMES)) {
+    const f = fixture(trips, key), rows = legendRows(f);
+    assert.equal(rows.length, 6);
+    assert.ok(rows.some(row => f.texts(row).some(text => text.includes('其他'))));
+    assert.ok(rows.some(row => f.texts(row).some(text => text.includes('未填出发站'))));
+    assert.equal(rows.reduce((sum, row) => sum + Number(f.texts(row).at(-1).split(' ')[0]), 0), trips.length);
+    const colors = rows.map(row => f.nodes(row).find(node => node.type === 'RoundedRectangle').props.fill);
+    assert.equal(new Set(colors).size, 6);
+    for (const color of colors) {
+      const values = [luminance(color), luminance(f.detailElement.props.theme.cardTop)].sort((a, b) => b - a);
+      assert.ok((values[0] + 0.05) / (values[1] + 0.05) >= 3, `${key} series must be visible on its themed surface`);
+    }
+    for (const column of chartColumns(f)) {
+      const segments = f.nodes(column).filter(node => node.type === 'Rectangle');
+      assert.ok(Math.abs(segments.reduce((sum, bar) => sum + bar.props.frame.height, 0) - Number(f.texts(column)[0]) / 4 * 122) < 1e-8);
+    }
+  }
+});
+
 (async () => {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { THEMES } from "./services/theme"; export { archiveInsights } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { THEMES } from "./services/theme"; export { archiveInsights, archiveTrendBreakdown } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false, external: ['scripting'],
     jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });

@@ -7,7 +7,7 @@ const entry = path.join(__dirname, "../services/statistics.ts")
 const bundle = esbuild.buildSync({ entryPoints: [entry], bundle: true, platform: "node", format: "cjs", write: false })
 const compiled = new Module(entry, module)
 compiled._compile(bundle.outputFiles[0].text, entry)
-const { archiveStatistics, archiveInsights } = compiled.exports
+const { archiveStatistics, archiveInsights, archiveTrendBreakdown } = compiled.exports
 
 let count = 0
 function test(name, run) {
@@ -415,6 +415,152 @@ test("three-month windows are empty without matching valid dates and clamp year 
     assert.deepEqual(archiveInsights(records, { ...filter, trendMonths: 3 }).months, [])
   }
   assert.deepEqual(archiveInsights([trip({ departDate: "0000-01-01" })], { trendMonths: 3 }).months.map(m => m.month), ["0000-01"])
+})
+
+test("breakdown dimensions use actual endpoints and code, retaining exact station and mode identities", () => {
+  const records = [
+    trip({ fromPlace: " 过 北京南站 ", toPlace: "终·天津南站", code: " g 1234 " }),
+    trip({ fromPlace: "北京南", toPlace: "天津南", code: "G1234" }),
+    trip({ mode: "flight", fromPlace: " 北京南 ", toPlace: "过海国际机场T3", code: " ca 1234 " }),
+    trip({ fromPlace: "始兴站", toPlace: "到保站", code: "D1" }),
+    trip({ archivedAt: undefined, fromPlace: "忽略", toPlace: "忽略", code: "IGNORE" }),
+  ]
+  const departure = archiveTrendBreakdown(records)
+  assert.equal(departure.dimension, "departure")
+  assert.deepEqual(departure.series, [
+    { key: "rail:北京南", label: "北京南 · 火车", total: 2 },
+    { key: "flight:北京南", label: "北京南 · 航班", total: 1 },
+    { key: "rail:始兴", label: "始兴 · 火车", total: 1 },
+  ])
+  assert.deepEqual(archiveTrendBreakdown(records, {}, "arrival").series, [
+    { key: "rail:天津南", label: "天津南 · 火车", total: 2 },
+    { key: "rail:到保", label: "到保 · 火车", total: 1 },
+    { key: "flight:过海国际机场T3", label: "过海国际机场T3 · 航班", total: 1 },
+  ])
+  assert.deepEqual(archiveTrendBreakdown(records, {}, "code").series, [
+    { key: "rail:G1234", label: "G1234 · 火车", total: 2 },
+    { key: "flight:CA1234", label: "CA1234 · 航班", total: 1 },
+    { key: "rail:D1", label: "D1 · 火车", total: 1 },
+  ])
+  const sameCode = archiveTrendBreakdown([trip({ code: " g1 " }), trip({ mode: "flight", code: "G1" })], {}, "code")
+  assert.deepEqual(sameCode.series.map(s => s.key), ["flight:G1", "rail:G1"])
+  assert.deepEqual(departure, archiveTrendBreakdown([...records].reverse()))
+})
+
+test("breakdown retains top four plus other and unknown with exact month and series sums", () => {
+  const records = ["A", "A", "A", "B", "B", "C", "D", "E", "F"].map((fromPlace, i) =>
+    trip({ fromPlace, departDate: i % 2 ? "2026-01-01" : "2025-12-01" }))
+  records.push(trip({ fromPlace: "未知" }), trip({ mode: "legacy", fromPlace: "A" }),
+    trip({ mode: "totalMinutes", fromPlace: "B" }), trip({ fromPlace: {} }),
+    trip({ departDate: "2026-02-30", fromPlace: "INVALID" }))
+  const result = archiveTrendBreakdown(records, { trendMonths: 3 })
+  assert.deepEqual(result.series, [
+    { key: "rail:A", label: "A · 火车", total: 3 },
+    { key: "rail:B", label: "B · 火车", total: 2 },
+    { key: "rail:C", label: "C · 火车", total: 1 },
+    { key: "rail:D", label: "D · 火车", total: 1 },
+    { key: "other", label: "其他", total: 2 },
+    { key: "unknown", label: "未填出发站", total: 4 },
+  ])
+  assert.deepEqual(result, archiveTrendBreakdown([...records].reverse(), { trendMonths: 3 }))
+  assert.deepEqual(result.months.map(m => [m.month, m.total]), archiveInsights(records, { trendMonths: 3 }).months.map(m => [m.month, m.total]))
+  for (const month of result.months) {
+    assert.equal(month.segments.reduce((sum, segment) => sum + segment.count, 0), month.total)
+    assert.deepEqual(month.segments.map(s => s.key), result.series.filter(s => month.segments.some(segment => segment.key === s.key)).map(s => s.key))
+  }
+  for (const series of result.series) {
+    assert.equal(result.months.reduce((sum, month) => sum + (month.segments.find(s => s.key === series.key)?.count ?? 0), 0), series.total)
+  }
+  assert.deepEqual(result.months[0], { month: "2025-11", total: 0, segments: [] })
+  assert.ok(!archiveTrendBreakdown(records.slice(0, 7)).series.some(s => s.key === "other"))
+})
+
+test("unknown fields and legacy modes always have a dedicated dimension-specific bucket", () => {
+  const records = [trip({ fromPlace: "—", toPlace: "未知", code: "?" }),
+    trip({ fromPlace: null, toPlace: {}, code: 42 }),
+    trip({ mode: "legacy", fromPlace: "北京南", toPlace: "天津南", code: "G1234" })]
+  for (const [dimension, label] of [["departure", "未填出发站"], ["arrival", "未填到达站"], ["code", "未填车次或航班号"]]) {
+    const result = archiveTrendBreakdown(records, {}, dimension)
+    assert.deepEqual(result.series, [{ key: "unknown", label, total: 3 }])
+    assert.deepEqual(result.months.at(-1).segments, [{ key: "unknown", count: 3 }])
+    assert.equal(archiveTrendBreakdown(records, { mode: "rail" }, dimension).series[0].total, 2)
+  }
+})
+
+test("breakdown windows match insights across year, mode, three and twelve months without changing summary", () => {
+  const records = [trip({ departDate: "2024-10-01", fromPlace: "OLD" }),
+    trip({ departDate: "2024-12-01", fromPlace: "DEC" }),
+    trip({ departDate: "2025-01-01", fromPlace: "JAN" }),
+    trip({ mode: "flight", departDate: "2025-02-01", fromPlace: "FEB" }),
+    trip({ mode: "flight", departDate: "2025-05-01", fromPlace: "MAY" }),
+    trip({ departDate: "bad", fromPlace: "UNDATED" })]
+  const baseline = archiveInsights(records)
+  for (const year of [undefined, 2024, 2025, 2050]) {
+    for (const mode of ["all", "rail", "flight"]) {
+      for (const trendMonths of [3, 12]) {
+        const filter = { year, mode, trendMonths }
+        const insights = archiveInsights(records, filter)
+        for (const dimension of ["departure", "arrival", "code"]) {
+          const result = archiveTrendBreakdown(records, filter, dimension)
+          assert.deepEqual(result.months.map(m => [m.month, m.total]), insights.months.map(m => [m.month, m.total]))
+          assert.equal(result.series.reduce((sum, s) => sum + s.total, 0), insights.months.reduce((sum, m) => sum + m.total, 0))
+        }
+        assert.deepEqual(insights.summary, archiveInsights(records, { year, mode }).summary)
+      }
+    }
+  }
+  assert.deepEqual(archiveInsights(records), baseline)
+  assert.deepEqual(archiveTrendBreakdown(records), archiveTrendBreakdown(records, { trendMonths: 12 }))
+  assert.deepEqual(archiveTrendBreakdown(records, { trendMonths: 3 }).months.map(m => m.month), ["2025-03", "2025-04", "2025-05"])
+  assert.deepEqual(archiveTrendBreakdown(records, { year: 2025, mode: "rail", trendMonths: 3 }).months.map(m => m.month), ["2025-01"])
+  assert.deepEqual(archiveTrendBreakdown(records, { trendMonths: 3 }).series.map(s => s.key), ["flight:MAY"])
+})
+
+test("breakdown empty and strict date windows preserve zero months and never read the current clock", () => {
+  const RealDate = global.Date
+  global.Date = class extends RealDate {
+    constructor(...args) { assert.ok(args.length > 0); super(...args) }
+    static now() { throw new Error("current time must not be read") }
+  }
+  try {
+    assert.deepEqual(archiveTrendBreakdown([]), { dimension: "departure", months: [], series: [] })
+    for (const records of [[], [trip({ departDate: "2025-02-29" })], [trip({ departDate: null })], [trip({ departDate: "2026-1-01" })]]) {
+      assert.deepEqual(archiveTrendBreakdown(records).series, [])
+      assert.deepEqual(archiveTrendBreakdown(records).months, [])
+      assert.deepEqual(archiveTrendBreakdown(records, { year: 2050, trendMonths: 3 }).months, [])
+    }
+    const emptyYear = archiveTrendBreakdown([], { year: 2050 })
+    assert.equal(emptyYear.months.length, 12)
+    assert.ok(emptyYear.months.every(m => m.total === 0 && m.segments.length === 0))
+    assert.deepEqual(emptyYear.series, [])
+    for (const departDate of ["0096-02-29", "0000-01-01", "2024-02-29"]) {
+      const records = [trip({ departDate })]
+      assert.deepEqual(archiveTrendBreakdown(records, { trendMonths: 3 }).months.map(m => [m.month, m.total]), archiveInsights(records, { trendMonths: 3 }).months.map(m => [m.month, m.total]))
+    }
+  } finally { global.Date = RealDate }
+})
+
+test("breakdown recomputes edits deletions and latest month without mutating or retaining state", () => {
+  const original = Object.freeze(trip())
+  const latest = Object.freeze(trip({ departDate: "2026-05-01", fromPlace: "上海虹桥", code: "D2" }))
+  const records = Object.freeze([original, original, latest])
+  const before = JSON.stringify(records)
+  const first = archiveTrendBreakdown(records, { trendMonths: 3 })
+  assert.equal(first.months.at(-1).month, "2026-05")
+  assert.deepEqual(first.series.map(s => s.key), ["rail:上海虹桥"])
+  const deleted = archiveTrendBreakdown(records.slice(0, 2), { trendMonths: 3 })
+  assert.equal(deleted.months.at(-1).month, "2026-01")
+  assert.equal(deleted.series[0].total, 2)
+  const edited = archiveTrendBreakdown([{ ...original, fromPlace: "南京南", departDate: "2027-02-01", code: "D3" }])
+  assert.equal(edited.series[0].key, "rail:南京南")
+  assert.equal(edited.months.at(-1).month, "2027-02")
+  first.series[0].total = 999
+  first.months.at(-1).segments[0].count = 999
+  first.months.at(-1).total = 999
+  assert.equal(archiveTrendBreakdown(records, { trendMonths: 3 }).series[0].total, 1)
+  assert.equal(archiveTrendBreakdown(records, { trendMonths: 3 }).months.at(-1).segments[0].count, 1)
+  assert.equal(JSON.stringify(records), before)
+  assert.deepEqual(archiveTrendBreakdown([]).series, [])
 })
 
 console.log(`Archive statistics: ${count} tests passed`)

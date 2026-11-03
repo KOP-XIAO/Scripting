@@ -12,7 +12,7 @@ let bundled;
 
 async function compile() {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse"; export { StationStateBadge } from "./components/trip-widget";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse"; export { StationStateBadge } from "./components/trip-widget"; export { THEMES, ACCENTS } from "./services/theme";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false,
     external: ['scripting'], jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });
@@ -20,8 +20,8 @@ async function compile() {
   bundled = result.outputFiles[0].text;
 }
 
-function fixture(text = '', { candidates = [], trips = [], image = {}, recognize } = {}) {
-  const storage = new Map(), rootStates = [], sheetChoices = [], sheets = [];
+function fixture(text = '', { candidates = [], trips = [], image = {}, recognize, themeKey = 'ticket', accentKey = 'theme' } = {}) {
+  const storage = new Map([['rail.theme', themeKey], ['rail.accent', accentKey]]), rootStates = [], sheetChoices = [], sheets = [];
   if (trips.length) storage.set('rail.trips', JSON.parse(JSON.stringify(trips)));
   let states = rootStates, cursor = 0, root, tree, reloads = 0, picks = 0, recognitions = 0;
   const native = new Proxy({
@@ -77,6 +77,7 @@ function fixture(text = '', { candidates = [], trips = [], image = {}, recognize
   render();
   return {
     storage, render, nodes, texts, one, StationStateBadge, sheets,
+    themes: sandbox.module.exports.THEMES, accents: sandbox.module.exports.ACCENTS,
     chooseSheet: index => sheetChoices.push(index),
     parse: () => sandbox.module.exports.parseTripText(text),
     mountArchive() {
@@ -478,6 +479,34 @@ test('archive row swipe deletion preserves other trips and refreshes archive and
   label(f, '查看归档记录（0）');
   label(f, '1 条');
   f.one('Section', '行程列表 (1)');
+});
+
+test('archive numbers follow the selected accent with readable text across all theme combinations', () => {
+  const catalog = fixture(), trips = archiveFixtureTrips();
+  const luminance = hex => {
+    assert.match(hex, /^#[0-9a-f]{6}$/i);
+    const linear = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  };
+  let minimum = Infinity;
+  for (const themeKey of Object.keys(catalog.themes)) {
+    const backgrounds = new Set();
+    for (const accentKey of Object.keys(catalog.accents)) {
+      const f = fixture('', { trips, themeKey, accentKey }), archive = f.mountArchive();
+      const badge = archive.nodes(archiveRow(archive, trips[0].id))
+        .find(node => node.type === 'Text' && /^归档序号 /.test(node.props.accessibilityLabel || ''));
+      assert.ok(badge);
+      const ink = luminance(badge.props.foregroundStyle), bg = luminance(badge.props.background);
+      const contrast = (Math.max(ink, bg) + 0.05) / (Math.min(ink, bg) + 0.05);
+      minimum = Math.min(minimum, contrast);
+      assert.ok(contrast >= 4.5, `${themeKey}/${accentKey}: ${contrast.toFixed(2)}:1`);
+      backgrounds.add(badge.props.background);
+      assert.equal(f.reloads, 0, 'displaying a styled number must not write or refresh widgets');
+    }
+    assert.equal(backgrounds.size, Object.keys(catalog.accents).length, 'every accent choice must reach the archive badge');
+  }
+  console.log(`Archive number minimum contrast: ${minimum.toFixed(2)}:1`);
 });
 
 test('archive search keeps full-list serials and matches case, route, date, notes and carrier without writes', () => {

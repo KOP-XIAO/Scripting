@@ -23,6 +23,14 @@ export type ArchiveStatistics = {
 
 export type ArchiveInsightsFilter = { year?: number; mode?: "all" | TripMode; trendMonths?: 3 | 12 }
 
+export type ArchiveTrendDimension = "departure" | "arrival" | "code"
+
+export type ArchiveTrendBreakdown = {
+  dimension: ArchiveTrendDimension
+  months: Array<{ month: string; total: number; segments: Array<{ key: string; count: number }> }>
+  series: Array<{ key: string; label: string; total: number }>
+}
+
 export type ArchiveInsights = {
   summary: ArchiveStatistics
   years: number[]
@@ -101,7 +109,7 @@ export function archiveStatistics(records: TripRecord[]): ArchiveStatistics {
   return result
 }
 
-export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFilter = {}): ArchiveInsights {
+function archiveSelection(records: TripRecord[], filter: ArchiveInsightsFilter) {
   const archived = records.filter((trip) => !!trip.archivedAt).map((trip) => ({
     trip, date: departureDate(trip.departDate),
   }))
@@ -110,14 +118,7 @@ export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFi
   const filtered = archived.filter(({ trip, date }) =>
     (selectedMode === "all" || trip.mode === selectedMode)
     && (selectedYear === null || date?.year === selectedYear))
-  const summary = archiveStatistics(filtered.map(({ trip }) => trip))
-  const result: ArchiveInsights = {
-    summary,
-    years: [...new Set(archived.flatMap(({ date }) => date ? [date.year] : []))].sort((a, b) => b - a),
-    selectedYear, selectedMode, months: [], routes: [],
-    averageMinutes: summary.knownDurationCount ? Math.round(summary.totalMinutes / summary.knownDurationCount) : null,
-    longest: null, activeDays: 0, invalidDateCount: 0, missingRouteCount: 0,
-  }
+  const months: ArchiveInsights["months"] = []
   let latestMonth: number | null = null
   for (const { date } of filtered) {
     if (date && (latestMonth === null || date.monthIndex > latestMonth)) latestMonth = date.monthIndex
@@ -132,11 +133,24 @@ export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFi
       const index = firstMonth + offset
       const year = Math.floor(index / 12)
       const month = index - year * 12 + 1
-      result.months.push({
+      months.push({
         month: `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`,
         total: 0, rail: 0, flight: 0, totalMinutes: 0,
       })
     }
+  }
+  return { archived, filtered, selectedYear, selectedMode, firstMonth, months }
+}
+
+export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFilter = {}): ArchiveInsights {
+  const { archived, filtered, selectedYear, selectedMode, firstMonth, months } = archiveSelection(records, filter)
+  const summary = archiveStatistics(filtered.map(({ trip }) => trip))
+  const result: ArchiveInsights = {
+    summary,
+    years: [...new Set(archived.flatMap(({ date }) => date ? [date.year] : []))].sort((a, b) => b - a),
+    selectedYear, selectedMode, months, routes: [],
+    averageMinutes: summary.knownDurationCount ? Math.round(summary.totalMinutes / summary.knownDurationCount) : null,
+    longest: null, activeDays: 0, invalidDateCount: 0, missingRouteCount: 0,
   }
   const routes = new Map<string, ArchiveInsights["routes"][number]>()
   const activeDays = new Set<string>()
@@ -179,4 +193,61 @@ export function archiveInsights(records: TripRecord[], filter: ArchiveInsightsFi
     || a.to.localeCompare(b.to, "zh-CN") || a.mode.localeCompare(b.mode, "en"))
   result.activeDays = activeDays.size
   return result
+}
+
+export function archiveTrendBreakdown(
+  records: TripRecord[],
+  filter: ArchiveInsightsFilter = {},
+  dimension: ArchiveTrendDimension = "departure",
+): ArchiveTrendBreakdown {
+  const selection = archiveSelection(records, filter)
+  const months: ArchiveTrendBreakdown["months"] = selection.months.map(({ month }) => ({ month, total: 0, segments: [] }))
+  const counts = months.map(() => new Map<string, number>())
+  const categories = new Map<string, ArchiveTrendBreakdown["series"][number]>()
+  let unknownTotal = 0
+  for (const { trip, date } of selection.filtered) {
+    if (!date || selection.firstMonth === null) continue
+    const index = date.monthIndex - selection.firstMonth
+    const month = months[index]
+    if (!month) continue
+    const validMode = trip.mode === "rail" || trip.mode === "flight"
+    const value = dimension === "code"
+      ? placeName("flight", typeof trip.code === "string" ? trip.code.replace(/\s+/g, "").toUpperCase() : "")
+      : placeName(trip.mode, dimension === "departure" ? trip.fromPlace : trip.toPlace)
+    const key = validMode && value ? `${trip.mode}:${value}` : "unknown"
+    month.total += 1
+    counts[index].set(key, (counts[index].get(key) ?? 0) + 1)
+    if (key === "unknown") {
+      unknownTotal += 1
+    } else {
+      const category = categories.get(key) ?? {
+        key, label: `${value} · ${trip.mode === "rail" ? "火车" : "航班"}`, total: 0,
+      }
+      category.total += 1
+      categories.set(key, category)
+    }
+  }
+  const ranked = [...categories.values()].sort((a, b) =>
+    b.total - a.total || a.label.localeCompare(b.label, "zh-CN") || a.key.localeCompare(b.key, "en"))
+  const series = ranked.slice(0, 4)
+  const topKeys = new Set(series.map(({ key }) => key))
+  const otherTotal = ranked.slice(4).reduce((sum, category) => sum + category.total, 0)
+  if (otherTotal) series.push({ key: "other", label: "其他", total: otherTotal })
+  if (unknownTotal) series.push({
+    key: "unknown",
+    label: dimension === "departure" ? "未填出发站" : dimension === "arrival" ? "未填到达站" : "未填车次或航班号",
+    total: unknownTotal,
+  })
+  for (let index = 0; index < months.length; index += 1) {
+    const grouped = new Map<string, number>()
+    for (const [key, count] of counts[index]) {
+      const group = key === "unknown" || topKeys.has(key) ? key : "other"
+      grouped.set(group, (grouped.get(group) ?? 0) + count)
+    }
+    months[index].segments = series.flatMap(({ key }) => {
+      const count = grouped.get(key) ?? 0
+      return count ? [{ key, count }] : []
+    })
+  }
+  return { dimension, months, series }
 }

@@ -376,8 +376,8 @@ function ArchivePage({ trips, passengerMode, hideSeatNumber, theme, onTripsChang
           ] }}>
           <HStack alignment="firstTextBaseline" spacing={8}>
             <Text font={13} fontWeight="semibold" fontDesign="rounded" monospacedDigit
-              foregroundStyle="label" padding={{ leading: 6, trailing: 6 }}
-              frame={{ minWidth: 32, height: 26 }} background="rgba(127,127,127,0.14)"
+              foregroundStyle={theme.badgeInk ?? "#FFFFFF"} padding={{ leading: 6, trailing: 6 }}
+              frame={{ minWidth: 32, height: 26 }} background={theme.accent}
               clipShape={{ type: "rect", cornerRadius: 7 }} accessibilityLabel={`归档序号 ${serial}`}>
               {String(serial).padStart(2, "0")}
             </Text>
