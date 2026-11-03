@@ -27,8 +27,11 @@ export type ArchiveTrendDimension = "departure" | "arrival" | "code"
 
 export type ArchiveTrendBreakdown = {
   dimension: ArchiveTrendDimension
-  months: Array<{ month: string; total: number; segments: Array<{ key: string; count: number }> }>
-  series: Array<{ key: string; label: string; total: number }>
+  months: Array<{
+    month: string; total: number; totalMinutes: number; knownDurationCount: number; unknownDurationCount: number
+    segments: Array<{ key: string; count: number; minutes: number; knownDurationCount: number }>
+  }>
+  series: Array<{ key: string; label: string; total: number; totalMinutes: number; knownDurationCount: number }>
 }
 
 export type ArchiveInsights = {
@@ -201,10 +204,11 @@ export function archiveTrendBreakdown(
   dimension: ArchiveTrendDimension = "departure",
 ): ArchiveTrendBreakdown {
   const selection = archiveSelection(records, filter)
-  const months: ArchiveTrendBreakdown["months"] = selection.months.map(({ month }) => ({ month, total: 0, segments: [] }))
-  const counts = months.map(() => new Map<string, number>())
+  const months: ArchiveTrendBreakdown["months"] = selection.months.map(({ month }) => ({
+    month, total: 0, totalMinutes: 0, knownDurationCount: 0, unknownDurationCount: 0, segments: [],
+  }))
+  const counts = months.map(() => new Map<string, ArchiveTrendBreakdown["months"][number]["segments"][number]>())
   const categories = new Map<string, ArchiveTrendBreakdown["series"][number]>()
-  let unknownTotal = 0
   for (const { trip, date } of selection.filtered) {
     if (!date || selection.firstMonth === null) continue
     const index = date.monthIndex - selection.firstMonth
@@ -215,38 +219,55 @@ export function archiveTrendBreakdown(
       ? placeName("flight", typeof trip.code === "string" ? trip.code.replace(/\s+/g, "").toUpperCase() : "")
       : placeName(trip.mode, dimension === "departure" ? trip.fromPlace : trip.toPlace)
     const key = validMode && value ? `${trip.mode}:${value}` : "unknown"
+    const minutes = durationMinutes(trip)
+    const knownDurationCount = minutes > 0 ? 1 : 0
     month.total += 1
-    counts[index].set(key, (counts[index].get(key) ?? 0) + 1)
-    if (key === "unknown") {
-      unknownTotal += 1
-    } else {
-      const category = categories.get(key) ?? {
-        key, label: `${value} · ${trip.mode === "rail" ? "火车" : "航班"}`, total: 0,
-      }
-      category.total += 1
-      categories.set(key, category)
+    month.totalMinutes += minutes
+    month.knownDurationCount += knownDurationCount
+    month.unknownDurationCount += 1 - knownDurationCount
+    const segment = counts[index].get(key) ?? { key, count: 0, minutes: 0, knownDurationCount: 0 }
+    segment.count += 1
+    segment.minutes += minutes
+    segment.knownDurationCount += knownDurationCount
+    counts[index].set(key, segment)
+    const category = categories.get(key) ?? {
+      key,
+      label: key === "unknown"
+        ? dimension === "departure" ? "未填出发站" : dimension === "arrival" ? "未填到达站" : "未填车次或航班号"
+        : `${value} · ${trip.mode === "rail" ? "火车" : "航班"}`,
+      total: 0, totalMinutes: 0, knownDurationCount: 0,
     }
+    category.total += 1
+    category.totalMinutes += minutes
+    category.knownDurationCount += knownDurationCount
+    categories.set(key, category)
   }
-  const ranked = [...categories.values()].sort((a, b) =>
+  const ranked = [...categories.values()].filter(({ key }) => key !== "unknown").sort((a, b) =>
     b.total - a.total || a.label.localeCompare(b.label, "zh-CN") || a.key.localeCompare(b.key, "en"))
   const series = ranked.slice(0, 4)
   const topKeys = new Set(series.map(({ key }) => key))
-  const otherTotal = ranked.slice(4).reduce((sum, category) => sum + category.total, 0)
-  if (otherTotal) series.push({ key: "other", label: "其他", total: otherTotal })
-  if (unknownTotal) series.push({
-    key: "unknown",
-    label: dimension === "departure" ? "未填出发站" : dimension === "arrival" ? "未填到达站" : "未填车次或航班号",
-    total: unknownTotal,
-  })
+  const other = { key: "other", label: "其他", total: 0, totalMinutes: 0, knownDurationCount: 0 }
+  for (const category of ranked.slice(4)) {
+    other.total += category.total
+    other.totalMinutes += category.totalMinutes
+    other.knownDurationCount += category.knownDurationCount
+  }
+  if (other.total) series.push(other)
+  const unknown = categories.get("unknown")
+  if (unknown) series.push(unknown)
   for (let index = 0; index < months.length; index += 1) {
-    const grouped = new Map<string, number>()
-    for (const [key, count] of counts[index]) {
+    const grouped = new Map<string, ArchiveTrendBreakdown["months"][number]["segments"][number]>()
+    for (const [key, segment] of counts[index]) {
       const group = key === "unknown" || topKeys.has(key) ? key : "other"
-      grouped.set(group, (grouped.get(group) ?? 0) + count)
+      const combined = grouped.get(group) ?? { key: group, count: 0, minutes: 0, knownDurationCount: 0 }
+      combined.count += segment.count
+      combined.minutes += segment.minutes
+      combined.knownDurationCount += segment.knownDurationCount
+      grouped.set(group, combined)
     }
     months[index].segments = series.flatMap(({ key }) => {
-      const count = grouped.get(key) ?? 0
-      return count ? [{ key, count }] : []
+      const segment = grouped.get(key)
+      return segment ? [segment] : []
     })
   }
   return { dimension, months, series }

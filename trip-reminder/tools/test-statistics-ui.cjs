@@ -88,7 +88,7 @@ function fixture(trips = records(), themeKey = 'ticket') {
   const archiveElement = link(home, archiveLabel), archive = mount(archiveElement);
   const detailElement = link(archive, '查看详细统计'), detail = mount(detailElement, true);
   return { storage, home, archive, detail, archiveElement, detailElement, sheets, nodes, texts,
-    exports: sandbox.module.exports,
+    exports: sandbox.module.exports, mount,
     async choose(buttonText, optionText) {
       const buttons = detail.nodes().filter(node => node.type === 'Button' &&
         [node.props.title, ...texts(node)].some(label => typeof label === 'string' && label.includes(buttonText)));
@@ -184,18 +184,28 @@ test('place metric actions render departure and arrival rankings from the select
 });
 // These assertions inspect native structure and callbacks, not iOS measurement or pixels.
 test('statistics share one continuous themed scroll surface with internal headings and dividers', () => {
-  const headings = ['统计范围', '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线', '统计说明'];
+  const headings = [ '出行概览', '月度趋势', '出行方式', '时长统计', '常用车站与机场', '常用路线', '数据完整度', '统计说明'];
   for (const themeKey of Object.keys(fixture().exports.THEMES)) {
     for (const trips of [records(), []]) {
       const f = fixture(trips, themeKey), theme = f.exports.THEMES[themeKey];
-      assert.equal(f.detail.tree.type, 'ScrollView');
-      assert.equal(f.detail.tree.props.navigationTitle, '详细统计');
+      assert.equal(f.detail.tree.type, 'ZStack');
+      assert.equal(f.detail.tree.props.navigationTitle, '出行统计');
       assert.equal(f.detail.tree.props.navigationBarTitleDisplayMode, 'inline');
       assert.equal(f.detail.tree.props.background, theme.cardTop, 'root background must cover content and empty edges');
-      assert.equal(f.detail.tree.props.frame, undefined, 'scroll view must not claim infinite vertical space');
+      assert.equal(f.detail.tree.props.frame.maxHeight, 'infinity', 'page root fills the finite viewport');
+       const [backdrop, scroll] = f.detail.tree.props.children.flat(Infinity);
+       assert.equal(backdrop.type, 'Rectangle');
+       assert.equal(backdrop.props.fill, theme.cardTop);
+       assert.equal(backdrop.props.frame.maxHeight, 'infinity');
+       assert.equal(backdrop.props.ignoresSafeArea.regions, 'container');
+       assert.equal(backdrop.props.ignoresSafeArea.edges, 'all');
+       assert.equal(scroll.type, 'ScrollView');
+       assert.equal(scroll.props.background, theme.cardTop);
+       assert.equal(scroll.props.frame, undefined, 'scroll view must not claim infinite vertical space');
       assert.equal(f.detail.nodes().filter(node => node.type === 'ScrollView').length, 1);
       assert.equal(f.detail.nodes().some(node => ['List', 'Section'].includes(node.type)), false);
-      const content = f.detail.tree.props.children.flat(Infinity)[0];
+      const content = scroll.props.children.flat(Infinity)[0];
+       assert.equal(content.props.background, theme.cardTop, 'long content paints its own background beyond the viewport');
       assert.equal(content.type, 'VStack');
       assert.equal(content.props.frame.maxWidth, 'infinity');
       assert.equal(content.props.spacing, 16);
@@ -225,18 +235,27 @@ test('statistics share one continuous themed scroll surface with internal headin
         assert.equal(node.props.clipShape, undefined, 'no segmented card corners');
         assert.equal(node.props.listRowBackground, undefined);
         assert.equal(node.props.listRowInsets, undefined);
-        if (node.props.background !== undefined) assert.equal(node.props.background, theme.cardTop);
-        assert.notEqual(node.props.frame?.maxHeight, 'infinity', 'scroll content must have bounded vertical geometry');
+        if (typeof node.props.background === 'string') assert.equal(node.props.background, theme.cardTop);
+        if (node !== f.detail.tree && node !== backdrop) assert.notEqual(node.props.frame?.maxHeight, 'infinity', 'scroll content must have bounded vertical geometry');
         if (node.type === 'Text') assert.ok([theme.ink, theme.sub, theme.accent].includes(node.props.foregroundStyle),
           `unthemed statistics text: ${f.texts(node).join('')}`);
       }
       const filters = f.detail.nodes().filter(node => node.type === 'Button');
-      assert.equal(filters.length, 5);
+      assert.equal(filters.length, 6);
+       const paired = content.props.children.flat(Infinity)[0];
+       assert.equal(paired.type, 'HStack');
+       assert.equal(f.nodes(paired).filter(node => node.type === 'Button').length, 2);
       for (const button of filters) {
         const label = f.nodes(button).find(node => node.type === 'Text');
         assert.equal(label.props.foregroundStyle, theme.accent);
          assert.equal(button.props.buttonStyle, 'plain');
-         assert.equal(button.props.frame.minHeight, 32);
+         assert.ok(button.props.frame.minHeight >= 32);
+          if (!f.texts(button).some(label => label.startsWith('站点排行：'))) {
+            assert.equal(button.props.frame.minHeight, 36);
+            assert.equal(button.props.frame.maxWidth, 'infinity');
+            assert.equal(button.props.background.type, 'RoundedRectangle');
+            assert.equal(button.props.background.props.fill, theme.accentSoft);
+          }
       }
     }
   }
@@ -361,7 +380,7 @@ function chartColumns(f) {
   return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'VStack' && /^\d{4}-\d\d$/.test(node.props.key || ''));
 }
 function legendRows(f) {
-  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'HStack' && node.props.key && node.props.accessibilityElement === 'combine');
+  return f.nodes(statsBlock(f, '月度趋势')).filter(node => node.type === 'HStack' && node.props.key && node.props.accessibilityElement === 'combine' && f.nodes(node).some(child => child.type === 'RoundedRectangle'));
 }
 test('dimension selector changes actual month segments and legends without changing totals or rankings', async () => {
   const trips = [trip('a', { departDate: '2099-01-03', code: 'G1' }), trip('b', { departDate: '2099-02-03', code: 'G2', toPlace: '测试丙' }),
@@ -420,9 +439,68 @@ test('all themes use six readable series colors and preserve complete top-four o
   }
 });
 
+test('duration selector uses actual minutes, stable categories and colors, with known coverage and monthly averages', async () => {
+  const trips = [trip('a', { departDate: '2099-01-03', durationMin: 60 }),
+    trip('b', { departDate: '2099-02-03', durationMin: 180, fromPlace: '测试丙' }),
+    trip('c', { departDate: '2099-02-04', durationMin: 0, fromPlace: '测试丁' })];
+  const f = fixture(trips);
+  const before = legendRows(f).map(row => [row.props.key, f.nodes(row).find(n => n.type === 'RoundedRectangle').props.fill]);
+  await f.choose('图表：', '累计时长');
+  assert.equal(f.sheets.at(-1).title, '选择图表指标');
+  visible(f.detail, '图表：累计时长', '累计时长 · 单位：分钟', '图示 3 次行程', '2 次 · 3时 · 3时');
+  assert.ok(f.detail.texts().some(text => text.includes('已知 2 次 / 3 次，缺少 1 次')));
+  assert.deepEqual(legendRows(f).map(row => [row.props.key, f.nodes(row).find(n => n.type === 'RoundedRectangle').props.fill]), before);
+  const expected = f.exports.archiveTrendBreakdown(trips, { trendMonths: 3 }, 'departure');
+  for (const column of chartColumns(f)) {
+    const month = expected.months.find(month => month.month === column.props.key);
+    const bars = f.nodes(column).filter(node => node.type === 'Rectangle');
+    assert.equal(bars.length, month.segments.filter(segment => segment.minutes > 0).length);
+    assert.ok(Math.abs(bars.reduce((sum, bar) => sum + bar.props.frame.height, 0) - month.totalMinutes / 180 * 122) < 1e-8);
+  }
+  assert.ok(legendRows(f).some(row => f.texts(row).at(-1) === '—'), 'unknown duration is disclosed rather than shown as zero');
+  await f.choose('图表：', '出行次数');
+  visible(f.detail, '总次数 · 单位：次');
+  statistic(f, '累计行程', '3 次');
+});
+test('duration-only missing data and pure content fallback remain truthful', async () => {
+  const f = fixture([trip('unknown-duration', { durationMin: 0 })]);
+  await f.choose('图表：', '累计时长');
+  visible(f.detail, '暂无可用时长', '图示 1 次行程', '1 次 · — · —');
+  assert.equal(chartColumns(f).length, 0);
+  assert.ok(f.detail.texts().some(text => text.includes('已知 0 次 / 1 次，缺少 1 次')));
+  const pure = f.mount({ type: f.exports.TripStatisticsContent, props: {
+    insights: f.exports.archiveInsights([trip('pure')], { trendMonths: 3 }),
+    theme: f.exports.THEMES.ticket, measure: 'duration',
+  } }, true);
+  visible(pure, '累计时长 · 单位：分钟', '1时');
+  assert.ok(pure.nodes().some(node => node.type === 'Rectangle' && node.props.frame?.height === 122));
+});
+test('statistics Tab receives live parent records and standalone props honor title and optional close', () => {
+  const f = fixture();
+  const tab = f.home.nodes().find(node => node.type === 'Tab' && node.props.value === 'statistics');
+  assert.ok(tab, 'home contains an independent statistics Tab');
+  assert.equal(tab.props.title, '统计');
+  assert.equal(tab.props.systemImage, 'chart.bar.xaxis');
+  const element = f.nodes(tab).find(node => node.type === f.exports.TripStatisticsPage);
+  assert.ok(element && Array.isArray(element.props.records), 'Tab supplies live records');
+  let closed = 0;
+  const props = { theme: f.exports.THEMES.ticket, records: [trip('live')], title: '测试统计', onClose: () => closed++ };
+  const page = f.mount({ type: f.exports.TripStatisticsPage, props }, true);
+  assert.equal(page.tree.props.navigationTitle, '测试统计');
+  page.tree.props.toolbar.cancellationAction.props.action();
+  assert.equal(closed, 1);
+  props.records = [];
+  page.render();
+  visible(page, '0 次', '暂无时长');
+  delete props.onClose;
+  page.render();
+  assert.equal(page.tree.props.toolbar, undefined);
+  assert.equal(f.storage.get('rail.trips').length, records().length, 'supplied records do not mutate storage');
+});
+
 (async () => {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { THEMES } from "./services/theme"; export { archiveInsights, archiveTrendBreakdown } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { TripStatisticsPage, TripStatisticsContent } from "./components/trip-statistics"; export { THEMES } from "./services/theme"; export { archiveInsights, archiveTrendBreakdown } from "./services/statistics";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false, external: ['scripting'],
     jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });

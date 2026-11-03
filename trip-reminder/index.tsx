@@ -1,5 +1,5 @@
 // index.tsx — 行程提醒（火车 + 航班，App 内页面）
-// 结构：原生底部 TabView：首页行程工作流 / 设置与外观预览
+// 结构：原生底部 TabView：首页 / 独立出行统计 / 设置与外观预览
 // 生命周期：一次性页面 —— Navigation.present() 关闭后 Script.exit()
 //
 // 隐私：本脚本不发起任何网络请求。行程数据只写入本机 Storage（rail.* 键），
@@ -729,6 +729,11 @@ function View() {
         </Section>
 
       </List>
+      </NavigationStack>
+      </Tab>
+      <Tab title="统计" systemImage="chart.bar.xaxis" value="statistics">
+      <NavigationStack>
+        <TripStatisticsPage theme={theme} records={trips} onClose={dismiss} />
       </NavigationStack>
       </Tab>
       <Tab title="设置" systemImage="gearshape.fill" value="settings">

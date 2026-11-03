@@ -309,6 +309,32 @@ function archiveRow(archive, id) {
   return rows[0];
 }
 
+test('statistics has a dedicated native tab and receives fresh parent records after archive changes', () => {
+  const trips = archiveFixtureTrips(), f = fixture('', { trips });
+  const tabs = f.nodes().filter(node => node.type === 'Tab');
+  assert.deepEqual(tabs.map(node => node.props.title), ['首页', '统计', '设置']);
+  assert.equal(new Set(tabs.map(node => node.props.value)).size, 3);
+  const statisticsPage = () => {
+    const tab = f.one('Tab', '统计');
+    assert.equal(tab.props.systemImage, 'chart.bar.xaxis');
+    assert.equal(tab.props.value, 'statistics');
+    assert.equal(f.nodes(tab).some(node => node.type === 'NavigationStack'), true);
+    const page = f.nodes(tab).find(node => typeof node.type === 'function' && Array.isArray(node.props.records));
+    assert.ok(page, 'statistics tab must render the real statistics page');
+    assert.equal(typeof page.props.onClose, 'function');
+    return page;
+  };
+  assert.equal(statisticsPage().props.records.length, 3);
+  const archive = f.mountArchive();
+  archiveRow(archive, trips[0].id).props.onTapGesture(); archive.render();
+  archive.one('TextField', '历时（分钟）').props.onChanged('45'); archive.render();
+  archive.one('Button', '保存行程').props.action(); archive.render(); f.render();
+  assert.equal(statisticsPage().props.records.find(trip => trip.id === trips[0].id).durationMin, 45);
+  archiveRow(archive, trips[1].id).props.trailingSwipeActions.actions[0].props.action(); archive.render(); f.render();
+  assert.deepEqual(statisticsPage().props.records.map(trip => trip.id).sort(), [trips[0].id, trips[2].id].sort());
+  assert.equal(statisticsPage().props.theme.key, 'ticket');
+});
+
 test('tapping an archive row saves shared fields in place without losing archive or rail metadata', () => {
   const trips = archiveFixtureTrips(), f = fixture('', { trips }), archive = f.mountArchive();
   archiveRow(archive, trips[0].id).props.onTapGesture();
