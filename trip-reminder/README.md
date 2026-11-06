@@ -32,6 +32,7 @@ trip-reminder/
 ├── widget.tsx           # 主屏幕小组件（中号为主，小号兜底）
 ├── components/
 │   ├── trip-card.tsx     # 首页小组件预览与乘客信息
+│   ├── trip-preview-carousel.tsx # 多行程页码与可拖动分页条
 │   ├── trip-widget.tsx   # 首页、设置预览与中号小组件共用布局
 │   ├── rail-timetable.tsx # 可展开的乘车区间时刻表
 │   ├── trip-statistics.tsx # 按年／方式筛选的主题化统计详情
@@ -49,7 +50,8 @@ trip-reminder/
     ├── test-rail-stops.cjs # 端点去重、方向、站名、杂符与截图尺度（26 组）
     ├── test-station-states.cjs # 起／过／终状态、杂符、冲突与保存（17 组）
     ├── test-ocr.cjs     # 局部 OCR、坐标校验、保底与隐私（17 组）
-    ├── test-review-states.cjs # 独立统计 Tab、归档操作与强调色编号（18 组）
+    ├── test-review-states.cjs # 首页分页、统计 Tab 与归档操作（19 组）
+    ├── test-preview-carousel.cjs # 页码、原生滑动／拖动及列表边界（4 组）
     ├── test-trips.cjs   # 存储、归档、定向删除与小组件选择（9 组）
     ├── test-statistics.cjs # 周／月日历分桶、分区守恒与覆盖率（50 组）
     ├── test-statistics-ui.cjs # 周月切换、日期标签、指标与明细（14 组）
@@ -90,6 +92,12 @@ NODE_PATH=<含 esbuild 的 node_modules> node tools/test-parse.cjs
 - 倒计时统一显示「4 天｜11 小时」；不足 24 小时时显示「4 小时｜38 分」。
 - 时间表旁显示行程时长（如「｜1 小时 24 分」），检票口/登机口和座位用大字号突出。
 - 已填历时优先；缺失时根据钟点差推算跨午夜时长。跨时区航班请填写实际历时。
+
+## 首页多行程分页提示（v1.6.22）
+
+- 多条当前行程时，预览区右上角显示「当前页／总数」，下方提供可拖动的分页滑动条。滑动卡片和拖动滑动条共享行程 ID 选择状态。
+- 重新排序时保留正在查看的行程；该行程被移除后回到第一条有效行程。单条或空列表不显示分页控件，归档记录不计入分母，小组件的最近行程选择不变。
+- 4 组分页、19 组 App 入口、14 组统计 UI 回归及两个入口编译通过；iPhone 原生页式 Tab、滑动条与手势仍需实机复验。
 
 ## 短周期按周统计（v1.6.21）
 

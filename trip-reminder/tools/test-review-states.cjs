@@ -12,7 +12,7 @@ let bundled;
 
 async function compile() {
   const result = await esbuild.build({
-    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse"; export { StationStateBadge } from "./components/trip-widget"; export { THEMES, ACCENTS } from "./services/theme";', resolveDir: ROOT, loader: 'ts' },
+    stdin: { contents: 'import "./index"; export { parseTripText } from "./services/parse"; export { StationStateBadge } from "./components/trip-widget"; export { THEMES, ACCENTS } from "./services/theme"; export { TripPreviewCarousel } from "./components/trip-preview-carousel";', resolveDir: ROOT, loader: 'ts' },
     bundle: true, platform: 'node', format: 'cjs', write: false,
     external: ['scripting'], jsxFactory: '__jsx', jsxFragment: '__Fragment', logLevel: 'silent',
   });
@@ -78,6 +78,7 @@ function fixture(text = '', { candidates = [], trips = [], image = {}, recognize
   return {
     storage, render, nodes, texts, one, StationStateBadge, sheets,
     themes: sandbox.module.exports.THEMES, accents: sandbox.module.exports.ACCENTS,
+    TripPreviewCarousel: sandbox.module.exports.TripPreviewCarousel,
     chooseSheet: index => sheetChoices.push(index),
     parse: () => sandbox.module.exports.parseTripText(text),
     mountArchive() {
@@ -308,6 +309,28 @@ function archiveRow(archive, id) {
   assert.equal(rows.length, 1, `expected archive row ${id}`);
   return rows[0];
 }
+
+test('home preview mounts pagination only for multiple current trips and removes it after archiving', () => {
+  const trips = archiveFixtureTrips();
+  const empty = fixture('', { trips: trips.slice(0, 2) });
+  assert.equal(empty.nodes().some(node => node.type === empty.TripPreviewCarousel), false);
+  empty.one('Section', '行程预览 (0)');
+  const single = fixture('', { trips });
+  assert.equal(single.nodes().some(node => node.type === single.TripPreviewCarousel), false);
+  single.one('Section', '行程预览 (1)');
+  const next = { ...trips[2], id: 'another-active', code: 'G1235', departDate: '2099-06-20' };
+  const multiple = fixture('', { trips: [...trips, next] });
+  const carousel = multiple.nodes().find(node => node.type === multiple.TripPreviewCarousel);
+  assert.ok(carousel);
+  assert.deepEqual(Array.from(carousel.props.trips, trip => trip.id).sort(), [trips[2].id, next.id].sort());
+  assert.equal(carousel.props.theme.key, 'ticket');
+  multiple.one('Section', '行程预览 (2)');
+  const row = multiple.nodes().find(node => node.type === 'VStack' && node.props.key === next.id && node.props.trailingSwipeActions);
+  row.props.trailingSwipeActions.actions.find(action => action.props.title === '归档').props.action();
+  multiple.render();
+  multiple.one('Section', '行程预览 (1)');
+  assert.equal(multiple.nodes().some(node => node.type === multiple.TripPreviewCarousel), false);
+});
 
 test('statistics has a dedicated native tab and receives fresh parent records after archive changes', () => {
   const trips = archiveFixtureTrips(), f = fixture('', { trips });

@@ -73,6 +73,7 @@ import { recognizeFromCamera, recognizeFromPickedScreenshot } from "./services/o
 import { THEMES, ACCENTS, getAccentKey, getThemeKey, resolveTheme, setAccentKey, setThemeKey, type ThemeKey, type AccentKey } from "./services/theme"
 import { ThemeBackground } from "./components/theme-background"
 import { TripCard } from "./components/trip-card"
+import { TripPreviewCarousel } from "./components/trip-preview-carousel"
 import { TripWidgetPreview, StationStateBadge } from "./components/trip-widget"
 import { RailTimetable, RailTimetablePage } from "./components/rail-timetable"
 import { VERSION } from "./utils/common"
@@ -581,16 +582,12 @@ function View() {
           title={`行程预览 (${visibleTrips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              {visibleTrips.length > 1 ? "左右滑动查看其他行程；小组件显示最近一段。" : upcoming ? "小组件显示最近一段行程。" : visibleTrips.length ? "请补全出发日期和时间，以便小组件展示与自动归档。" : "用下面的截图识别或手动新建添加行程。"}
+              {visibleTrips.length > 1 ? "可左右滑动卡片，或拖动下方滑动条切换；小组件显示最近一段。" : upcoming ? "小组件显示最近一段行程。" : visibleTrips.length ? "请补全出发日期和时间，以便小组件展示与自动归档。" : "用下面的截图识别或手动新建添加行程。"}
             </Text>
           }
         >
           {visibleTrips.length > 1 ? (
-            <TabView tabViewStyle="page" frame={{ height: 220 }}>
-              {visibleTrips.map(t => <VStack key={t.id} spacing={0} padding={{ bottom: 30 }}>
-                <TripCard trip={t} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
-              </VStack>)}
-            </TabView>
+            <TripPreviewCarousel trips={visibleTrips} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
           ) : visibleTrips.length === 1 ? (
             <TripCard trip={visibleTrips[0]} theme={theme} passengerMode={passengerMode} hideSeatNumber={hideSeatNumber} now={now} />
           ) : (
