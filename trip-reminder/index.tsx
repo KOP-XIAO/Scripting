@@ -582,7 +582,7 @@ function View() {
           title={`行程预览 (${visibleTrips.length})`}
           footer={
             <Text font="caption" foregroundStyle="secondaryLabel">
-              {visibleTrips.length > 1 ? "可左右滑动卡片，或拖动下方滑动条切换；小组件显示最近一段。" : upcoming ? "小组件显示最近一段行程。" : visibleTrips.length ? "请补全出发日期和时间，以便小组件展示与自动归档。" : "用下面的截图识别或手动新建添加行程。"}
+              {visibleTrips.length > 1 ? "左右滑动卡片查看其他行程；小组件显示最近一段。" : upcoming ? "小组件显示最近一段行程。" : visibleTrips.length ? "请补全出发日期和时间，以便小组件展示与自动归档。" : "用下面的截图识别或手动新建添加行程。"}
             </Text>
           }
         >
