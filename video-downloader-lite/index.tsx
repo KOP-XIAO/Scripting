@@ -273,7 +273,11 @@ function SettingsPreviewImage(props: {
   const image = useMemo(() => {
     try {
       const loaded = UIImage.fromFile(path)
-      if (!loaded) appendDebug(`设置预览图片无法读取：${path}`)
+      if (!loaded) {
+        appendDebug(`设置预览图片无法读取：${path}`)
+      } else {
+        appendDebug(`设置预览 v${VERSION}：已读取 ${loaded.width}×${loaded.height} · ${path}`)
+      }
       return loaded
     } catch (e) {
       appendDebug(`设置预览图片读取失败：${path} · ${String(e)}`)
@@ -293,12 +297,11 @@ function SettingsPreviewImage(props: {
   return <Image
     image={image}
     resizable={true}
-    scaleToFit={!fill}
-    scaleToFill={!!fill}
+    {...(fill ? { scaleToFill: true } : { scaleToFit: true })}
     renderingMode="original"
     frame={{ width: size, height: size }}
-    clipShape={rounded ? { type: "rect", cornerRadius: 10, style: "continuous" } : undefined}
-    offset={offset}
+    {...(rounded ? { clipShape: { type: "rect" as const, cornerRadius: 10, style: "continuous" as const } } : {})}
+    {...(offset ? { offset } : {})}
   />
 }
 
@@ -471,7 +474,7 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
       <Section title="小组件入口图标" footer={
         <Text font="caption" foregroundStyle="secondaryLabel">只更换小组件下载入口的图标，不改变配色和背景样式。</Text>
       }>
-        {/* 入口徽章款式：与主题色板同款结构（Button 直接挂 HStack，实证可点） */}
+        {/* PNG 预览保持为普通视图，通过手势选择，避免 Button 标签的渲染上下文。 */}
         {(() => {
           const keys = BADGE_GLYPHS.map((b) => b.key)
           const rows: BadgeGlyph[][] = [keys.slice(0, 3), keys.slice(3)]
@@ -479,39 +482,35 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
             <HStack key={`badge-${ri}`} spacing={0}>
               {row.flatMap((g, i) => {
                 const selected = g === badgeGlyph
+                const label = `${selected ? "● " : ""}${BADGE_GLYPHS.find((b) => b.key === g)!.label}`
+                const select = () => {
+                  setBadgeGlyphLocal(g)
+                  setBadgeGlyph(g) // 内部会 Widget.reloadAll()
+                }
                 const cell = (
-                  <Button
-                    key={g}
-                    buttonStyle="plain"
-                    action={() => {
-                      setBadgeGlyphLocal(g)
-                      setBadgeGlyph(g) // 内部会 Widget.reloadAll()
-                    }}
-                  >
-                    <VStack spacing={4}>
-                      <ZStack frame={{ width: 64, height: 64 }}>
-                        <SettingsPreviewImage
-                          path={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
-                          size={64}
-                        />
-                        {/* 预览与实物一致：右下角标 */}
-                        <Image
-                          systemName="hand.tap.fill"
-                          font={18}
-                          foregroundStyle={THEMES[themeKey].accent}
-                          offset={{ x: 24, y: 24 }}
-                        />
-                      </ZStack>
-                      <Text
-                        font="caption2"
-                        foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}
-                      >
-                        {selected
-                          ? `● ${BADGE_GLYPHS.find((b) => b.key === g)!.label}`
-                          : BADGE_GLYPHS.find((b) => b.key === g)!.label}
-                      </Text>
-                    </VStack>
-                  </Button>
+                  <VStack key={g} spacing={4}>
+                    <ZStack frame={{ width: 64, height: 64 }} onTapGesture={select}>
+                      <SettingsPreviewImage
+                        path={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
+                        size={64}
+                      />
+                      {/* 预览与实物一致：右下角标 */}
+                      <Image
+                        systemName="hand.tap.fill"
+                        font={18}
+                        foregroundStyle={THEMES[themeKey].accent}
+                        offset={{ x: 24, y: 24 }}
+                      />
+                    </ZStack>
+                    <Button
+                      title={label}
+                      buttonStyle="borderless"
+                      font="caption2"
+                      foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}
+                      accessibilityLabel={`${label}${selected ? "，已选中" : "，点按选择"}`}
+                      action={select}
+                    />
+                  </VStack>
                 )
                 return i === 0 ? [cell] : [<Spacer key={`sp2-${g}`} />, cell]
               })}
@@ -527,6 +526,10 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
         {(() => {
           const styleCell = (key: WidgetStyle, label: string) => {
             const selected = key === widgetStyle
+            const select = () => {
+              setWidgetStyleLocal(key)
+              setWidgetStyle(key) // 内部会 Widget.reloadAll()
+            }
             const bgSrc = key === "texture"
               ? `${Script.directory}/assets/widget-bg-${themeKey}-small.png`
               : `${Script.directory}/assets/widget-style-${key}-small.png`
@@ -534,31 +537,28 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               ? `${Script.directory}/assets/widget-badge-${badgeGlyph}-${themeKey}.png`
               : `${Script.directory}/assets/widget-style-badge-${key}-${badgeGlyph}-${themeKey}.png`
             return (
-              <Button
-                buttonStyle="plain"
-                action={() => {
-                  setWidgetStyleLocal(key)
-                  setWidgetStyle(key) // 内部会 Widget.reloadAll()
-                }}
-              >
-                <VStack spacing={4}>
-                  <ZStack frame={{ width: 64, height: 64 }}>
-                    <SettingsPreviewImage path={bgSrc} size={64} fill={true} rounded={true} />
-                    <SettingsPreviewImage path={badgeSrc} size={20} offset={{ x: 16, y: 16 }} />
-                    {selected ? (
-                      <Image
-                        systemName="checkmark.circle.fill"
-                        font={14}
-                        foregroundStyle={THEMES[themeKey].accent}
-                        offset={{ x: 22, y: -22 }}
-                      />
-                    ) : null}
-                  </ZStack>
-                  <Text font="caption2" foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}>
-                    {selected ? `● ${label}` : label}
-                  </Text>
-                </VStack>
-              </Button>
+              <VStack key={key} spacing={4}>
+                <ZStack frame={{ width: 64, height: 64 }} onTapGesture={select}>
+                  <SettingsPreviewImage path={bgSrc} size={64} fill={true} rounded={true} />
+                  <SettingsPreviewImage path={badgeSrc} size={20} offset={{ x: 16, y: 16 }} />
+                  {selected ? (
+                    <Image
+                      systemName="checkmark.circle.fill"
+                      font={14}
+                      foregroundStyle={THEMES[themeKey].accent}
+                      offset={{ x: 22, y: -22 }}
+                    />
+                  ) : null}
+                </ZStack>
+                <Button
+                  title={selected ? `● ${label}` : label}
+                  buttonStyle="borderless"
+                  font="caption2"
+                  foregroundStyle={selected ? THEMES[themeKey].accent : "secondaryLabel"}
+                  accessibilityLabel={`${label}${selected ? "，已选中" : "，点按选择"}`}
+                  action={select}
+                />
+              </VStack>
             )
           }
           return (
