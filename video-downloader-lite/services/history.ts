@@ -5,6 +5,7 @@
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
 import { probeMedia, resolutionLabel, generateThumbFile } from "./media-probe"
+import { appendDebug } from "./debug"
 
 export type HistoryRecord = {
   id: string
@@ -233,44 +234,86 @@ export async function updateHistoryNote(id: string, note: string) {
   }
 }
 
-// 老记录回填：缺时长/清晰度且文件还在本地的，逐条探测补上（每次最多 30 条，防启动卡顿）
+// 缩略图路径非空不代表文件仍存在或能够解码。
+function readableThumbnail(path?: string): boolean {
+  if (!path) return false
+  try {
+    return !!UIImage.fromFile(path)
+  } catch {
+    return false
+  }
+}
+
+// 缺图与缺媒体信息独立判断；优先修复最新记录，每轮最多处理 30 个本地视频。
 export const LAST_BACKFILL_KEY = "vdl.lastBackfill"
 
 export async function backfillMediaInfo(): Promise<number> {
   let fixed = 0
   let skippedNoFile = 0
+  let thumbsFixed = 0
+  let thumbsFailed = 0
   try {
-    const all = await readAll()
-    const need = all.filter((r) => (!r.duration_sec || !r.resolution) && r.file_path)
-    for (const r of need.slice(0, 30)) {
-      if (!(await FileManager.exists(r.file_path))) {
+    const all = sortDesc(await readAll())
+    const need = all.filter((r) => !r.duration_sec || !r.resolution || !readableThumbnail(r.thumb_path))
+    const repairs = new Map<string, Partial<HistoryRecord>>()
+    let attempted = 0
+    for (const r of need) {
+      if (attempted >= 30) break
+      if (!r.file_path || !(await FileManager.exists(r.file_path))) {
         skippedNoFile++
+        appendDebug(`历史封面：源视频已不存在，无法补图 · ${r.file_name}`)
         continue
       }
-      const m = await probeMedia(r.file_path)
-      if (m.durationSec > 0) r.duration_sec = m.durationSec
-      if (m.height > 0) {
-        r.resolution = resolutionLabel(m.width, m.height)
-        r.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+      attempted++
+      const patch: Partial<HistoryRecord> = {}
+      if (!r.duration_sec || !r.resolution) {
+        const m = await probeMedia(r.file_path)
+        if (m.durationSec > 0 && m.durationSec !== r.duration_sec) patch.duration_sec = m.durationSec
+        if (m.width > 0 && m.height > 0) {
+          patch.resolution = resolutionLabel(m.width, m.height)
+          patch.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+        }
       }
-      if (!r.thumb_path) {
-        r.thumb_path = await generateThumbFile(r.file_path, r.duration_sec)
+      if (!readableThumbnail(r.thumb_path)) {
+        const path = await generateThumbFile(r.file_path, patch.duration_sec ?? r.duration_sec)
+        if (readableThumbnail(path)) {
+          patch.thumb_path = path
+          thumbsFixed++
+        } else {
+          thumbsFailed++
+          appendDebug(`历史封面：抽帧或图片读取失败 · ${r.file_name}`)
+        }
       }
-      fixed++
+      if (Object.keys(patch).length) repairs.set(r.id, patch)
     }
-    if (fixed) {
-      await writeAll(all)
-      writeWidgetSnapshot(all)
+    if (repairs.size) {
+      // 抽帧期间可能新增、删除记录或更新备注；重新读取，只合并媒体字段。
+      const latest = await readAll()
+      const merged = latest.map((r) => {
+        const patch = repairs.get(r.id)
+        if (!patch) return r
+        fixed++
+        return { ...r, ...patch }
+      })
+      if (fixed) {
+        await writeAll(merged)
+        writeWidgetSnapshot(merged)
+      }
     }
+    appendDebug(`历史封面回填：待检查 ${need.length}，已更新 ${fixed}，补图 ${thumbsFixed}，失败 ${thumbsFailed}，源视频缺失 ${skippedNoFile}`)
     try {
       Storage.set(LAST_BACKFILL_KEY, {
         at: new Date().toISOString(),
         need: need.length,
         fixed,
         skippedNoFile,
+        thumbsFixed,
+        thumbsFailed,
       })
     } catch {}
-  } catch {}
+  } catch (e) {
+    appendDebug(`历史封面回填失败：${String(e)}`)
+  }
   return fixed
 }
 

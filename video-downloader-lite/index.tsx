@@ -119,7 +119,8 @@ function DownloadProgress({ ratio }: { ratio?: number }) {
 
 // 直接传入已载入的图片对象，首次渲染不依赖 filePath 的异步加载刷新。
 function VideoThumb({ path }: { path?: string }) {
-  const image = useMemo(() => {
+  // 回填可能覆盖同一路径；每次历史刷新都重新读图，不能按 path 缓存旧的 null。
+  const image = (() => {
     if (!path) return null
     try {
       const loaded = UIImage.fromFile(path)
@@ -129,7 +130,7 @@ function VideoThumb({ path }: { path?: string }) {
       appendDebug(`历史缩略图读取失败：${path} · ${String(e)}`)
       return null
     }
-  }, [path])
+  })()
   if (image) {
     return (
       <Image
@@ -142,8 +143,15 @@ function VideoThumb({ path }: { path?: string }) {
       />
     )
   }
-  // 占位块：单层圆角矩形（嵌套层数多是本运行时的雷区）
-  return <RoundedRectangle cornerRadius={6} fill="#2A2A32" frame={{ width: 84, height: 54 }} />
+  return <Image
+    systemName="photo"
+    font={22}
+    foregroundStyle="#9BA3AB"
+    frame={{ width: 84, height: 54 }}
+    background="#2A2A32"
+    clipShape={{ type: "rect", cornerRadius: 6, style: "continuous" }}
+    accessibilityLabel={path ? "视频封面暂时无法读取" : "视频封面待生成"}
+  />
 }
 
 // -------------------------------------------------------------

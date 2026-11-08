@@ -78,12 +78,17 @@ export async function generateThumbFile(videoPath: string, durationSec?: number)
         sh = Math.round(pw / ratio)
         sy = Math.round((ph - sh) / 2)
       }
-      const cropped = image.renderedIn(
-        { width: 216, height: 138 },
-        { position: { x: sx, y: sy }, size: { width: sw, height: sh } },
-      )
-      if (cropped) image = cropped
-      else appendDebug(`${tag}: renderedIn 返回空，用原图`)
+      try {
+        const cropped = image.renderedIn(
+          { width: 216, height: 138 },
+          { position: { x: sx, y: sy }, size: { width: sw, height: sh } },
+        )
+        if (cropped) image = cropped
+        else appendDebug(`${tag}: renderedIn 返回空，用原图`)
+      } catch (e) {
+        // 某些运行时的裁切接口会抛错；抽帧已成功时仍应保留原始封面。
+        appendDebug(`${tag}: renderedIn 失败，用原图 · ${String(e)}`)
+      }
     } else if (typeof image.renderedIn !== "function") {
       appendDebug(`${tag}: renderedIn 不存在，用原图`)
     }
