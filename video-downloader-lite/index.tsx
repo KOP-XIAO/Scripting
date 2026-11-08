@@ -969,7 +969,7 @@ function HistoryPage(props: { history: HistoryRecord[]; onChanged: () => Promise
         }
       >
         {filtered.map((item, i) => (
-          <HistoryRow key={item.id} item={item} index={i} onChanged={onChanged} />
+          <HistoryRow key={`${item.id}:${item.thumb_path || "none"}`} item={item} index={i} onChanged={onChanged} />
         ))}
       </Section>
     </List>
@@ -1434,7 +1434,7 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                   <Text foregroundStyle="secondaryLabel">还没有下载历史。</Text>
                 ) : (
                   history.slice(0, 6).map((item, i) => (
-                    <HistoryRow key={item.id} item={item} index={i} onChanged={refreshHistory} />
+                    <HistoryRow key={`${item.id}:${item.thumb_path || "none"}`} item={item} index={i} onChanged={refreshHistory} />
                   ))
                 )}
                 {history.length > 6 ? (

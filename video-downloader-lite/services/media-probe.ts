@@ -87,8 +87,19 @@ export async function saveThumbnailImage(source: any, key: string): Promise<stri
     const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100) || "cover"
     const thumbPath = `${THUMB_DIR}/${safeKey}.jpg`
     await FileManager.writeAsData(thumbPath, data)
-    appendDebug(`${tag}: 成功 ${pw}×${ph}`)
-    return thumbPath
+    // 新文件在写入完成后的首次渲染中可能尚不可解码；确认读回后再交给历史列表。
+    for (const delay of [0, 80, 160, 320]) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      try {
+        const check = UIImage.fromFile(thumbPath)
+        if (check && check.width > 0 && check.height > 0) {
+          appendDebug(`${tag}: 成功 ${pw}×${ph}，读回 ${check.width}×${check.height}`)
+          return thumbPath
+        }
+      } catch {}
+    }
+    appendDebug(`${tag}: 写入后读回失败 · ${thumbPath}`)
+    return ""
   } catch (e) {
     appendDebug(`${tag}: 异常 ${String(e)}`)
     return ""
