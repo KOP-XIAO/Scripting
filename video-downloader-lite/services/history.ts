@@ -4,7 +4,7 @@
 
 import { Path } from "scripting"
 import { newId, hostOf } from "../utils/common"
-import { probeMedia, resolutionLabel, generateThumbFile } from "./media-probe"
+import { probeMedia, resolutionLabel, generateThumbFile, saveThumbnailImage } from "./media-probe"
 import { appendDebug } from "./debug"
 
 export type HistoryRecord = {
@@ -244,7 +244,45 @@ function readableThumbnail(path?: string): boolean {
   }
 }
 
-// 缺图与缺媒体信息独立判断；优先修复最新记录，每轮最多处理 30 个本地视频。
+const PHOTO_ALBUM = "Video Downloader"
+
+async function downloaderPhotoAssets(): Promise<any[]> {
+  if (typeof Photos === "undefined") return []
+  const albums = (await Photos.fetchAlbums({ type: "album" })).filter((a: any) => a.title === PHOTO_ALBUM)
+  const groups = await Promise.all(albums.map((album: any) => album.fetchAssets({ mediaType: "video" })))
+  return groups.flat().filter((asset: any) => asset?.localIdentifier)
+}
+
+// 只接受时间与时长都相符的相簿视频，避免用无关视频冒充历史封面。
+function matchPhotoAsset(record: HistoryRecord, assets: any[], used: Set<string>): any | null {
+  const createdAt = Date.parse(record.created_at)
+  if (!Number.isFinite(createdAt)) return null
+  const duration = record.duration_sec ?? 0
+  let best: any = null
+  let bestScore = Infinity
+  for (const asset of assets) {
+    if (!asset || used.has(asset.localIdentifier) || typeof asset.creationDate !== "number") continue
+    // 历史先写入、视频随后存入相册；允许少量时钟/元数据偏差。
+    const deltaSeconds = (asset.creationDate - createdAt) / 1000
+    if (deltaSeconds < -120 || deltaSeconds > 600) continue
+    let durationDelta = 0
+    if (duration > 0) {
+      if (!(asset.duration > 0)) continue
+      durationDelta = Math.abs(asset.duration - duration)
+      if (durationDelta > 1.2) continue
+    } else if (Math.abs(deltaSeconds) > 30) {
+      continue
+    }
+    const score = Math.abs(deltaSeconds) + durationDelta * 20
+    if (score < bestScore) {
+      best = asset
+      bestScore = score
+    }
+  }
+  return best
+}
+
+// 缺图与缺媒体信息独立判断；本地文件被移入相册时，从指定相簿补图。
 export const LAST_BACKFILL_KEY = "vdl.lastBackfill"
 
 export async function backfillMediaInfo(): Promise<number> {
@@ -256,32 +294,73 @@ export async function backfillMediaInfo(): Promise<number> {
     const all = sortDesc(await readAll())
     const need = all.filter((r) => !r.duration_sec || !r.resolution || !readableThumbnail(r.thumb_path))
     const repairs = new Map<string, Partial<HistoryRecord>>()
+    const usedPhotoAssets = new Set<string>()
+    let photoAssets: any[] | null = null
+    let photoUnmatched = 0
     let attempted = 0
     for (const r of need) {
       if (attempted >= 30) break
-      if (!r.file_path || !(await FileManager.exists(r.file_path))) {
-        skippedNoFile++
-        appendDebug(`历史封面：源视频已不存在，无法补图 · ${r.file_name}`)
-        continue
-      }
-      attempted++
       const patch: Partial<HistoryRecord> = {}
-      if (!r.duration_sec || !r.resolution) {
-        const m = await probeMedia(r.file_path)
-        if (m.durationSec > 0 && m.durationSec !== r.duration_sec) patch.duration_sec = m.durationSec
-        if (m.width > 0 && m.height > 0) {
-          patch.resolution = resolutionLabel(m.width, m.height)
-          patch.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
-        }
-      }
-      if (!readableThumbnail(r.thumb_path)) {
-        const path = await generateThumbFile(r.file_path, patch.duration_sec ?? r.duration_sec)
-        if (readableThumbnail(path)) {
-          patch.thumb_path = path
-          thumbsFixed++
-        } else {
+      const localExists = !!r.file_path && (await FileManager.exists(r.file_path))
+      if (!localExists) {
+        skippedNoFile++
+        if (!r.note.includes("相册")) continue
+        attempted++
+        try {
+          if (photoAssets === null) {
+            photoAssets = await downloaderPhotoAssets()
+            appendDebug(`历史封面：${PHOTO_ALBUM}相簿读取到 ${photoAssets.length} 个视频`)
+          }
+          const asset = matchPhotoAsset(r, photoAssets, usedPhotoAssets)
+          if (!asset) {
+            photoUnmatched++
+            thumbsFailed++
+            continue
+          }
+          usedPhotoAssets.add(asset.localIdentifier)
+          if (!r.duration_sec && asset.duration > 0) patch.duration_sec = asset.duration
+          if (!r.resolution && asset.pixelWidth > 0 && asset.pixelHeight > 0) {
+            patch.resolution = resolutionLabel(asset.pixelWidth, asset.pixelHeight)
+            patch.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+          }
+          if (!readableThumbnail(r.thumb_path)) {
+            const image = await asset.requestImage({
+              targetWidth: 320,
+              targetHeight: 320,
+              contentMode: "aspectFill",
+              deliveryMode: "highQualityFormat",
+            })
+            const path = image ? await saveThumbnailImage(image, `photo-${r.id}`) : ""
+            if (readableThumbnail(path)) {
+              patch.thumb_path = path
+              thumbsFixed++
+            } else {
+              thumbsFailed++
+            }
+          }
+        } catch (e) {
           thumbsFailed++
-          appendDebug(`历史封面：抽帧或图片读取失败 · ${r.file_name}`)
+          appendDebug(`历史封面：相簿补图失败 · ${r.file_name} · ${String(e)}`)
+        }
+      } else {
+        attempted++
+        if (!r.duration_sec || !r.resolution) {
+          const m = await probeMedia(r.file_path)
+          if (m.durationSec > 0 && m.durationSec !== r.duration_sec) patch.duration_sec = m.durationSec
+          if (m.width > 0 && m.height > 0) {
+            patch.resolution = resolutionLabel(m.width, m.height)
+            patch.format = r.file_name.match(/\.([a-z0-9]{2,4})$/i)?.[1]?.toUpperCase() ?? ""
+          }
+        }
+        if (!readableThumbnail(r.thumb_path)) {
+          const path = await generateThumbFile(r.file_path, patch.duration_sec ?? r.duration_sec)
+          if (readableThumbnail(path)) {
+            patch.thumb_path = path
+            thumbsFixed++
+          } else {
+            thumbsFailed++
+            appendDebug(`历史封面：抽帧或图片读取失败 · ${r.file_name}`)
+          }
         }
       }
       if (Object.keys(patch).length) repairs.set(r.id, patch)
@@ -300,7 +379,7 @@ export async function backfillMediaInfo(): Promise<number> {
         writeWidgetSnapshot(merged)
       }
     }
-    appendDebug(`历史封面回填：待检查 ${need.length}，已更新 ${fixed}，补图 ${thumbsFixed}，失败 ${thumbsFailed}，源视频缺失 ${skippedNoFile}`)
+    appendDebug(`历史封面回填：待检查 ${need.length}，本轮处理 ${attempted}，已更新 ${fixed}，补图 ${thumbsFixed}，失败 ${thumbsFailed}，相簿未匹配 ${photoUnmatched}，源视频缺失 ${skippedNoFile}`)
     try {
       Storage.set(LAST_BACKFILL_KEY, {
         at: new Date().toISOString(),
@@ -309,6 +388,7 @@ export async function backfillMediaInfo(): Promise<number> {
         skippedNoFile,
         thumbsFixed,
         thumbsFailed,
+        photoUnmatched,
       })
     } catch {}
   } catch (e) {

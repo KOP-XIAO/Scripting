@@ -34,38 +34,27 @@ export function resolutionLabel(width: number, height: number): string {
   return `${Math.round(Math.min(width, height))}p`
 }
 
-// 抽帧 → 中心裁切到 72:46 → JPEG 落盘，返回缩略图路径（失败返回 ""）
-// 在下载时调用，历史行只渲染这个文件（不做实时抽帧，hooks 在嵌套组件里不可靠）
-export async function generateThumbFile(videoPath: string, durationSec?: number): Promise<string> {
-  const tag = `thumbGen(${videoPath.split("/").pop()})`
+const THUMB_DIR = `${FileManager.documentsDirectory}/Video/Downloader/Thumbnails`
+
+function videoCacheKey(videoPath: string): string {
+  // 与源文件路径绑定；源视频被移动或清理后，缓存目录中的封面仍然可用。
+  let hash = 2166136261
+  for (let i = 0; i < videoPath.length; i++) hash = Math.imul(hash ^ videoPath.charCodeAt(i), 16777619)
+  return `video-${(hash >>> 0).toString(36)}`
+}
+
+// 统一保存本地抽帧与相簿封面。key 必须是稳定的记录/视频标识。
+export async function saveThumbnailImage(source: any, key: string): Promise<string> {
+  const tag = `thumbSave(${key})`
   try {
-    if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
-      appendDebug(`${tag}: AVAsset=${typeof AVAsset} MediaTime=${typeof MediaTime}`)
+    let image = source
+    const pw = image?.width ?? 0
+    const ph = image?.height ?? 0
+    if (!image || pw <= 0 || ph <= 0) {
+      appendDebug(`${tag}: 图片对象为空或尺寸无效`)
       return ""
     }
-    const asset = new AVAsset(videoPath)
-    const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
-    let r: any
-    try {
-      r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
-        maximumSize: { width: 320, height: 320 },
-      })
-    } catch (e) {
-      appendDebug(`${tag}: generateImage 抛错 ${e}`)
-      asset.dispose()
-      return ""
-    }
-    asset.dispose()
-    if (!r?.image) {
-      appendDebug(`${tag}: generateImage 返回空`)
-      return ""
-    }
-    // 中心裁切：renderedIn（文档里 croppedTo 是画饼，运行时不存在——真机日志实证）
-    // 裁切失败绝不丢缩略图：回退用原图
-    let image = r.image
-    const pw = image.width
-    const ph = image.height
-    if (pw > 0 && ph > 0 && typeof image.renderedIn === "function") {
+    if (typeof image.renderedIn === "function") {
       const ratio = 72 / 46
       let sx = 0
       let sy = 0
@@ -84,25 +73,50 @@ export async function generateThumbFile(videoPath: string, durationSec?: number)
           { position: { x: sx, y: sy }, size: { width: sw, height: sh } },
         )
         if (cropped) image = cropped
-        else appendDebug(`${tag}: renderedIn 返回空，用原图`)
+        else appendDebug(`${tag}: 裁切返回空，用原图`)
       } catch (e) {
-        // 某些运行时的裁切接口会抛错；抽帧已成功时仍应保留原始封面。
-        appendDebug(`${tag}: renderedIn 失败，用原图 · ${String(e)}`)
+        appendDebug(`${tag}: 裁切失败，用原图 · ${String(e)}`)
       }
-    } else if (typeof image.renderedIn !== "function") {
-      appendDebug(`${tag}: renderedIn 不存在，用原图`)
     }
     const data = image.toJPEGData ? image.toJPEGData(0.75) : null
     if (!data) {
-      appendDebug(`${tag}: toJPEGData 失败（type=${typeof image.toJPEGData}）`)
+      appendDebug(`${tag}: JPEG 编码失败`)
       return ""
     }
-    const thumbPath = `${videoPath}.thumb.jpg`
+    await FileManager.createDirectory(THUMB_DIR, true)
+    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100) || "cover"
+    const thumbPath = `${THUMB_DIR}/${safeKey}.jpg`
     await FileManager.writeAsData(thumbPath, data)
-    appendDebug(`${tag}: 成功 ${pw}x${ph}`)
+    appendDebug(`${tag}: 成功 ${pw}×${ph}`)
     return thumbPath
   } catch (e) {
-    appendDebug(`${tag}: 异常 ${e}`)
+    appendDebug(`${tag}: 异常 ${String(e)}`)
     return ""
+  }
+}
+
+// 抽帧后保存到独立封面缓存；失败返回空字符串。
+export async function generateThumbFile(videoPath: string, durationSec?: number): Promise<string> {
+  const tag = `thumbGen(${videoPath.split("/").pop()})`
+  if (typeof AVAsset === "undefined" || typeof MediaTime === "undefined") {
+    appendDebug(`${tag}: AVAsset=${typeof AVAsset} MediaTime=${typeof MediaTime}`)
+    return ""
+  }
+  const asset = new AVAsset(videoPath)
+  try {
+    const sec = durationSec && durationSec > 2 ? Math.max(0.1, durationSec * 0.1) : 0.1
+    const r = await asset.generateImage(MediaTime.make({ seconds: sec, preferredTimescale: 600 }), {
+      maximumSize: { width: 320, height: 320 },
+    })
+    if (!r?.image) {
+      appendDebug(`${tag}: generateImage 返回空`)
+      return ""
+    }
+    return await saveThumbnailImage(r.image, videoCacheKey(videoPath))
+  } catch (e) {
+    appendDebug(`${tag}: 抽帧失败 ${String(e)}`)
+    return ""
+  } finally {
+    asset.dispose()
   }
 }
