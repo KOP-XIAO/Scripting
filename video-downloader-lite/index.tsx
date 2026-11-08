@@ -260,6 +260,48 @@ function HistoryRow(props: { item: HistoryRecord; index: number; onChanged: () =
   )
 }
 
+// 设置中的本地 PNG 先同步解码，再把图片对象交给视图；路径变化时重新读取。
+// 保持加载逻辑在独立组件顶层，避免在设置选项循环中调用 Hook。
+function SettingsPreviewImage(props: {
+  path: string
+  size: number
+  fill?: boolean
+  rounded?: boolean
+  offset?: { x: number; y: number }
+}) {
+  const { path, size, fill, rounded, offset } = props
+  const image = useMemo(() => {
+    try {
+      const loaded = UIImage.fromFile(path)
+      if (!loaded) appendDebug(`设置预览图片无法读取：${path}`)
+      return loaded
+    } catch (e) {
+      appendDebug(`设置预览图片读取失败：${path} · ${String(e)}`)
+      return null
+    }
+  }, [path])
+
+  if (!image) {
+    return <Image
+      systemName="exclamationmark.triangle"
+      foregroundStyle="secondaryLabel"
+      frame={{ width: size, height: size }}
+      offset={offset}
+      accessibilityLabel="预览图片读取失败，请查看诊断日志"
+    />
+  }
+  return <Image
+    image={image}
+    resizable={true}
+    scaleToFit={!fill}
+    scaleToFill={!!fill}
+    renderingMode="original"
+    frame={{ width: size, height: size }}
+    clipShape={rounded ? { type: "rect", cornerRadius: 10, style: "continuous" } : undefined}
+    offset={offset}
+  />
+}
+
 // -------------------------------------------------------------
 // 设置页
 // -------------------------------------------------------------
@@ -448,12 +490,9 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
                   >
                     <VStack spacing={4}>
                       <ZStack frame={{ width: 64, height: 64 }}>
-                        <Image
-                          filePath={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
-                          resizable={true}
-                          scaleToFit={true}
-                          renderingMode="original"
-                          frame={{ width: 64, height: 64 }}
+                        <SettingsPreviewImage
+                          path={`${Script.directory}/assets/widget-badge-${g}-${themeKey}.png`}
+                          size={64}
                         />
                         {/* 预览与实物一致：右下角标 */}
                         <Image
@@ -504,20 +543,8 @@ function SettingsPage(props: { prefs: Preferences; onSave: (p: Preferences) => v
               >
                 <VStack spacing={4}>
                   <ZStack frame={{ width: 64, height: 64 }}>
-                    <Image
-                      filePath={bgSrc}
-                      resizable={true}
-                      scaleToFill={true}
-                      frame={{ width: 64, height: 64 }}
-                      clipShape={{ type: "rect", cornerRadius: 10, style: "continuous" }}
-                    />
-                    <Image
-                      filePath={badgeSrc}
-                      resizable={true}
-                      scaleToFit={true}
-                      frame={{ width: 20, height: 20 }}
-                      offset={{ x: 16, y: 16 }}
-                    />
+                    <SettingsPreviewImage path={bgSrc} size={64} fill={true} rounded={true} />
+                    <SettingsPreviewImage path={badgeSrc} size={20} offset={{ x: 16, y: 16 }} />
                     {selected ? (
                       <Image
                         systemName="checkmark.circle.fill"
