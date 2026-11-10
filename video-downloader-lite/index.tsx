@@ -80,7 +80,7 @@ import {
 } from "./services/file-actions"
 import { resolutionLabel } from "./services/media-probe"
 import { VERSION, extractFirstURL, formatBytes, formatDate, formatDuration, formatResolution, prettySource } from "./utils/common"
-import { getTheme, getThemeKey, setThemeKey, THEMES, type ThemeKey } from "./services/theme"
+import { getTheme, getThemeKey, setThemeKey, panelFill, panelStroke, panelColor, rgbaOf, THEMES, type ThemeKey } from "./services/theme"
 import { BADGE_GLYPHS, getBadgeGlyph, setBadgeGlyph, type BadgeGlyph } from "./services/theme"
 import { getWidgetStyle, setWidgetStyle, type WidgetStyle } from "./services/theme"
 
@@ -1250,8 +1250,9 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                       <Spacer />
                       <ZStack frame={{ width: 54, height: 54 }}>
                         <Circle
-                          fill={loading || celebrate ? getTheme().accent : getTheme().bgTop}
-                          stroke={{ shapeStyle: loading || celebrate ? getTheme().accent : getTheme().accentSoft, strokeStyle: { lineWidth: 1 } }}
+                          fill={loading || celebrate ? getTheme().accent : panelColor(0.16)}
+                          stroke={{ shapeStyle: loading || celebrate ? getTheme().accent : panelStroke(0.62), strokeStyle: { lineWidth: 1 } }}
+                          shadow={loading || celebrate ? undefined : { color: rgbaOf(getTheme().accent, 0.22), radius: 12, y: 3 }}
                           frame={{ width: 54, height: 54 }}
                         />
                         <Button
@@ -1301,97 +1302,118 @@ function View(props: { initialHistory: HistoryRecord[] }) {
                 {loading ? (
                   /* 终端风进度卡：loading 全程显示——解析/探测阶段 progress 尚未产生，
                      用零值兜底渲染斑马纹 + resolving…，避免进度条在最后时刻突然闪现。 */
-                  <VStack
-                    alignment="leading"
-                    spacing={8}
-                    padding={12}
-                    frame={{ maxWidth: "infinity" } as never}
-                    background="#0D1117"
-                    clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
-                  >
-                    <HStack>
-                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
-                        vdl@ios:~$ download
-                      </Text>
-                      <Spacer />
-                      <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
-                        {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
-                      </Text>
-                    </HStack>
-                    {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
-                        亮块=主题色，最前沿一块白色高亮，暗块=12% 白；不定进度为斑马呼吸纹 */}
-                    <GeometryReader>
-                      {proxy => {
-                        const trackW = proxy.size.width
-                        const gap = 2
-                        const N = Math.max(20, Math.floor((trackW + gap) / 8))
-                        const bw = (trackW - (N - 1) * gap) / N
-                        const lit = progressRatio == null ? 0 : Math.round(progressRatio * N)
-                        return (
-                          <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
-                            {Array.from({ length: N }, (_, i) => (
-                              <RoundedRectangle
-                                key={i}
-                                cornerRadius={1.5}
-                                fill={progressRatio == null
-                                  ? "rgba(255,255,255,0.12)"
-                                  : i < lit
-                                    ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
-                                    : "rgba(255,255,255,0.12)"}
-                                opacity={progressRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
-                                frame={{ width: bw, height: 14 }}
-                              />
-                            ))}
-                          </HStack>
-                        )
-                      }}
-                    </GeometryReader>
-                    <HStack>
-                      <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
-                        {progress == null || (progress.total === 0 && progress.done === 0)
-                          ? "resolving…"
-                          : [
-                              progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
-                              progress.bytes > 0 ? formatBytes(progress.bytes) : "",
-                              progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
-                              progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
-                            ].filter(Boolean).join(" · ")}
-                      </Text>
-                      <Spacer />
-                      <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
-                    </HStack>
-                  </VStack>
-                ) : (
-                  /* 空闲状态卡：与进度卡同款终端风，图标 + 状态文字 */
-                  <HStack
-                    spacing={8}
-                    padding={10}
-                    frame={{ maxWidth: "infinity" } as never}
-                    background="#0D1117"
-                    clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}
-                  >
-                    <Image
-                      systemName={status.startsWith("失败") ? "xmark.circle.fill" : status === "就绪" ? "bolt.circle" : "checkmark.circle.fill"}
-                      font={14}
-                      foregroundStyle={status.startsWith("失败") ? "systemRed" : getTheme().accent}
+                  <ZStack frame={{ maxWidth: "infinity" } as never}>
+                    <RoundedRectangle
+                      cornerRadius={14}
+                      fill={panelFill(0.10)}
+                      stroke={{ shapeStyle: panelStroke(0.3), strokeStyle: { lineWidth: 1 } }}
                     />
-                    <Text
-                      font="caption"
-                      monospaced
-                      foregroundStyle={status.startsWith("失败") ? "systemRed" : "#E6E9EC"}
-                      lineLimit={2}
+                    <VStack
+                      alignment="leading"
+                      spacing={8}
+                      padding={12}
+                      frame={{ maxWidth: "infinity" } as never}
                     >
-                      {status}
-                    </Text>
-                    <Spacer />
-                    {status.startsWith("失败") ? (
-                      <TaskLogLink taskId={lastTaskId} />
-                    ) : (
-                      <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
-                        {status === "就绪" ? "idle" : "done"}
+                      <HStack>
+                        <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>
+                          vdl@ios:~$ download
+                        </Text>
+                        <Spacer />
+                        <Text font="title3" monospaced foregroundStyle={getTheme().accent}>
+                          {progressRatio == null ? "--%" : `${Math.round(progressRatio * 100)}%`}
+                        </Text>
+                      </HStack>
+                      {/* 全宽分段 LED 块条：GeometryReader 取精确宽度，块数/块宽自适应铺满；
+                          亮块=主题色，最前沿一块白色高亮，暗块=12% 白；不定进度为斑马呼吸纹 */}
+                      <GeometryReader>
+                        {proxy => {
+                          const trackW = proxy.size.width
+                          const gap = 2
+                          const N = Math.max(20, Math.floor((trackW + gap) / 8))
+                          const bw = (trackW - (N - 1) * gap) / N
+                          const lit = progressRatio == null ? 0 : Math.round(progressRatio * N)
+                          return (
+                            <HStack spacing={gap} frame={{ width: trackW, height: 14 }}>
+                              {Array.from({ length: N }, (_, i) => (
+                                <RoundedRectangle
+                                  key={i}
+                                  cornerRadius={1.5}
+                                  fill={progressRatio == null
+                                    ? "rgba(255,255,255,0.12)"
+                                    : i < lit
+                                      ? i === lit - 1 ? "#FFFFFF" : getTheme().accent
+                                      : "rgba(255,255,255,0.12)"}
+                                  opacity={progressRatio == null ? (i % 2 === 0 ? 0.9 : 0.35) : 1}
+                                  frame={{ width: bw, height: 14 }}
+                                />
+                              ))}
+                            </HStack>
+                          )
+                        }}
+                      </GeometryReader>
+                      <HStack>
+                        <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.60)">
+                          {progress == null || (progress.total === 0 && progress.done === 0)
+                            ? "resolving…"
+                            : [
+                                progress.total > 0 ? `seg ${progress.done}/${progress.total}` : `recv ${progress.done} segs`,
+                                progress.bytes > 0 ? formatBytes(progress.bytes) : "",
+                                progress.speedBps > 0 ? `↓ ${formatBytes(progress.speedBps)}/s` : "",
+                                progress.etaSec != null && progress.speedBps > 0 ? `eta ${formatDuration(progress.etaSec)}` : "",
+                              ].filter(Boolean).join(" · ")}
+                        </Text>
+                        <Spacer />
+                        <Text font="caption2" monospaced foregroundStyle={getTheme().accent}>{"▌"}</Text>
+                      </HStack>
+                    </VStack>
+                  </ZStack>
+                ) : (
+                  /* 空闲状态卡：同一块主题面板，图标收进小芯片里 */
+                  <ZStack frame={{ maxWidth: "infinity" } as never}>
+                    <RoundedRectangle
+                      cornerRadius={14}
+                      fill={panelFill(0.07)}
+                      stroke={{ shapeStyle: panelStroke(0.24), strokeStyle: { lineWidth: 1 } }}
+                    />
+                    <HStack
+                      spacing={9}
+                      padding={{ vertical: 10, horizontal: 12 }}
+                      frame={{ maxWidth: "infinity" } as never}
+                    >
+                      <ZStack frame={{ width: 24, height: 24 }}>
+                        <RoundedRectangle
+                          cornerRadius={7}
+                          fill={status.startsWith("失败") ? "rgba(248,81,73,0.16)" : rgbaOf(getTheme().accent, 0.16)}
+                          stroke={{
+                            shapeStyle: status.startsWith("失败") ? "rgba(248,81,73,0.38)" : rgbaOf(getTheme().accent, 0.38),
+                            strokeStyle: { lineWidth: 1 },
+                          }}
+                        />
+                        <Image
+                          systemName={status.startsWith("失败") ? "xmark" : status === "就绪" ? "bolt.fill" : "checkmark"}
+                          font={11}
+                          fontWeight="semibold"
+                          foregroundStyle={status.startsWith("失败") ? "systemRed" : getTheme().accent}
+                        />
+                      </ZStack>
+                      <Text
+                        font="caption"
+                        monospaced
+                        foregroundStyle={status.startsWith("失败") ? "systemRed" : "#E6E9EC"}
+                        lineLimit={2}
+                      >
+                        {status}
                       </Text>
-                    )}
-                  </HStack>
+                      <Spacer />
+                      {status.startsWith("失败") ? (
+                        <TaskLogLink taskId={lastTaskId} />
+                      ) : (
+                        <Text font="caption2" monospaced foregroundStyle="rgba(255,255,255,0.62)">
+                          {status === "就绪" ? "idle" : "done"}
+                        </Text>
+                      )}
+                    </HStack>
+                  </ZStack>
                 )}
               </Section>
 

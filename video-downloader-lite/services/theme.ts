@@ -128,6 +128,52 @@ export function setThemeKey(key: ThemeKey) {
 }
 
 // -------------------------------------------------------------
+// 面板与按钮表面：把主题色极淡地混进深底，取代大面积纯黑。
+// 同一套取值供状态卡、进度卡和下载按钮使用，避免各处黑色深浅不一。
+// -------------------------------------------------------------
+function rgbOf(hex: string): [number, number, number] {
+  const h = (hex || "").trim().replace("#", "")
+  if (h.length !== 6 || !/^[0-9a-f]{6}$/i.test(h)) return [13, 17, 23]
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+export function rgbaOf(hex: string, alpha: number): string {
+  const [r, g, b] = rgbOf(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+export function mixHex(base: string, tint: string, amount: number): string {
+  const a = rgbOf(base)
+  const b = rgbOf(tint)
+  const t = Math.max(0, Math.min(1, amount))
+  return "#" + a.map((v, i) => Math.round(v * (1 - t) + b[i] * t).toString(16).padStart(2, "0")).join("")
+}
+
+// 卡片底：左上略亮、右下压深的对角渐变，混入少量主题色形成「终端玻璃」质感
+export function panelFill(level = 0.12): any {
+  const t = getTheme()
+  return {
+    gradient: [
+      { color: mixHex(t.bgTop, t.accent, level), location: 0 },
+      { color: mixHex(t.bgBottom, t.accent, level * 0.4), location: 1 },
+    ],
+    startPoint: { x: 0, y: 0 },
+    endPoint: { x: 1, y: 1 },
+  }
+}
+
+// 细描边：主题色的低透明度，勾出卡片与按钮边缘，代替生硬的灰色分割
+export function panelStroke(alpha = 0.28): string {
+  return rgbaOf(getTheme().accent, alpha)
+}
+
+// 单位取色：给形状（圆形按钮等）用的实色，等价于 panelFill 的中段色调
+export function panelColor(level = 0.2): string {
+  const t = getTheme()
+  return mixHex(t.bgTop, t.accent, level)
+}
+
+// -------------------------------------------------------------
 // 小组件视觉风格（独立于配色主题）：暗色纹理 / 海报大字 / 蓝图 / 霓虹
 // 各风格背景保持自身特色，点缀色（徽章箭头/图标/强调文字）跟随配色主题
 // -------------------------------------------------------------

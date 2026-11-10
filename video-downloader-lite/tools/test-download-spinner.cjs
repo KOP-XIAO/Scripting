@@ -49,7 +49,7 @@ assert.equal(buttons.length, 1); assert.equal(rings.length, 1)
 assert(!(rings[0].pos > buttons[0].pos && rings[0].end < buttons[0].end))
 assert(rings[0].getText(tree).includes('ratio={progressRatio}'))
 assert(buttons[0].getText(tree).includes('disabled={loading}'))
-assert(inset.getText(tree).includes('fill={loading || celebrate ? getTheme().accent : getTheme().bgTop}'))
+assert(inset.getText(tree).includes('fill={loading || celebrate ? getTheme().accent : panelColor(0.16)}'))
 let surface
 const findSurface = n => {
   if (ts.isJsxElement(n) && n.openingElement.tagName.getText(tree) === 'ZStack'
@@ -59,7 +59,10 @@ const findSurface = n => {
 findSurface(inset)
 const context = {
   React: { createElement: (type, props, ...children) => ({ type, props, children }) },
-  getTheme: () => ({ accent: '#3FB950', accentSoft: '#3FB95088', bgTop: '#0D1117' }),
+  getTheme: () => ({ accent: '#3FB950', accentSoft: '#3FB95088', bgTop: '#0D1117', bgBottom: '#0C1A12' }),
+  panelColor: level => `panel:${level}`,
+  panelStroke: alpha => `stroke:${alpha}`,
+  rgbaOf: (hex, alpha) => `rgba:${hex}:${alpha}`,
   pasteAndDownload: () => {},
 }
 for (const name of ['ZStack', 'Circle', 'Button', 'Image', 'DownloadProgress']) context[name] = name
@@ -72,7 +75,11 @@ for (const [loading, celebrate] of [[false, false], [true, false], [true, true],
   const [circle, button, indicator] = rendered.children
   assert.equal(button.props.disabled, loading)
   assert.equal(button.children[0].props.opacity, loading || celebrate ? 0 : 1)
-  assert.equal(circle.props.fill, loading || celebrate ? '#3FB950' : '#0D1117')
+  assert.equal(circle.props.fill, loading || celebrate ? '#3FB950' : 'panel:0.16')
+  assert.equal(circle.props.stroke.shapeStyle, loading || celebrate ? '#3FB950' : 'stroke:0.62')
+  // 空闲态用主题色柔光托住按钮，进行中/完成态不再叠阴影
+  if (loading || celebrate) assert.equal(circle.props.shadow, undefined)
+  else assert.equal(circle.props.shadow.color, 'rgba:#3FB950:0.22')
   if (celebrate) assert.equal(indicator.props.systemName, 'checkmark')
   else if (loading) { assert.equal(indicator.type, 'DownloadProgress'); assert.equal(indicator.props.ratio, 0.63) }
   else { assert.equal(indicator, null); assert.equal(button.children[0].props.systemName, 'tray.and.arrow.down') }
@@ -81,4 +88,10 @@ assert(src.indexOf('const action = await postDownloadAction') < src.indexOf('if 
 assert(src.includes('<ConfettiOverlay onFinish={() => setCelebrate(false)} />'))
 assert(!src.includes('displayRatio'))
 assert(!src.includes('setDisplayRatio'))
-console.log('PASS: actual progress, waiting state, native interpolation, no timed progress and disabled-state isolation')
+// 状态卡改主题面板；只剩诊断页的终端输出窗保留纯黑
+const blackPanes = src.match(/background="#0D1117"/g) || []
+assert.equal(blackPanes.length, 1, 'only the diagnostics terminal keeps a black pane')
+assert(src.includes('fill={panelFill(0.10)}') && src.includes('fill={panelFill(0.07)}'))
+assert(src.includes('panelStroke(0.3)') && src.includes('panelStroke(0.24)'))
+assert(src.includes('rgbaOf(getTheme().accent, 0.16)'), 'status icon chip tinted by theme accent')
+console.log('PASS: actual progress, waiting state, native interpolation, themed cards and accent-lit action button')
