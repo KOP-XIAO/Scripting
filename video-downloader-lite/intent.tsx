@@ -6,7 +6,7 @@
 import { Intent, Script, Widget } from "scripting"
 import { runDownload, detectKind, KIND_LABELS } from "./services/downloader"
 import { getPreferences } from "./services/preferences"
-import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote } from "./services/history"
+import { initDatabase, findBySourceURL, insertHistory, updateHistoryNote, repairRecentThumbnails } from "./services/history"
 import { appendDebug } from "./services/debug"
 import { beginTaskLog, appendTaskLog, titleTaskLog, finishTaskLog } from "./services/task-log"
 import { postDownloadAction } from "./services/file-actions"
@@ -128,6 +128,11 @@ async function run() {
     const action = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
     if (action.savedToPhotos) {
       for (const id of inserted) await updateHistoryNote(id, "已存入相册")
+    }
+    // 分享/快捷指令入口同样在同一次运行内补图，避免下次打开才有封面。
+    // 放在保存动作之后：存入相册时文件已被移走，需要从相簿取帧。
+    if (inserted.length && outcome.files.some((f) => !f.thumbPath)) {
+      await repairRecentThumbnails(inserted, { attempts: 2, delayMs: 400 }).catch(() => 0)
     }
     // 历史已变，通知小组件重渲染
     try {

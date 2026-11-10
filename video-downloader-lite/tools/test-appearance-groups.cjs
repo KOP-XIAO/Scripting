@@ -18,7 +18,7 @@ const ctx = { ...theme, React: { createElement: (type, props, ...children) => ({
   useState: init => [typeof init === 'function' ? init() : init, () => {}],
   getYuanbaoCookie: () => '', Script: { directory: root }, VERSION: 'test',
   SAVE_MODE_LABELS: { keep: '保留' }, WX_CODEC_LABELS: { h264: 'H264' } }
-for (const tag of ['List', 'Section', 'HStack', 'VStack', 'Image', 'Text', 'Spacer', 'Button', 'RoundedRectangle', 'TextField', 'Toggle', 'Link', 'ZStack']) ctx[tag] = tag
+for (const tag of ['List', 'Section', 'HStack', 'VStack', 'Image', 'Text', 'Spacer', 'Button', 'RoundedRectangle', 'TextField', 'Toggle', 'Link', 'ZStack', 'SettingsPreviewImage']) ctx[tag] = tag
 vm.runInNewContext(compile(fn.getText(tree)), ctx)
 const rendered = ctx.SettingsPage({ prefs: { defaultSaveMode: 'keep', wxCodec: 'h264' }, onSave: () => {} })
 const visit = (node, fn) => {
@@ -54,5 +54,8 @@ assert.equal(values.get('vdl.badgeGlyph'), theme.BADGE_GLYPHS[1].key)
 const styleRows = []
 visit(style, n => { if (n.type === 'HStack' && buttons(n).length) styleRows.push(buttons(n).length) })
 assert.deepEqual(styleRows, [3, 3])
-for (const group of [icon, style]) visit(group, n => { if (n.type === 'Image' && n.props.filePath) assert(fs.existsSync(n.props.filePath), n.props.filePath) })
+for (const group of [icon, style]) visit(group, n => {
+  const file = n.type === 'SettingsPreviewImage' ? n.props.path : n.type === 'Image' ? n.props.filePath : null
+  if (file) assert(fs.existsSync(file), file)
+})
 console.log('PASS: distinct groups, all palette/icon/style choices, independent persistence, asset paths and three-column layout')

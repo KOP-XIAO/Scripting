@@ -55,7 +55,8 @@ async function exercise(entry, scenario) {
   let alerts = 0, linkedTaskId
   const history = { initDatabase: async () => {}, findBySourceURL: async () => scenario === 'skipped'
     ? [{ id: 'old', title: 'Old video', file_name: 'old.mp4', file_path: '/old.mp4', note: '', created_at: '2026-10-25' }] : [],
-    insertHistory: async () => ({ id: 'history' }), updateHistoryNote: async () => {} }
+    insertHistory: async () => ({ id: 'history' }), updateHistoryNote: async () => {},
+    repairRecentThumbnails: async () => 0 }
   const runDownload = async (_url, opts) => {
     opts.onLog('resolve step'); opts.onLog('download step')
     if (scenario === 'failed') throw new Error('download broke')

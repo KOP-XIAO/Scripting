@@ -87,19 +87,16 @@ export async function saveThumbnailImage(source: any, key: string): Promise<stri
     const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100) || "cover"
     const thumbPath = `${THUMB_DIR}/${safeKey}.jpg`
     await FileManager.writeAsData(thumbPath, data)
-    // 新文件在写入完成后的首次渲染中可能尚不可解码；确认读回后再交给历史列表。
-    for (const delay of [0, 80, 160, 320]) {
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
-      try {
-        const check = UIImage.fromFile(thumbPath)
-        if (check && check.width > 0 && check.height > 0) {
-          appendDebug(`${tag}: 成功 ${pw}×${ph}，读回 ${check.width}×${check.height}`)
-          return thumbPath
-        }
-      } catch {}
-    }
-    appendDebug(`${tag}: 写入后读回失败 · ${thumbPath}`)
-    return ""
+    // 写盘完成即返回路径。此前用「读回能否解码」决定成败，而刚写出的文件在同一进程里
+    // 可能暂时读不到，结果记录存了空路径：下载后不显示封面，必须重启回填才出现。
+    // 解码只作为诊断信息；真正不可读时由下载后的补图重试覆盖。
+    let decoded = false
+    try {
+      const check = UIImage.fromFile(thumbPath)
+      decoded = !!check && check.width > 0 && check.height > 0
+    } catch {}
+    appendDebug(`${tag}: 成功 ${pw}×${ph}${decoded ? "，读回正常" : "，读回暂不可解码，稍后重试"}`)
+    return thumbPath
   } catch (e) {
     appendDebug(`${tag}: 异常 ${String(e)}`)
     return ""

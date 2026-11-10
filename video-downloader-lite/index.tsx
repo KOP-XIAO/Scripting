@@ -65,6 +65,7 @@ import {
   clearHistoryRecords,
   ensureWidgetSnapshot,
   backfillMediaInfo,
+  repairRecentThumbnails,
   type HistoryRecord,
 } from "./services/history"
 import { appendDebug, getDebugLog, clearDebugLog, exportDebugPackage, ERROR_LINE_RE } from "./services/debug"
@@ -1163,6 +1164,15 @@ function View(props: { initialHistory: HistoryRecord[] }) {
       }
       await refreshHistory()
       setLastFiles(outcome.files)
+      // 刚合并的视频可能还不可解码，抽帧会失败留下空封面。立刻在后台重试并写回，
+      // 成功即刷新列表，不必退出重进；此时文件还在本地，比存相册后再找更容易成功。
+      if (inserted.length) {
+        void repairRecentThumbnails(inserted, {
+          attempts: 4,
+          delayMs: 700,
+          onFixed: () => void refreshHistory(),
+        }).catch(() => {})
+      }
 
       const action = await postDownloadAction(outcome.files, prefs.defaultSaveMode)
       // 移入相册后本地副本已不存在，标记历史记录避免误导

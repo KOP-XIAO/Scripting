@@ -397,6 +397,75 @@ export async function backfillMediaInfo(): Promise<number> {
   return fixed
 }
 
+// 下载完成后的同场补图：视频刚合并写盘时解码可能尚未就绪，抽帧会失败并留下空封面；
+// 存入相册时本地文件已被移走，只能从相簿取帧。两种都算「本次会话内必须补上」。
+export async function repairRecentThumbnails(
+  ids: string[],
+  opts?: { attempts?: number; delayMs?: number; onFixed?: () => void },
+): Promise<number> {
+  const pending = new Set(ids.filter(Boolean))
+  if (!pending.size) return 0
+  const attempts = Math.max(1, opts?.attempts ?? 4)
+  const delayMs = Math.max(0, opts?.delayMs ?? 600)
+  let fixed = 0
+  try {
+    for (let attempt = 0; attempt < attempts && pending.size; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      const patches = new Map<string, string>()
+      const usedAssets = new Set<string>()
+      let photoAssets: any[] | null = null
+      for (const r of await readAll()) {
+        if (!pending.has(r.id)) continue
+        if (readableThumbnail(r.thumb_path)) {
+          pending.delete(r.id) // 已有可读封面，无需再补
+          continue
+        }
+        try {
+          if (r.file_path && (await FileManager.exists(r.file_path))) {
+            const path = await generateThumbFile(r.file_path, r.duration_sec)
+            if (readableThumbnail(path)) patches.set(r.id, path)
+          } else if (r.note.includes("相册")) {
+            // 文件已移入相册：从同名相簿里按时间/时长匹配该条视频取帧。
+            if (photoAssets === null) photoAssets = await downloaderPhotoAssets()
+            const asset = matchPhotoAsset(r, photoAssets, usedAssets)
+            if (asset) {
+              usedAssets.add(asset.localIdentifier)
+              const image = await asset.requestImage({
+                targetWidth: 320,
+                targetHeight: 320,
+                contentMode: "aspectFill",
+                deliveryMode: "highQualityFormat",
+              })
+              const path = image ? await saveThumbnailImage(image, `photo-${r.id}`) : ""
+              if (readableThumbnail(path)) patches.set(r.id, path)
+            }
+          }
+        } catch (e) {
+          appendDebug(`下载后补图失败 · ${r.file_name} · ${String(e)}`)
+        }
+      }
+      if (!patches.size) continue
+      // 抽帧期间历史可能被其它操作改动，重新读取后只合并封面字段。
+      const merged = (await readAll()).map((r) => {
+        const path = patches.get(r.id)
+        return path ? { ...r, thumb_path: path } : r
+      })
+      await writeAll(merged)
+      writeWidgetSnapshot(merged)
+      fixed += patches.size
+      patches.forEach((_, id) => pending.delete(id))
+      appendDebug(`下载后补图：第 ${attempt + 1} 次尝试补上 ${patches.size} 条`)
+      try {
+        opts?.onFixed?.()
+      } catch {}
+    }
+    if (pending.size) appendDebug(`下载后补图：仍未补上 ${pending.size} 条，下次打开时会继续回填`)
+  } catch (e) {
+    appendDebug(`下载后补图失败：${String(e)}`)
+  }
+  return fixed
+}
+
 // 每次打开 App 都重算快照（旧版快照缺新字段时也能自愈）
 export async function ensureWidgetSnapshot() {
   try {
